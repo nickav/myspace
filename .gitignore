@@ -1,0 +1,10 @@
+bin
+*.pack
+*.zip
+*.res
+
+Makefile
+
+!build
+build/*
+!build/data
