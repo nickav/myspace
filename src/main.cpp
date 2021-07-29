@@ -148,9 +148,20 @@ void *talloc(u64 size) {
   return result;
 }
 
+void tpop(u64 size) {
+  Arena *arena = &global_temporary_storage;
+
+  if (size > arena->offset) {
+    arena->offset = 0;
+  } else {
+    arena->offset -= size;
+  }
+}
+
 void reset_temporary_storage() {
   Arena *arena = &global_temporary_storage;
   arena->offset = 0;
+  memory_zero(arena->data, arena->size);
 }
 
 //
@@ -281,6 +292,142 @@ u32 string_encode_utf8(u8 *dest, u32 codepoint) {
   return size;
 }
 
+StringDecode string_decode_utf16(u16 *str, u32 capacity) {
+  StringDecode result = {'?', 1};
+
+  u16 x = str[0];
+
+  if (x < 0xD800 || x > 0xDFFF) {
+    result.codepoint = x;
+    result.size = 1;
+  } else if (capacity >= 2) {
+    u16 y = str[1];
+
+    // @Robustness: range check?
+    result.codepoint = ((x - 0xD800) << 10 | (y - 0xDC00)) + 0x10000;
+    result.size = 2;
+  }
+
+  return result;
+}
+
+u32 string_encode_utf16(u16 *dest, u32 codepoint) {
+  u32 size = 0;
+
+  if (codepoint < 0x10000) {
+    dest[0] = codepoint;
+    size = 1;
+  } else {
+    u32 x = (codepoint - 0x10000);
+    dest[0] = (x >> 10) + 0xD800;
+    dest[1] = (x & 0x3ff) + 0xDC00;
+    size = 2;
+  }
+
+  return size;
+}
+
+String32 str32_from_str8(String str) {
+  u32 *memory = cast(u32 *)talloc(str.count * sizeof(u32));
+
+  u8 *p0 = str.data;
+  u8 *p1 = str.data + str.count;
+  u32 *at = memory;
+  u64 remaining = str.count;
+
+  while (p0 < p1) {
+    auto decode = string_decode_utf8(p0, remaining);
+
+    *at = decode.codepoint;
+    p0 += decode.size;
+    at += 1;
+    remaining -= decode.size;
+  }
+
+  u64 alloc_count = str.count;
+  u64 string_count = cast(u64)(at - memory);
+  u64 unused_count = string_count - alloc_count;
+
+  tpop(unused_count * sizeof(u32));
+
+  String32 result = {string_count, memory};
+  return result;
+}
+
+String str8_from_str32(String32 str) {
+  u8 *memory = cast(u8 *)talloc(str.count * 4);
+
+  u32 *p0 = str.data;
+  u32 *p1 = str.data + str.count;
+  u8 *at = memory;
+
+  while (p0 < p1) {
+    auto size = string_encode_utf8(at, *p0);
+
+    p0 += 1;
+    at += size;
+  }
+
+  u64 alloc_count = str.count * 4;
+  u64 string_count = cast(u64)(at - memory);
+  u64 unused_count = alloc_count - string_count;
+
+  tpop(unused_count);
+
+  String result = {string_count, memory};
+  return result;
+}
+
+String16 str16_from_str8(String str) {
+  u16 *memory = cast(u16 *)talloc(str.count * sizeof(u16));
+
+  u8 *p0 = str.data;
+  u8 *p1 = str.data + str.count;
+  u16 *at = memory;
+  u64 remaining = str.count;
+
+  while (p0 < p1) {
+    auto decode = string_decode_utf16(cast(u16 *)p0, remaining);
+
+    *at = decode.codepoint;
+    at += decode.size;
+    p0 += decode.size;
+    remaining -= decode.size;
+  }
+
+  u64 alloc_count = str.count;
+  u64 string_count = cast(u64)(at - memory);
+  u64 unused_count = alloc_count - string_count;
+
+  tpop(unused_count * sizeof(u16));
+
+  String16 result = {string_count, memory};
+  return result;
+}
+
+String str8_from_str16(String16 str) {
+  String result = {};
+  result.data = cast(u8 *)talloc(str.count * 4);
+
+  u16 *from = str.data;
+  u8 *to = result.data;
+
+  for (u64 i = 0; i < str.count; i ++) {
+    auto size = string_encode_utf16(cast(u16 *)to, *from);
+
+    from += 1;
+    to += size;
+  }
+
+  result.count = to - result.data;
+
+  u64 alloc_size = str.count * 4;
+  u64 unused_size = (result.count - alloc_size);
+  tpop(unused_size);
+
+  return result;
+}
+
 //
 // OS
 //
@@ -290,6 +437,10 @@ u32 string_encode_utf8(u8 *dest, u32 codepoint) {
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+
+void os_init() {
+  reset_temporary_storage();
+}
 
 String os_read_entire_file(String path) {
   String result = {};
@@ -314,6 +465,8 @@ bool os_remove_directory(String path) {
 //
 
 int main(int argc, char **argv) {
+  os_init();
+
   print("hello, sailor!\n");
 
   {
@@ -349,6 +502,29 @@ int main(int argc, char **argv) {
     string_encode_utf8(enc4, res4.codepoint);
     assert(memory_equals(buf4, enc4, count_of(buf4)));
     print("enc4: %X %X %X %X\n", enc4[0], enc4[1], enc4[2], enc4[3]);
+  }
+
+  {
+    String test_string_array[] = {
+      S("Hello"),
+      S("Sailor"),
+      S("Would you kindly 034234?"),
+      //S("\x01\x02\x03\x04\x05\x06\x07\x08\n\t\r"),
+    };
+
+    for (u32 i = 0; i < count_of(test_string_array); i ++) {
+      auto it = test_string_array[i];
+      auto str32 = str32_from_str8(it);
+      auto str8 = str8_from_str32(str32);
+
+      print("%.*s\n", LIT(it));
+      print("%.*s\n", LIT(str8));
+
+      auto str16 = str16_from_str8(it);
+      auto str8_2 = str8_from_str16(str16);
+
+      print("%.*s\n", LIT(str8_2));
+    }
   }
 
   return 0;
