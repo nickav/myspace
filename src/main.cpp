@@ -1,5 +1,3 @@
-#include <stdio.h>
-
 //
 // Basic
 //
@@ -12,6 +10,7 @@
   #define null nullptr
 #endif
 
+#include <stdio.h>
 #define print printf
 
 #ifdef DEBUG
@@ -207,6 +206,10 @@ struct StringDecode {
   u32 codepoint;
   u8 size; // 1 - 4
 };
+
+String make_string(u8 *data, u64 count) {
+  return String{count, data};
+}
 
 char *cstr(String str) {
   if (!str.count || !str.data) {
@@ -451,7 +454,7 @@ String os_read_entire_file(String path) {
 
   // @Cleanup: do we always want to null-terminate String16 s?
   String16 str = str16_from_str8(path);
-  HANDLE handle = CreateFileW(cast(WCHAR *)str.data, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+  HANDLE handle = CreateFileW(cast(WCHAR *)str.data, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
 
   if (handle == INVALID_HANDLE_VALUE) {
     print("[file] Error reading entire file: (error code: %d) for %.*s\n", GetLastError(), LIT(path));
@@ -482,23 +485,102 @@ String os_read_entire_file(String path) {
   return result;
 }
 
-#endif
+bool os_write_entire_file(String path, String contents) {
+  String16 str = str16_from_str8(path);
+  HANDLE handle = CreateFileW(cast(WCHAR *)str.data, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_ALWAYS, 0, 0);
 
-#if 0
+  if (handle == INVALID_HANDLE_VALUE) {
+    print("[file] Error writing entire file: (error code: %d) for %.*s\n", GetLastError(), LIT(path));
+    return false;
+  }
+
+  // @Robustness: handle > 32 byte content size
+  assert(contents.count < U32_MAX);
+
+  DWORD bytes_written;
+  BOOL success = WriteFile(handle, contents.data, contents.count, &bytes_written, 0);
+
+  if (!success) {
+    print("[file] Failed to write entire file: %.*s\n", LIT(path));
+    return false;
+  } else if (bytes_written != contents.count) {
+    // @Robustness: keep writing until everything is written?
+    print("[file] Warning byte read mismatch, expected %d but got %d for file: %.*s\n", contents.count, bytes_written, LIT(path));
+    return false;
+  }
+
+  CloseHandle(handle);
+
+  return true;
+}
+
+bool os_delete_file(String path) {
+  String16 str = str16_from_str8(path);
+  return DeleteFileW(cast(WCHAR *)str.data);
+}
+
 bool os_make_directory(String path) {
+  String16 str = str16_from_str8(path);
+  BOOL success = CreateDirectoryW(cast(WCHAR *)str.data, NULL);
+  return success;
 }
 
 bool os_remove_directory(String path) {
+  String16 str = str16_from_str8(path);
+  BOOL success = RemoveDirectoryW(cast(WCHAR *)str.data);
+  return success;
 }
+
+void normalize_path(String path) {
+  u8 *at = path.data;
+
+  for (u64 i = 0; i < path.count; i++) {
+    if (*at == '\\') {
+      *at = '/';
+    }
+
+    at ++;
+  }
+}
+
+String os_get_executable_path() {
+  WCHAR buffer[1024];
+
+  DWORD length = GetModuleFileNameW(NULL, buffer, sizeof(buffer));
+  if (length == 0) {
+    return {};
+  }
+
+  String16 temp = {length, cast(u16 *)buffer};
+  String result = str8_from_str16(temp);
+  normalize_path(result);
+
+  return result;
+}
+
+String os_get_current_directory() {
+  WCHAR buffer[1024];
+
+  DWORD length = GetCurrentDirectoryW(sizeof(buffer), buffer);
+  if (length == 0) {
+    return {};
+  }
+
+  String16 temp = {length, cast(u16 *)buffer};
+  String result = str8_from_str16(temp);
+  normalize_path(result);
+
+  return result;
+}
+
+
 #endif
 
 //
-// Functions
+// Main
 //
 
-int main(int argc, char **argv) {
-  os_init();
-
+void test() {
   print("hello, sailor!\n");
 
   {
@@ -558,10 +640,21 @@ int main(int argc, char **argv) {
       print("%.*s\n", LIT(str8_2));
     }
   }
+}
 
+int main(int argc, char **argv) {
+  os_init();
+
+  auto cwd = os_get_current_directory();
+
+  print("%.*s\n", LIT(cwd));
+
+  #if 0
   String contents = os_read_entire_file(S("C:/Users/nick/dev/myspace/src/stb_sprintf.h"));
-
   print("%.*s\n", LIT(contents));
+  bool success = os_write_entire_file(S("C:/Users/nick/dev/myspace/bin/stb_sprintf.h"), contents);
+  print("%d\n", success);
+  #endif
 
   return 0;
 }

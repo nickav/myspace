@@ -8,7 +8,7 @@ set project_root=%script_path%
 set build_folder=%project_root%\build\
 set bin_folder=%project_root%\bin\
 set src_file=%project_root%\src\main.cpp
-set exe_name=cyan_debug.exe
+set exe_name=myspace.exe
 
 :: Build executable
 if not exist %build_folder% (mkdir %build_folder%)
