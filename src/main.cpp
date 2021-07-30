@@ -379,7 +379,7 @@ String str8_from_str32(String32 str) {
 }
 
 String16 str16_from_str8(String str) {
-  u16 *memory = cast(u16 *)talloc(str.count * sizeof(u16));
+  u16 *memory = cast(u16 *)talloc((str.count + 1) * sizeof(u16));
 
   u8 *p0 = str.data;
   u8 *p1 = str.data + str.count;
@@ -387,17 +387,19 @@ String16 str16_from_str8(String str) {
   u64 remaining = str.count;
 
   while (p0 < p1) {
-    auto decode = string_decode_utf16(cast(u16 *)p0, remaining);
+    auto decode = string_decode_utf8(p0, remaining);
+    u32 encode_size = string_encode_utf16(at, decode.codepoint);
 
-    *at = decode.codepoint;
-    at += decode.size;
+    at += encode_size;
     p0 += decode.size;
     remaining -= decode.size;
   }
 
-  u64 alloc_count = str.count;
+  *at = 0;
+
+  u64 alloc_count = str.count + 1;
   u64 string_count = cast(u64)(at - memory);
-  u64 unused_count = alloc_count - string_count;
+  u64 unused_count = alloc_count - string_count - 1;
 
   tpop(unused_count * sizeof(u16));
 
@@ -407,21 +409,23 @@ String16 str16_from_str8(String str) {
 
 String str8_from_str16(String16 str) {
   String result = {};
-  result.data = cast(u8 *)talloc(str.count * 4);
+  result.data = cast(u8 *)talloc(str.count * 2);
 
-  u16 *from = str.data;
-  u8 *to = result.data;
+  u16 *p0 = str.data;
+  u16 *p1 = str.data + str.count;
+  u8 *at = result.data;
 
-  for (u64 i = 0; i < str.count; i ++) {
-    auto size = string_encode_utf16(cast(u16 *)to, *from);
+  while (p0 < p1) {
+    auto decode = string_decode_utf16(p0, cast(u64)(p1 - p0));
+    u32 encode_size = string_encode_utf8(at, decode.codepoint);
 
-    from += 1;
-    to += size;
+    p0 += decode.size;
+    at += encode_size;
   }
 
-  result.count = to - result.data;
+  result.count = at - result.data;
 
-  u64 alloc_size = str.count * 4;
+  u64 alloc_size = str.count * 2;
   u64 unused_size = (result.count - alloc_size);
   tpop(unused_size);
 
@@ -445,7 +449,35 @@ void os_init() {
 String os_read_entire_file(String path) {
   String result = {};
 
-  //HANDLE handle = CreateFileW();
+  // @Cleanup: do we always want to null-terminate String16 s?
+  String16 str = str16_from_str8(path);
+  HANDLE handle = CreateFileW(cast(WCHAR *)str.data, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+
+  if (handle == INVALID_HANDLE_VALUE) {
+    print("[file] Error reading entire file: (error code: %d) for %.*s\n", GetLastError(), LIT(path));
+    return result;
+  }
+
+  DWORD hi_size = 0;
+  DWORD lo_size = GetFileSize(handle, &hi_size);
+
+  u64 size = ((cast(u64)hi_size) << 32) | cast(u64)lo_size;
+
+  result.data = cast(u8 *)talloc(size + 1); // space for null character.
+  result.data[size] = 0;
+  result.count = size;
+
+  DWORD bytes_read = 0;
+  BOOL success = ReadFile(handle, (void *)result.data, size, &bytes_read, 0);
+
+  if (!success) {
+    print("[file] Failed to read entire file: %.*s\n", LIT(path));
+  } else if (bytes_read != size) {
+    // @Robustness: should this keep reading until it reads everything?
+    print("[file] Warning byte read mismatch, expected %d but got %d for file: %.*s\n", size, bytes_read, LIT(path));
+  }
+
+  CloseHandle(handle);
 
   return result;
 }
@@ -526,6 +558,10 @@ int main(int argc, char **argv) {
       print("%.*s\n", LIT(str8_2));
     }
   }
+
+  String contents = os_read_entire_file(S("C:/Users/nick/dev/myspace/src/stb_sprintf.h"));
+
+  print("%.*s\n", LIT(contents));
 
   return 0;
 }
