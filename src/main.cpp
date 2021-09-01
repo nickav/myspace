@@ -10,11 +10,11 @@
   #define null nullptr
 #endif
 
-#include <stdio.h>
-#define print printf
+void os_print(const char *format, ...);
+#define print os_print
 
 #ifdef DEBUG
-  #define assert(expr) do { if (!(expr)) { print("%s %d: assert failed: %s\r\n", __FILE__, __LINE__, #expr); fflush(stdout); *(volatile int *)0 = 0; } } while (0)
+  #define assert(expr) do { if (!(expr)) { print("%s %d: assert failed: %s\r\n", __FILE__, __LINE__, #expr); *(volatile int *)0 = 0; } } while (0)
 #else
   #define assert(expr)
 #endif
@@ -442,11 +442,39 @@ String str8_from_str16(String16 str) {
 #if OS_WIN32
 
 #define WIN32_LEAN_AND_MEAN
+#define VC_EXTRALEAN
 #define NOMINMAX
 #include <windows.h>
 
 void os_init() {
+  AttachConsole(ATTACH_PARENT_PROCESS);
+
   reset_temporary_storage();
+}
+
+char *print_callback(const char *buf, void *user, int len) {
+  DWORD bytes_written;
+
+  HANDLE stdout = GetStdHandle(STD_OUTPUT_HANDLE);
+  WriteFile(stdout, buf, len, &bytes_written, 0);
+
+  return (char *)buf;
+}
+
+#define STB_SPRINTF_IMPLEMENTATION
+#include "stb_sprintf.h"
+
+// #define thread_local __declspec(thread)
+// #define thread_local __thread
+
+// @Robustness: make this thread-safe
+char output_buffer[2 * STB_SPRINTF_MIN];
+
+void os_print(const char *format, ...) {
+  va_list args;
+  va_start(args, format);
+  stbsp_vsprintfcb(print_callback, 0, output_buffer, format, args);
+  va_end(args);
 }
 
 String os_read_entire_file(String path) {
@@ -647,7 +675,9 @@ int main(int argc, char **argv) {
 
   auto cwd = os_get_current_directory();
 
-  print("%.*s\n", LIT(cwd));
+  print("cwd: %.*s\n", LIT(cwd));
+
+  print("cwd: %S\n", cwd);
 
   #if 0
   String contents = os_read_entire_file(S("C:/Users/nick/dev/myspace/src/stb_sprintf.h"));
