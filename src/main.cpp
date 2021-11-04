@@ -180,33 +180,6 @@ struct String {
 
 #define LIT(str) cast(int)str.count, cast(char *)str.data
 
-struct String16 {
-  u64 count;
-  u16 *data;
-};
-
-struct String32 {
-  u64 count;
-  u32 *data;
-};
-
-struct StringNode {
-  String it;
-  String *next;
-};
-
-struct StringList {
-  StringNode *first;
-  StringNode *last;
-  u32 count;
-  u32 size_in_bytes;
-};
-
-struct StringDecode {
-  u32 codepoint;
-  u8 size; // 1 - 4
-};
-
 String make_string(u8 *data, u64 count) {
   return String{count, data};
 }
@@ -222,7 +195,73 @@ char *cstr(String str) {
   return result;
 }
 
-StringDecode string_decode_utf8(u8 *str, u32 capacity) {
+bool StringEquals(String a, String b) {
+  return a.count == b.count && memory_equals(a.data, b.data, a.count);
+}
+
+bool StringStartsWith(String str, String prefix) {
+  return str.count >= prefix.count && memory_equals(str.data, prefix.data, prefix.count);
+}
+
+String Substring(String str, i64 start_index, i64 end_index) {
+  assert(start_index >= 0 && start_index <= str.count);
+  assert(end_index >= 0 && end_index <= str.count);
+  return make_string(str.data + start_index, cast(u64)(end_index - start_index));
+}
+
+String Substring(String str, i64 start_index) {
+  return Substring(str, start_index, str.count);
+}
+
+i64 StringIndex(String str, String search) {
+  for (i64 i = 0; i < str.count; i += 1) {
+    if (memory_equals(str.data + i, search.data, search.count)) {
+      return i;
+    }
+  }
+
+  return -1;
+}
+
+bool StringContains(String str, String search) {
+  return StringIndex(str, search) >= 0;
+}
+
+String StringJoin(String a, String b) {
+  u8 *data = (u8 *)talloc(a.count + b.count);
+
+  memory_copy(a.data, data + 0,       a.count);
+  memory_copy(b.data, data + a.count, b.count);
+
+  return make_string(data, a.count + b.count);
+}
+
+String StringJoin(String a, String b, String c) {
+  u8 *data = (u8 *)talloc(a.count + b.count + c.count);
+
+  memory_copy(a.data, data + 0,                 a.count);
+  memory_copy(b.data, data + a.count,           b.count);
+  memory_copy(c.data, data + a.count + b.count, c.count);
+
+  return make_string(data, a.count + b.count + c.count);
+}
+
+struct String16 {
+  u64 count;
+  u16 *data;
+};
+
+struct String32 {
+  u64 count;
+  u32 *data;
+};
+
+struct String_Decode {
+  u32 codepoint;
+  u8 size; // 1 - 4
+};
+
+String_Decode string_decode_utf8(u8 *str, u32 capacity) {
   static u8 high_bits_to_count[] = {
     1, 1, 1, 1, 1, 1, 1, 1,
     1, 1, 1, 1, 1, 1, 1, 1,
@@ -230,7 +269,7 @@ StringDecode string_decode_utf8(u8 *str, u32 capacity) {
     2, 2, 2, 2, 3, 3, 4, 0,
   };
 
-  StringDecode result = {'?', 1};
+  String_Decode result = {'?', 1};
 
   u8 count = high_bits_to_count[str[0] >> 3];
 
@@ -295,8 +334,8 @@ u32 string_encode_utf8(u8 *dest, u32 codepoint) {
   return size;
 }
 
-StringDecode string_decode_utf16(u16 *str, u32 capacity) {
-  StringDecode result = {'?', 1};
+String_Decode string_decode_utf16(u16 *str, u32 capacity) {
+  String_Decode result = {'?', 1};
 
   u16 x = str[0];
 
@@ -428,11 +467,93 @@ String str8_from_str16(String16 str) {
 
   result.count = at - result.data;
 
-  u64 alloc_size = str.count * 2;
-  u64 unused_size = (result.count - alloc_size);
+  u64 unused_size = (result.count - str.count);
   tpop(unused_size);
 
   return result;
+}
+
+struct String_Node {
+  String str;
+  String_Node *next;
+};
+
+struct String_List {
+  String_Node *first;
+  String_Node *last;
+  u32 count;
+  u32 size_in_bytes;
+};
+
+String_List MakeStringList() {
+  String_List result = {};
+  return result;
+}
+
+void AppendString(String_List *list, String str) {
+  if (!str.count) return;
+
+  String_Node *node = (String_Node *)talloc(sizeof(String_Node));
+  node->str = str;
+  node->next = null;
+
+  if (!list->first) list->first = node;
+  if (list->last)   list->last->next = node;
+
+  list->last = node;
+  list->count += 1;
+  list->size_in_bytes += str.count;
+}
+
+void AppendStringCopy(String_List *list, String str) {
+  u8 *data = (u8 *)talloc(str.count);
+  memory_copy(str.data, data, str.count);
+  String copy = make_string(data, str.count);
+
+  AppendString(list, copy);
+}
+
+#if 0
+void ReplaceString(String_List *list, String search, String replace) {
+  String_Node *it = list->first;
+
+  while (it) {
+    i64 index = StringIndex(it->str, search);
+    if (index >= 0) {
+      auto part1 = Substring(it->str, 0, index);
+      auto part2 = Substring(it->str, index + search.count);
+
+      it->str = part1;
+
+      String_Node *node2 = (String_Node *)talloc(sizeof(String_Node));
+      node2->str = part2;
+      node2->next = it->next;
+
+      String_Node *node1 = (String_Node *)talloc(sizeof(String_Node));
+      node1->str = replace;
+      node1->next = node2;
+
+      it->next = node1;
+    }
+
+    it = it->next;
+  }
+}
+#endif
+
+String ToString(String_List *list) {
+  u8 *data = (u8 *)talloc(list->size_in_bytes);
+
+  String_Node *it = list->first;
+  u8 *at = data;
+
+  while (it) {
+    memory_copy(it->str.data, at, it->str.count);
+    at += it->str.count;
+    it = it->next;
+  }
+
+  return make_string(data, list->size_in_bytes);
 }
 
 //
@@ -462,7 +583,7 @@ char *print_callback(const char *buf, void *user, int len) {
 }
 
 #define STB_SPRINTF_IMPLEMENTATION
-#include "stb_sprintf.h"
+#include "deps/stb_sprintf.h"
 
 // #define thread_local __declspec(thread)
 // #define thread_local __thread
@@ -678,6 +799,18 @@ int main(int argc, char **argv) {
   print("cwd: %.*s\n", LIT(cwd));
 
   print("cwd: %S\n", cwd);
+
+  auto list = MakeStringList();
+  AppendString(&list, S("Hello, world!"));
+  AppendString(&list, S("this is a __VAR__ test"));
+
+  auto str = ToString(&list);
+
+  print("%S\n", str);
+
+  auto bin = StringJoin(cwd, S("/bin"));
+  print("%S\n", bin);
+  //assert(os_make_directory(bin));
 
   #if 0
   String contents = os_read_entire_file(S("C:/Users/nick/dev/myspace/src/stb_sprintf.h"));
