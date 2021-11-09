@@ -195,6 +195,28 @@ char *cstr(String str) {
   return result;
 }
 
+i64 string_length(char *str) {
+  char *at = str;
+
+  while (*at != 0) {
+    at ++;
+  }
+
+  return at - str;
+}
+
+String string_from_cstr(char *data) {
+  String result = {};
+  i64 length = string_length(data);
+
+  if (length > 0) {
+    assert(length <= I64_MAX);
+    result = {(u64)length, (u8 *)data};
+  }
+
+  return result;
+}
+
 bool StringEquals(String a, String b) {
   return a.count == b.count && memory_equals(a.data, b.data, a.count);
 }
@@ -245,6 +267,62 @@ String StringJoin(String a, String b, String c) {
 
   return make_string(data, a.count + b.count + c.count);
 }
+
+#if 0
+#include <stdarg.h>
+
+extern "C" int stbsp_vsnprintf( char * buf, int count, char const * fmt, va_list va );
+
+i32 print_to_buffer(const char *format, char *data, i32 max_length, va_list args) {
+  return stbsp_vsnprintf(data, max_length, format, args);
+}
+
+char *cprint(const char *format, ...) {
+  va_list args;
+  va_start(args, format);
+
+  // @Robustness: will 4096 always be enough?
+  i32 max_length = 4096;
+  char *data = (char *)talloc(max_length);
+
+  i32 length = print_to_buffer(format, data, max_length, args);
+
+  va_end(args);
+
+  if (length <= 0) {
+    return null;
+  }
+
+   // NOTE(nick): Reserve space for the null character
+  if (max_length > 0) tpop((length + 1) - max_length);
+
+  return data;
+}
+
+String sprint(const char *format, ...) {
+  String result = {};
+
+  va_list args;
+  va_start(args, format);
+
+  {
+    // @Robustness: will 4096 always be enough?
+    i32 max_length = 4096;
+    char *data = (char *)talloc(max_length);
+
+    i32 length = print_to_buffer(format, data, max_length, args);
+
+    if (length > 0) {
+      if (max_length > 0) tpop(length - max_length);
+
+      result = make_string(cast(u8 *)data, length);
+    }
+  }
+
+  va_end(args);
+  return result;
+}
+#endif
 
 struct String16 {
   u64 count;
@@ -668,15 +746,65 @@ bool os_delete_file(String path) {
   return DeleteFileW(cast(WCHAR *)str.data);
 }
 
-bool os_make_directory(String path) {
+bool os_create_directory(String path) {
   String16 str = str16_from_str8(path);
   BOOL success = CreateDirectoryW(cast(WCHAR *)str.data, NULL);
   return success;
 }
 
-bool os_remove_directory(String path) {
+bool os_delete_directory(String path) {
   String16 str = str16_from_str8(path);
   BOOL success = RemoveDirectoryW(cast(WCHAR *)str.data);
+  return success;
+}
+
+bool os_delete_entire_directory(String path) {
+  char *find_path = (char *)StringJoin(path, S("\\*.*\0")).data;
+
+  bool success = true;
+
+  WIN32_FIND_DATA data;
+  HANDLE handle = FindFirstFile(find_path, &data);
+
+  if (handle != INVALID_HANDLE_VALUE) {
+    do {
+      String file_name = string_from_cstr(data.cFileName);
+
+      if (StringEquals(file_name, S(".")) || StringEquals(file_name, S(".."))) continue;
+
+      String file_path = StringJoin(path, S("/"), file_name);
+
+      if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+        success |= os_delete_entire_directory(file_path);
+      } else {
+        success |= os_delete_file(file_path);
+      }
+
+    } while(FindNextFile(handle, &data));
+  }
+
+  #if 0
+  if (handle != INVALID_HANDLE_VALUE) {
+    do {
+      String base_name = make_string(data.cFileName);
+      // Ignore . and .. "directories"
+      if (string_equals(base_name, S(".")) || string_equals(base_name, S(".."))) continue;
+
+      File_Info info;
+      info.is_directory = data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
+      info.base_name    = copy_string(base_name);
+      info.path         = path_join(path, base_name);
+      info.date         = ((u64)data.ftLastWriteTime.dwHighDateTime << (u64)32) | (u64)data.ftLastWriteTime.dwLowDateTime;
+      info.size         = ((u64)data.nFileSizeHigh << (u64)32) | (u64)data.nFileSizeLow;
+      files.push(info);
+    } while (FindNextFile(handle, &data));
+  }
+  #endif
+
+  FindClose(handle);
+
+  success |= os_delete_directory(path);
+
   return success;
 }
 
@@ -723,7 +851,7 @@ String os_get_current_directory() {
 }
 
 
-#endif
+#endif // OS_WIN32
 
 //
 // Main
@@ -800,17 +928,22 @@ int main(int argc, char **argv) {
 
   print("cwd: %S\n", cwd);
 
+  #if 0
   auto list = MakeStringList();
   AppendString(&list, S("Hello, world!"));
   AppendString(&list, S("this is a __VAR__ test"));
 
   auto str = ToString(&list);
-
   print("%S\n", str);
+  #endif
 
   auto bin = StringJoin(cwd, S("/bin"));
   print("%S\n", bin);
-  //assert(os_make_directory(bin));
+
+  os_delete_entire_directory(bin);
+  assert(os_create_directory(bin));
+
+  print("Done!\n");
 
   #if 0
   String contents = os_read_entire_file(S("C:/Users/nick/dev/myspace/src/stb_sprintf.h"));
