@@ -10,8 +10,8 @@
   #define null nullptr
 #endif
 
-void os_print(const char *format, ...);
-#define print os_print
+void OS_Print(const char *format, ...);
+#define print OS_Print
 
 #ifdef DEBUG
   #define assert(expr) do { if (!(expr)) { print("%s %d: assert failed: %s\r\n", __FILE__, __LINE__, #expr); *(volatile int *)0 = 0; } } while (0)
@@ -89,7 +89,7 @@ typedef double   f64;
 //
 // Memory
 //
-void *memory_copy(void *from, void *to, u64 size) {
+void *MemoryCopy(void *from, void *to, u64 size) {
   u8 *src = cast(u8 *)from;
   u8 *dest = cast(u8 *)to;
 
@@ -98,7 +98,7 @@ void *memory_copy(void *from, void *to, u64 size) {
   return to;
 }
 
-bool memory_equals(void *a_in, void *b_in, u64 size) {
+bool MemoryEquals(void *a_in, void *b_in, u64 size) {
   u8 *a = cast(u8 *)a_in;
   u8 *b = cast(u8 *)b_in;
 
@@ -111,12 +111,12 @@ bool memory_equals(void *a_in, void *b_in, u64 size) {
   return true;
 }
 
-void memory_set(void *ptr, u8 value, u64 size) {
+void MemorySet(void *ptr, u8 value, u64 size) {
   u8 *at = cast(u8 *)ptr;
   while (size--) { *at++ = value; }
 }
 
-void memory_zero(void *ptr, u64 size) {
+void MemoryZero(void *ptr, u64 size) {
   u8 *at = cast(u8 *)ptr;
   while (size--) { *at++ = 0; }
 }
@@ -160,7 +160,7 @@ void tpop(u64 size) {
 void reset_temporary_storage() {
   Arena *arena = &global_temporary_storage;
   arena->offset = 0;
-  memory_zero(arena->data, arena->size);
+  MemoryZero(arena->data, arena->size);
 }
 
 //
@@ -180,22 +180,22 @@ struct String {
 
 #define LIT(str) cast(int)str.count, cast(char *)str.data
 
-String make_string(u8 *data, u64 count) {
+String MakeString(u8 *data, u64 count) {
   return String{count, data};
 }
 
-char *cstr(String str) {
+char *ToCStr(String str) {
   if (!str.count || !str.data) {
     return NULL;
   }
 
   char *result = cast(char *)talloc(str.count + 1); // size for null character
-  memory_copy(str.data, result, str.count);
+  MemoryCopy(str.data, result, str.count);
   result[str.count] = 0;
   return result;
 }
 
-i64 string_length(char *str) {
+i64 CStrLength(char *str) {
   char *at = str;
 
   while (*at != 0) {
@@ -205,9 +205,9 @@ i64 string_length(char *str) {
   return at - str;
 }
 
-String string_from_cstr(char *data) {
+String StringFromCStr(char *data) {
   String result = {};
-  i64 length = string_length(data);
+  i64 length = CStrLength(data);
 
   if (length > 0) {
     assert(length <= I64_MAX);
@@ -218,17 +218,17 @@ String string_from_cstr(char *data) {
 }
 
 bool StringEquals(String a, String b) {
-  return a.count == b.count && memory_equals(a.data, b.data, a.count);
+  return a.count == b.count && MemoryEquals(a.data, b.data, a.count);
 }
 
 bool StringStartsWith(String str, String prefix) {
-  return str.count >= prefix.count && memory_equals(str.data, prefix.data, prefix.count);
+  return str.count >= prefix.count && MemoryEquals(str.data, prefix.data, prefix.count);
 }
 
 String Substring(String str, i64 start_index, i64 end_index) {
   assert(start_index >= 0 && start_index <= str.count);
   assert(end_index >= 0 && end_index <= str.count);
-  return make_string(str.data + start_index, cast(u64)(end_index - start_index));
+  return MakeString(str.data + start_index, cast(u64)(end_index - start_index));
 }
 
 String Substring(String str, i64 start_index) {
@@ -237,7 +237,7 @@ String Substring(String str, i64 start_index) {
 
 i64 StringIndex(String str, String search) {
   for (i64 i = 0; i < str.count; i += 1) {
-    if (memory_equals(str.data + i, search.data, search.count)) {
+    if (MemoryEquals(str.data + i, search.data, search.count)) {
       return i;
     }
   }
@@ -252,20 +252,20 @@ bool StringContains(String str, String search) {
 String StringJoin(String a, String b) {
   u8 *data = (u8 *)talloc(a.count + b.count);
 
-  memory_copy(a.data, data + 0,       a.count);
-  memory_copy(b.data, data + a.count, b.count);
+  MemoryCopy(a.data, data + 0,       a.count);
+  MemoryCopy(b.data, data + a.count, b.count);
 
-  return make_string(data, a.count + b.count);
+  return MakeString(data, a.count + b.count);
 }
 
 String StringJoin(String a, String b, String c) {
   u8 *data = (u8 *)talloc(a.count + b.count + c.count);
 
-  memory_copy(a.data, data + 0,                 a.count);
-  memory_copy(b.data, data + a.count,           b.count);
-  memory_copy(c.data, data + a.count + b.count, c.count);
+  MemoryCopy(a.data, data + 0,                 a.count);
+  MemoryCopy(b.data, data + a.count,           b.count);
+  MemoryCopy(c.data, data + a.count + b.count, c.count);
 
-  return make_string(data, a.count + b.count + c.count);
+  return MakeString(data, a.count + b.count + c.count);
 }
 
 #if 0
@@ -315,7 +315,7 @@ String sprint(const char *format, ...) {
     if (length > 0) {
       if (max_length > 0) tpop(length - max_length);
 
-      result = make_string(cast(u8 *)data, length);
+      result = MakeString(cast(u8 *)data, length);
     }
   }
 
@@ -339,7 +339,7 @@ struct String_Decode {
   u8 size; // 1 - 4
 };
 
-String_Decode string_decode_utf8(u8 *str, u32 capacity) {
+String_Decode StringDecodeUtf8(u8 *str, u32 capacity) {
   static u8 high_bits_to_count[] = {
     1, 1, 1, 1, 1, 1, 1, 1,
     1, 1, 1, 1, 1, 1, 1, 1,
@@ -379,7 +379,7 @@ String_Decode string_decode_utf8(u8 *str, u32 capacity) {
   return result;
 }
 
-u32 string_encode_utf8(u8 *dest, u32 codepoint) {
+u32 StringEncodeUtf8(u8 *dest, u32 codepoint) {
   u32 size = 0;
 
   if (codepoint <= 0x7f) {
@@ -412,7 +412,7 @@ u32 string_encode_utf8(u8 *dest, u32 codepoint) {
   return size;
 }
 
-String_Decode string_decode_utf16(u16 *str, u32 capacity) {
+String_Decode StringDecodeUtf16(u16 *str, u32 capacity) {
   String_Decode result = {'?', 1};
 
   u16 x = str[0];
@@ -431,7 +431,7 @@ String_Decode string_decode_utf16(u16 *str, u32 capacity) {
   return result;
 }
 
-u32 string_encode_utf16(u16 *dest, u32 codepoint) {
+u32 StringEncodeUtf16(u16 *dest, u32 codepoint) {
   u32 size = 0;
 
   if (codepoint < 0x10000) {
@@ -447,7 +447,7 @@ u32 string_encode_utf16(u16 *dest, u32 codepoint) {
   return size;
 }
 
-String32 str32_from_str8(String str) {
+String32 String32FromString(String str) {
   u32 *memory = cast(u32 *)talloc(str.count * sizeof(u32));
 
   u8 *p0 = str.data;
@@ -456,7 +456,7 @@ String32 str32_from_str8(String str) {
   u64 remaining = str.count;
 
   while (p0 < p1) {
-    auto decode = string_decode_utf8(p0, remaining);
+    auto decode = StringDecodeUtf8(p0, remaining);
 
     *at = decode.codepoint;
     p0 += decode.size;
@@ -474,7 +474,7 @@ String32 str32_from_str8(String str) {
   return result;
 }
 
-String str8_from_str32(String32 str) {
+String StringFromString32(String32 str) {
   u8 *memory = cast(u8 *)talloc(str.count * 4);
 
   u32 *p0 = str.data;
@@ -482,7 +482,7 @@ String str8_from_str32(String32 str) {
   u8 *at = memory;
 
   while (p0 < p1) {
-    auto size = string_encode_utf8(at, *p0);
+    auto size = StringEncodeUtf8(at, *p0);
 
     p0 += 1;
     at += size;
@@ -498,7 +498,7 @@ String str8_from_str32(String32 str) {
   return result;
 }
 
-String16 str16_from_str8(String str) {
+String16 String16FromString(String str) {
   u16 *memory = cast(u16 *)talloc((str.count + 1) * sizeof(u16));
 
   u8 *p0 = str.data;
@@ -507,8 +507,8 @@ String16 str16_from_str8(String str) {
   u64 remaining = str.count;
 
   while (p0 < p1) {
-    auto decode = string_decode_utf8(p0, remaining);
-    u32 encode_size = string_encode_utf16(at, decode.codepoint);
+    auto decode = StringDecodeUtf8(p0, remaining);
+    u32 encode_size = StringEncodeUtf16(at, decode.codepoint);
 
     at += encode_size;
     p0 += decode.size;
@@ -527,7 +527,7 @@ String16 str16_from_str8(String str) {
   return result;
 }
 
-String str8_from_str16(String16 str) {
+String StringFromString16(String16 str) {
   String result = {};
   result.data = cast(u8 *)talloc(str.count * 2);
 
@@ -536,8 +536,8 @@ String str8_from_str16(String16 str) {
   u8 *at = result.data;
 
   while (p0 < p1) {
-    auto decode = string_decode_utf16(p0, cast(u64)(p1 - p0));
-    u32 encode_size = string_encode_utf8(at, decode.codepoint);
+    auto decode = StringDecodeUtf16(p0, cast(u64)(p1 - p0));
+    u32 encode_size = StringEncodeUtf8(at, decode.codepoint);
 
     p0 += decode.size;
     at += encode_size;
@@ -585,39 +585,11 @@ void AppendString(String_List *list, String str) {
 
 void AppendStringCopy(String_List *list, String str) {
   u8 *data = (u8 *)talloc(str.count);
-  memory_copy(str.data, data, str.count);
-  String copy = make_string(data, str.count);
+  MemoryCopy(str.data, data, str.count);
+  String copy = MakeString(data, str.count);
 
   AppendString(list, copy);
 }
-
-#if 0
-void ReplaceString(String_List *list, String search, String replace) {
-  String_Node *it = list->first;
-
-  while (it) {
-    i64 index = StringIndex(it->str, search);
-    if (index >= 0) {
-      auto part1 = Substring(it->str, 0, index);
-      auto part2 = Substring(it->str, index + search.count);
-
-      it->str = part1;
-
-      String_Node *node2 = (String_Node *)talloc(sizeof(String_Node));
-      node2->str = part2;
-      node2->next = it->next;
-
-      String_Node *node1 = (String_Node *)talloc(sizeof(String_Node));
-      node1->str = replace;
-      node1->next = node2;
-
-      it->next = node1;
-    }
-
-    it = it->next;
-  }
-}
-#endif
 
 String ToString(String_List *list) {
   u8 *data = (u8 *)talloc(list->size_in_bytes);
@@ -626,12 +598,12 @@ String ToString(String_List *list) {
   u8 *at = data;
 
   while (it) {
-    memory_copy(it->str.data, at, it->str.count);
+    MemoryCopy(it->str.data, at, it->str.count);
     at += it->str.count;
     it = it->next;
   }
 
-  return make_string(data, list->size_in_bytes);
+  return MakeString(data, list->size_in_bytes);
 }
 
 //
@@ -645,7 +617,7 @@ String ToString(String_List *list) {
 #define NOMINMAX
 #include <windows.h>
 
-void os_init() {
+void OS_Init() {
   AttachConsole(ATTACH_PARENT_PROCESS);
 
   reset_temporary_storage();
@@ -669,18 +641,18 @@ char *print_callback(const char *buf, void *user, int len) {
 // @Robustness: make this thread-safe
 char output_buffer[2 * STB_SPRINTF_MIN];
 
-void os_print(const char *format, ...) {
+void OS_Print(const char *format, ...) {
   va_list args;
   va_start(args, format);
   stbsp_vsprintfcb(print_callback, 0, output_buffer, format, args);
   va_end(args);
 }
 
-String os_read_entire_file(String path) {
+String OS_ReadEntireFile(String path) {
   String result = {};
 
   // @Cleanup: do we always want to null-terminate String16 s?
-  String16 str = str16_from_str8(path);
+  String16 str = String16FromString(path);
   HANDLE handle = CreateFileW(cast(WCHAR *)str.data, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
 
   if (handle == INVALID_HANDLE_VALUE) {
@@ -712,8 +684,8 @@ String os_read_entire_file(String path) {
   return result;
 }
 
-bool os_write_entire_file(String path, String contents) {
-  String16 str = str16_from_str8(path);
+bool OS_WriteEntireFile(String path, String contents) {
+  String16 str = String16FromString(path);
   HANDLE handle = CreateFileW(cast(WCHAR *)str.data, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_ALWAYS, 0, 0);
 
   if (handle == INVALID_HANDLE_VALUE) {
@@ -741,24 +713,24 @@ bool os_write_entire_file(String path, String contents) {
   return true;
 }
 
-bool os_delete_file(String path) {
-  String16 str = str16_from_str8(path);
+bool OS_DeleteFile(String path) {
+  String16 str = String16FromString(path);
   return DeleteFileW(cast(WCHAR *)str.data);
 }
 
-bool os_create_directory(String path) {
-  String16 str = str16_from_str8(path);
+bool OS_CreateDirectory(String path) {
+  String16 str = String16FromString(path);
   BOOL success = CreateDirectoryW(cast(WCHAR *)str.data, NULL);
   return success;
 }
 
-bool os_delete_directory(String path) {
-  String16 str = str16_from_str8(path);
+bool OS_DeleteDirectory(String path) {
+  String16 str = String16FromString(path);
   BOOL success = RemoveDirectoryW(cast(WCHAR *)str.data);
   return success;
 }
 
-bool os_delete_entire_directory(String path) {
+bool OS_DeleteEntireDirectory(String path) {
   char *find_path = (char *)StringJoin(path, S("\\*.*\0")).data;
 
   bool success = true;
@@ -768,47 +740,29 @@ bool os_delete_entire_directory(String path) {
 
   if (handle != INVALID_HANDLE_VALUE) {
     do {
-      String file_name = string_from_cstr(data.cFileName);
+      String file_name = StringFromCStr(data.cFileName);
 
       if (StringEquals(file_name, S(".")) || StringEquals(file_name, S(".."))) continue;
 
       String file_path = StringJoin(path, S("/"), file_name);
 
       if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-        success |= os_delete_entire_directory(file_path);
+        success |= OS_DeleteEntireDirectory(file_path);
       } else {
-        success |= os_delete_file(file_path);
+        success |= OS_DeleteFile(file_path);
       }
 
     } while(FindNextFile(handle, &data));
   }
 
-  #if 0
-  if (handle != INVALID_HANDLE_VALUE) {
-    do {
-      String base_name = make_string(data.cFileName);
-      // Ignore . and .. "directories"
-      if (string_equals(base_name, S(".")) || string_equals(base_name, S(".."))) continue;
-
-      File_Info info;
-      info.is_directory = data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
-      info.base_name    = copy_string(base_name);
-      info.path         = path_join(path, base_name);
-      info.date         = ((u64)data.ftLastWriteTime.dwHighDateTime << (u64)32) | (u64)data.ftLastWriteTime.dwLowDateTime;
-      info.size         = ((u64)data.nFileSizeHigh << (u64)32) | (u64)data.nFileSizeLow;
-      files.push(info);
-    } while (FindNextFile(handle, &data));
-  }
-  #endif
-
   FindClose(handle);
 
-  success |= os_delete_directory(path);
+  success |= OS_DeleteDirectory(path);
 
   return success;
 }
 
-void normalize_path(String path) {
+void Win32NormalizePath(String path) {
   u8 *at = path.data;
 
   for (u64 i = 0; i < path.count; i++) {
@@ -820,7 +774,7 @@ void normalize_path(String path) {
   }
 }
 
-String os_get_executable_path() {
+String OS_GetExecutablePath() {
   WCHAR buffer[1024];
 
   DWORD length = GetModuleFileNameW(NULL, buffer, sizeof(buffer));
@@ -829,13 +783,13 @@ String os_get_executable_path() {
   }
 
   String16 temp = {length, cast(u16 *)buffer};
-  String result = str8_from_str16(temp);
-  normalize_path(result);
+  String result = StringFromString16(temp);
+  Win32NormalizePath(result);
 
   return result;
 }
 
-String os_get_current_directory() {
+String OS_GetCurrentDirectory() {
   WCHAR buffer[1024];
 
   DWORD length = GetCurrentDirectoryW(sizeof(buffer), buffer);
@@ -844,8 +798,8 @@ String os_get_current_directory() {
   }
 
   String16 temp = {length, cast(u16 *)buffer};
-  String result = str8_from_str16(temp);
-  normalize_path(result);
+  String result = StringFromString16(temp);
+  Win32NormalizePath(result);
 
   return result;
 }
@@ -862,36 +816,36 @@ void test() {
 
   {
     u8 buf1[] = {127};
-    auto res1 = string_decode_utf8(buf1, count_of(buf1));
+    auto res1 = StringDecodeUtf8(buf1, count_of(buf1));
     print("res1: %llu (%d)\n", res1.codepoint, res1.size);
 
     u8 buf2[] = {0xC2, 0xA2};
-    auto res2 = string_decode_utf8(buf2, count_of(buf2));
+    auto res2 = StringDecodeUtf8(buf2, count_of(buf2));
     print("res2: %llu (%d)\n", res2.codepoint, res2.size);
 
     u8 buf3[] = {0xE2, 0x82, 0xAC};
-    auto res3 = string_decode_utf8(buf3, count_of(buf3));
+    auto res3 = StringDecodeUtf8(buf3, count_of(buf3));
     print("res3: %llu (%d)\n", res3.codepoint, res3.size);
 
     u8 buf4[] = {0xF0, 0x90, 0x8D, 0x88};
-    auto res4 = string_decode_utf8(buf4, count_of(buf4));
+    auto res4 = StringDecodeUtf8(buf4, count_of(buf4));
     print("res4: %llu (%d)\n", res4.codepoint, res4.size);
 
     u8 enc1[4] = {};
-    string_encode_utf8(enc1, res1.codepoint);
-    assert(memory_equals(buf1, enc1, count_of(buf1)));
+    StringEncodeUtf8(enc1, res1.codepoint);
+    assert(MemoryEquals(buf1, enc1, count_of(buf1)));
 
     u8 enc2[4] = {};
-    string_encode_utf8(enc2, res2.codepoint);
-    assert(memory_equals(buf2, enc2, count_of(buf2)));
+    StringEncodeUtf8(enc2, res2.codepoint);
+    assert(MemoryEquals(buf2, enc2, count_of(buf2)));
 
     u8 enc3[4] = {};
-    string_encode_utf8(enc3, res3.codepoint);
-    assert(memory_equals(buf3, enc3, count_of(buf3)));
+    StringEncodeUtf8(enc3, res3.codepoint);
+    assert(MemoryEquals(buf3, enc3, count_of(buf3)));
 
     u8 enc4[4] = {};
-    string_encode_utf8(enc4, res4.codepoint);
-    assert(memory_equals(buf4, enc4, count_of(buf4)));
+    StringEncodeUtf8(enc4, res4.codepoint);
+    assert(MemoryEquals(buf4, enc4, count_of(buf4)));
     print("enc4: %X %X %X %X\n", enc4[0], enc4[1], enc4[2], enc4[3]);
   }
 
@@ -905,14 +859,14 @@ void test() {
 
     for (u32 i = 0; i < count_of(test_string_array); i ++) {
       auto it = test_string_array[i];
-      auto str32 = str32_from_str8(it);
-      auto str8 = str8_from_str32(str32);
+      auto str32 = String32FromString(it);
+      auto str8 = StringFromString32(str32);
 
       print("%.*s\n", LIT(it));
       print("%.*s\n", LIT(str8));
 
-      auto str16 = str16_from_str8(it);
-      auto str8_2 = str8_from_str16(str16);
+      auto str16 = String16FromString(it);
+      auto str8_2 = StringFromString16(str16);
 
       print("%.*s\n", LIT(str8_2));
     }
@@ -920,9 +874,9 @@ void test() {
 }
 
 int main(int argc, char **argv) {
-  os_init();
+  OS_Init();
 
-  auto cwd = os_get_current_directory();
+  auto cwd = OS_GetCurrentDirectory();
 
   print("cwd: %.*s\n", LIT(cwd));
 
@@ -940,15 +894,15 @@ int main(int argc, char **argv) {
   auto bin = StringJoin(cwd, S("/bin"));
   print("%S\n", bin);
 
-  os_delete_entire_directory(bin);
-  assert(os_create_directory(bin));
+  OS_DeleteEntireDirectory(bin);
+  assert(OS_CreateDirectory(bin));
 
   print("Done!\n");
 
   #if 0
-  String contents = os_read_entire_file(S("C:/Users/nick/dev/myspace/src/stb_sprintf.h"));
+  String contents = OS_ReadEntireFile(S("C:/Users/nick/dev/myspace/src/stb_sprintf.h"));
   print("%.*s\n", LIT(contents));
-  bool success = os_write_entire_file(S("C:/Users/nick/dev/myspace/bin/stb_sprintf.h"), contents);
+  bool success = OS_WriteEntireFile(S("C:/Users/nick/dev/myspace/bin/stb_sprintf.h"), contents);
   print("%d\n", success);
   #endif
 
