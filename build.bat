@@ -6,7 +6,6 @@ set project_root=%script_path%
 
 :: Config
 set build_folder=%project_root%\build\
-set bin_folder=%project_root%\bin\
 set src_file=%project_root%\src\main.cpp
 set exe_name=myspace.exe
 
@@ -18,6 +17,9 @@ pushd %build_folder%
 
   IF %errorlevel% NEQ 0 (popd && goto end)
 
+  rmdir /s /q bin
+  mkdir bin
+  mkdir bin\r
   .\%exe_name%
 popd
 

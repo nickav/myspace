@@ -27,6 +27,7 @@ void OS_Print(const char *format, ...);
 #define cast(type) (type)
 
 #define count_of(array) (sizeof(array) / sizeof((array)[0]))
+#define offset_of(Type, member) ((uptr) & (((Type *)0)->member))
 
 #define kilobytes(value) (value * 1024LL)
 #define megabytes(value) (value * 1024LL * 1024LL)
@@ -92,6 +93,7 @@ typedef double   f64;
 //
 // Memory
 //
+
 void *MemoryCopy(void *from, void *to, u64 size) {
   u8 *src = cast(u8 *)from;
   u8 *dest = cast(u8 *)to;
@@ -134,13 +136,66 @@ struct Arena {
   u64 size;
 };
 
-const u64 temporary_storage_size = megabytes(32);
-u8 temporary_storage_buffer[temporary_storage_size];
-Arena global_temporary_storage = {temporary_storage_buffer, 0, temporary_storage_size};
+struct Arena_Mark {
+  u64 offset;
+};
 
-void *talloc(u64 size) {
-  Arena *arena = &global_temporary_storage;
+Arena make_arena(u8 *data, u64 size) {
+  Arena result = {};
+  result.data = data;
+  result.size = size;
+  return result;
+}
+
+void arena_init(Arena *arena, u8 *data, u64 size) {
+  *arena = {};
+  arena->data = data;
+  arena->size = size;
+}
+
+void *arena_alloc_aligned(Arena *arena, u64 size, u64 alignment) {
   void *result = NULL;
+
+  assert(alignment >= 1);
+  // NOTE(nick): pow2
+  assert((alignment & ~(alignment - 1)) == alignment);
+
+  u64 base_address = (u64)(arena->data + arena->offset);
+  u64 align_offset = alignment - (base_address & (alignment - 1));
+  align_offset &= (alignment - 1);
+
+  size += align_offset;
+
+  if (arena->offset + size < arena->size) {
+    result = arena->data + arena->offset + align_offset;
+    arena->offset += size;
+
+    // NOTE(nick): make sure our data is aligned properly
+    assert((u64)result % alignment == 0);
+  }
+
+  return result;
+}
+
+void *arena_alloc(Arena *arena, u64 size) {
+  return arena_alloc_aligned(arena, size, 8);
+}
+
+void arena_pop(Arena *arena, u64 size) {
+  if (size > arena->offset) {
+    arena->offset = 0;
+  } else {
+    arena->offset -= size;
+  }
+}
+
+void arena_reset(Arena *arena) {
+  arena->offset = 0;
+  MemoryZero(arena->data, arena->size);
+}
+
+void *arena_push_size(Arena *arena, u64 size) {
+  void *result = 0;
 
   if (arena->offset + size < arena->size) {
     result = arena->data + arena->offset;
@@ -150,25 +205,44 @@ void *talloc(u64 size) {
   return result;
 }
 
-void tpop(u64 size) {
-  Arena *arena = &global_temporary_storage;
+#define push_struct(arena, Struct)  \
+  (Struct *)arena_push_size(arena, sizeof(Struct))
 
-  if (size > arena->offset) {
-    arena->offset = 0;
-  } else {
-    arena->offset -= size;
-  }
+#define push_array(arena, Struct, count)  \
+  (Struct *)arena_push_size(arena, count * sizeof(Struct))
+
+Arena_Mark arena_get_mark(Arena *arena) {
+  Arena_Mark result = {};
+  result.offset = arena->offset;
+  return result;
+}
+
+void arena_set_mark(Arena *arena, Arena_Mark mark) {
+  arena->offset = mark.offset;
+}
+
+const u64 temporary_storage_size = megabytes(32);
+static u8 temporary_storage_buffer[temporary_storage_size];
+static Arena global_temporary_storage = {temporary_storage_buffer, 0, temporary_storage_size};
+
+// @Robustness: support overflowing
+// @Robustness: support arbitrary temp storage size
+void *talloc(u64 size) {
+  return arena_alloc(&global_temporary_storage, size);
+}
+
+void tpop(u64 size) {
+  arena_pop(&global_temporary_storage, size);
 }
 
 void reset_temporary_storage() {
-  Arena *arena = &global_temporary_storage;
-  arena->offset = 0;
-  MemoryZero(arena->data, arena->size);
+  arena_reset(&global_temporary_storage);
 }
 
 //
 // String
 //
+
 struct String {
   u64 count;
   u8 *data;
@@ -271,35 +345,51 @@ String StringJoin(String a, String b, String c) {
   return MakeString(data, a.count + b.count + c.count);
 }
 
-#if 0
 #include <stdarg.h>
 
 extern "C" int stbsp_vsnprintf( char * buf, int count, char const * fmt, va_list va );
 
-i32 print_to_buffer(const char *format, char *data, i32 max_length, va_list args) {
+i32 print_to_buffer(char *data, i32 max_length, const char *format, va_list args) {
   return stbsp_vsnprintf(data, max_length, format, args);
 }
 
-char *cprint(const char *format, ...) {
-  va_list args;
-  va_start(args, format);
+String string_printv(Arena *arena, const char *format, va_list args) {
+  // in case we need to try a second time
+  va_list args2;
+  va_copy(args2, args);
 
-  // @Robustness: will 4096 always be enough?
-  i32 max_length = 4096;
-  char *data = (char *)talloc(max_length);
+  u64 buffer_size = 1024;
+  u8 *buffer = push_array(arena, u8, buffer_size);
 
-  i32 length = print_to_buffer(format, data, max_length, args);
+  String result = {};
+  u64 actual_size = print_to_buffer((char *)buffer, buffer_size, format, args);
 
-  va_end(args);
-
-  if (length <= 0) {
-    return null;
+  if (actual_size > 0) {
+    if (actual_size < buffer_size) {
+      arena_pop(arena, buffer_size - actual_size - 1);
+      result = MakeString(buffer, actual_size);
+    } else {
+      arena_pop(arena, buffer_size);
+      u8 *fixed_buffer = push_array(arena, u8, actual_size + 1);
+      u64 final_size = print_to_buffer((char *)fixed_buffer, actual_size + 1, format, args2);
+      result = MakeString(fixed_buffer, final_size);
+    }
   }
 
-   // NOTE(nick): Reserve space for the null character
-  if (max_length > 0) tpop((length + 1) - max_length);
+  va_end(args2);
 
-  return data;
+  return result;
+}
+
+String string_print(Arena *arena, const char *format, ...) {
+  String result = {};
+
+  va_list args;
+  va_start(args, format);
+  result = string_printv(arena, format, args);
+  va_end(args);
+
+  return result;
 }
 
 String sprint(const char *format, ...) {
@@ -307,28 +397,75 @@ String sprint(const char *format, ...) {
 
   va_list args;
   va_start(args, format);
-
-  {
-    // @Robustness: will 4096 always be enough?
-    i32 max_length = 4096;
-    char *data = (char *)talloc(max_length);
-
-    i32 length = print_to_buffer(format, data, max_length, args);
-
-    if (length > 0) {
-      if (max_length > 0) tpop(length - max_length);
-
-      result = MakeString(cast(u8 *)data, length);
-    }
-  }
-
+  result = string_printv(&global_temporary_storage, format, args);
   va_end(args);
+
   return result;
 }
-#endif
+
+//
+// String list
+//
+
+struct String_Node {
+  String str;
+  String_Node *next;
+};
+
+struct String_List {
+  String_Node *first;
+  String_Node *last;
+
+  u64 count;
+  u64 size_in_bytes;
+};
+
+String_List make_string_list() {
+  String_List result = {};
+  return result;
+}
+
+void string_list_push_explicit(String_List *list, String str, String_Node *node) {
+  node->str = str;
+  node->next = NULL;
+
+  if (!list->first) list->first = node;
+  if (list->last) list->last->next = node;
+  list->last = node;
+
+  list->count += 1;
+  list->size_in_bytes += str.count;
+}
+
+void string_list_push(Arena *arena, String_List *list, String str) {
+  String_Node *node = push_struct(arena, String_Node);
+  string_list_push_explicit(list, str, node);
+}
+
+String string_list_join(Arena *arena, String_List *list) {
+  u8 *data = push_array(arena, u8, list->size_in_bytes);
+
+  u8 *at = data;
+  for (String_Node *it = list->first; it != NULL; it = it->next) {
+    MemoryCopy(it->str.data, at, it->str.count);
+    at += it->str.count;
+  }
+
+  return MakeString(data, list->size_in_bytes);
+}
+
+void string_list_print(Arena *arena, String_List *list, const char *format, ...) {
+  va_list args;
+  va_start(args, format);
+  String result = string_printv(arena, format, args);
+  va_end(args);
+
+  string_list_push(arena, list, result);
+}
 
 //
 // String conversions
+//
 
 struct String16 {
   u64 count;
@@ -556,6 +693,58 @@ String StringFromString16(String16 str) {
 
   return result;
 }
+
+//
+// Functions
+//
+
+#define PI       3.14159265359f
+#define TAU      6.28318530717958647692f
+#define EPSILON  0.00001f
+#define EPSILON2 (EPSILON * EPSILON)
+
+#define SQRT_2 0.70710678118
+
+#define MIN(a, b) ((a < b) ? (a) : (b))
+#define MAX(a, b) ((a > b) ? (a) : (b))
+
+#define CLAMP(value, lower, upper) (MAX(MIN(value, upper), lower))
+#define SIGN(x) ((x > 0) - (x < 0))
+#define ABS(x) ((x < 0) ? -(x) : (x))
+
+inline i32 min(i32 a, i32 b) { return MIN(a, b); }
+inline u32 min(u32 a, u32 b) { return MIN(a, b); }
+inline u64 min(u64 a, u64 b) { return MIN(a, b); }
+inline f32 min(f32 a, f32 b) { return MIN(a, b); }
+inline f64 min(f64 a, f64 b) { return MIN(a, b); }
+
+inline i32 max(i32 a, i32 b) { return MAX(a, b); }
+inline u32 max(u32 a, u32 b) { return MAX(a, b); }
+inline u64 max(u64 a, u64 b) { return MAX(a, b); }
+inline f32 max(f32 a, f32 b) { return MAX(a, b); }
+inline f64 max(f64 a, f64 b) { return MAX(a, b); }
+
+inline i32 clamp(i32 value, i32 lower, i32 upper) { return MAX(MIN(value, upper), lower); }
+inline u32 clamp(u32 value, u32 lower, u32 upper) { return MAX(MIN(value, upper), lower); }
+inline u64 clamp(u64 value, u64 lower, u64 upper) { return MAX(MIN(value, upper), lower); }
+inline f32 clamp(f32 value, f32 lower, f32 upper) { return MAX(MIN(value, upper), lower); }
+inline f64 clamp(f64 value, f64 lower, f64 upper) { return MAX(MIN(value, upper), lower); }
+
+inline f32 lerp(f32 a, f32 b, f32 t) {
+  return (1 - t) * a + b * t;
+}
+
+inline f32 unlerp(f32 a, f32 b, f32 v) {
+  return (v - a) / (b - a);
+}
+
+inline f32 square(f32 x) {
+  return x * x;
+}
+
+//
+// Math
+//
 
 //
 // OS
