@@ -34,8 +34,9 @@ struct Html_Meta {
 };
 
 String EscapeSingleQuotes(String str) {
-  // @Incomplete
-  return str;
+  Arena *arena = &global_temporary_storage;
+  auto parts = string_list_split(arena, str, S("'"));
+  return string_list_join(arena, &parts, S("\\'"));
 }
 
 struct Asset_Hash {
@@ -241,9 +242,6 @@ bool WriteHtmlPage(String path, Html_Site &site, Html_Meta &meta, String body) {
   fprintf(file, "<meta name='theme-color' content='%.*s' />\n", LIT(site.theme_color));
   fprintf(file, "<meta name='msapplication-TileColor' content='%.*s' />\n", LIT(site.theme_color));
 
-  // schlosser
-  // 57, 114, 72, 144, 60, 120, 76, 152, 196, 96, 32, 16, 128
-
   // icons
   i32 image_sizes[] = {1050, 525, 263, 132, 16, 32, 48, 65, 57, 60, 72, 76, 96, 114, 128, 144, 152, 160, 167, 180, 196, 228};
   for (int i = 0; i < count_of(image_sizes); i ++) {
@@ -296,7 +294,7 @@ int main(int argc, char **argv)
 
   string_list_print(arena, &list, "Hello");
 
-  String body = string_list_join(arena, &list);
+  String body = string_list_join(arena, &list, {});
 
   print("%.*s\n", LIT(body));
 

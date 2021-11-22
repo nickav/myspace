@@ -312,6 +312,11 @@ String Substring(String str, i64 start_index) {
   return Substring(str, start_index, str.count);
 }
 
+String StringRange(u8 *at, u8 *end) {
+  assert(end >= at);
+  return MakeString(at, (end - at));
+}
+
 i64 StringIndex(String str, String search) {
   for (i64 i = 0; i < str.count; i += 1) {
     if (MemoryEquals(str.data + i, search.data, search.count)) {
@@ -442,16 +447,51 @@ void string_list_push(Arena *arena, String_List *list, String str) {
   string_list_push_explicit(list, str, node);
 }
 
-String string_list_join(Arena *arena, String_List *list) {
-  u8 *data = push_array(arena, u8, list->size_in_bytes);
+String_List string_list_split(Arena *arena, String str, String split) {
+  String_List result = {};
 
-  u8 *at = data;
-  for (String_Node *it = list->first; it != NULL; it = it->next) {
-    MemoryCopy(it->str.data, at, it->str.count);
-    at += it->str.count;
+  u8 *at = str.data;
+  u8 *word_first = at;
+  u8 *str_end = str.data + str.count;
+
+  for (; at < str_end; at += 1) {
+    if (*at == split.data[0])
+    {
+      if (StringStartsWith(StringRange(at, str_end), split)) {
+        String slice = StringRange(word_first, at);
+        string_list_push(arena, &result, slice);
+
+        at += split.count - 1;
+        word_first = at + 1;
+        continue;
+      }
+    }
   }
 
-  return MakeString(data, list->size_in_bytes);
+  String slice = StringRange(word_first, str_end);
+  string_list_push(arena, &result, slice);
+
+  return result;
+}
+
+String string_list_join(Arena *arena, String_List *list, String join) {
+  u64 size = join.count * (list->count - 1) + list->size_in_bytes;
+  u8 *data = push_array(arena, u8, size);
+
+  bool is_mid = false;
+  u8 *at = data;
+  for (String_Node *it = list->first; it != NULL; it = it->next) {
+    if (is_mid) {
+      MemoryCopy(join.data, at, join.count);
+      at += join.count;
+    }
+
+    MemoryCopy(it->str.data, at, it->str.count);
+    at += it->str.count;
+    is_mid = it->next != NULL;
+  }
+
+  return MakeString(data, size);
 }
 
 void string_list_print(Arena *arena, String_List *list, const char *format, ...) {
