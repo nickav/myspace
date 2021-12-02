@@ -190,13 +190,13 @@ Style *PushStyle() {
 
 String PushStringCopy(String src) {
   u8 *data = (u8 *)talloc(src.count);
-  MemoryCopy(src.data, data, src.count);
-  return MakeString(data, src.count);
+  memory_copy(src.data, data, src.count);
+  return make_string(data, src.count);
 }
 
 Style *PushStyleRule(String rule) {
   char *cn = ShortClassName(styles.count);
-  String selector = StringJoin(S("."), StringFromCStr(cn));
+  String selector = string_join(S("."), string_from_cstr(cn));
 
   auto style = PushStyle();
   style->selector = selector;
@@ -204,9 +204,16 @@ Style *PushStyleRule(String rule) {
   return style;
 }
 
+void ParsePostMeta(String contents) {
+  if (string_starts_with(contents, S("---"))) {
+    contents.data  += 3;
+    contents.count -= 3;
+  }
+}
+
 bool WriteHtmlPage(String path, Html_Site &site, Html_Meta &meta, String body) {
   FILE *file;
-  file = fopen(ToCStr(path), "w+");
+  file = fopen(string_to_cstr(path), "w+");
 
   // head
   fprintf(file, R""""(<!DOCTYPE html>
@@ -293,6 +300,7 @@ int main(int argc, char **argv)
   String_List list = make_string_list();
 
   string_list_print(arena, &list, "Hello");
+  string_list_print(arena, &list, ", Sailor!");
 
   String body = string_list_join(arena, &list, {});
 
@@ -309,10 +317,9 @@ int main(int argc, char **argv)
   }
   #endif
 
-  #if 0
-  auto content = OS_ReadEntireFile(S("C:/dev/myspace/assets/blog/post_0001.txt"));
+  auto content = os_read_entire_file(S("C:/dev/myspace/assets/blog/post_0001.txt"));
+  ParsePostMeta(content);
   print("%.*s\n", LIT(content));
-  #endif
 
   PushStyleRule(S("font-size:14px"));
 

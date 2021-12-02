@@ -13,8 +13,8 @@
   #define null nullptr
 #endif
 
-void OS_Print(const char *format, ...);
-#define print OS_Print
+void os_print(const char *format, ...);
+#define print os_print
 
 #ifndef assert
 #ifdef DEBUG
@@ -94,7 +94,7 @@ typedef double   f64;
 // Memory
 //
 
-void *MemoryCopy(void *from, void *to, u64 size) {
+void *memory_copy(void *from, void *to, u64 size) {
   u8 *src = cast(u8 *)from;
   u8 *dest = cast(u8 *)to;
 
@@ -103,7 +103,7 @@ void *MemoryCopy(void *from, void *to, u64 size) {
   return to;
 }
 
-bool MemoryEquals(void *a_in, void *b_in, u64 size) {
+bool memory_equals(void *a_in, void *b_in, u64 size) {
   u8 *a = cast(u8 *)a_in;
   u8 *b = cast(u8 *)b_in;
 
@@ -116,12 +116,12 @@ bool MemoryEquals(void *a_in, void *b_in, u64 size) {
   return true;
 }
 
-void MemorySet(void *ptr, u8 value, u64 size) {
+void memory_set(void *ptr, u8 value, u64 size) {
   u8 *at = cast(u8 *)ptr;
   while (size--) { *at++ = value; }
 }
 
-void MemoryZero(void *ptr, u64 size) {
+void memory_zero(void *ptr, u64 size) {
   u8 *at = cast(u8 *)ptr;
   while (size--) { *at++ = 0; }
 }
@@ -191,7 +191,7 @@ void arena_pop(Arena *arena, u64 size) {
 
 void arena_reset(Arena *arena) {
   arena->offset = 0;
-  MemoryZero(arena->data, arena->size);
+  memory_zero(arena->data, arena->size);
 }
 
 void *arena_push_size(Arena *arena, u64 size) {
@@ -257,22 +257,22 @@ struct String {
 
 #define LIT(str) (int)str.count, (char *)str.data
 
-String MakeString(u8 *data, u64 count) {
+String make_string(u8 *data, u64 count) {
   return String{count, data};
 }
 
-char *ToCStr(String str) {
+char *string_to_cstr(String str) {
   if (!str.count || !str.data) {
     return NULL;
   }
 
   char *result = cast(char *)talloc(str.count + 1); // size for null character
-  MemoryCopy(str.data, result, str.count);
+  memory_copy(str.data, result, str.count);
   result[str.count] = 0;
   return result;
 }
 
-i64 CStrLength(char *str) {
+i64 cstr_length(char *str) {
   char *at = str;
 
   while (*at != 0) {
@@ -282,9 +282,9 @@ i64 CStrLength(char *str) {
   return at - str;
 }
 
-String StringFromCStr(char *data) {
+String string_from_cstr(char *data) {
   String result = {};
-  i64 length = CStrLength(data);
+  i64 length = cstr_length(data);
 
   if (length > 0) {
     assert(length <= I64_MAX);
@@ -294,32 +294,32 @@ String StringFromCStr(char *data) {
   return result;
 }
 
-bool StringEquals(String a, String b) {
-  return a.count == b.count && MemoryEquals(a.data, b.data, a.count);
+bool string_equals(String a, String b) {
+  return a.count == b.count && memory_equals(a.data, b.data, a.count);
 }
 
-bool StringStartsWith(String str, String prefix) {
-  return str.count >= prefix.count && MemoryEquals(str.data, prefix.data, prefix.count);
+bool string_starts_with(String str, String prefix) {
+  return str.count >= prefix.count && memory_equals(str.data, prefix.data, prefix.count);
 }
 
-String Substring(String str, i64 start_index, i64 end_index) {
+String string_slice(String str, i64 start_index, i64 end_index) {
   assert(start_index >= 0 && start_index <= str.count);
   assert(end_index >= 0 && end_index <= str.count);
-  return MakeString(str.data + start_index, cast(u64)(end_index - start_index));
+  return make_string(str.data + start_index, cast(u64)(end_index - start_index));
 }
 
-String Substring(String str, i64 start_index) {
-  return Substring(str, start_index, str.count);
+String string_slice(String str, i64 start_index) {
+  return string_slice(str, start_index, str.count);
 }
 
-String StringRange(u8 *at, u8 *end) {
+String string_range(u8 *at, u8 *end) {
   assert(end >= at);
-  return MakeString(at, (end - at));
+  return make_string(at, (end - at));
 }
 
-i64 StringIndex(String str, String search) {
+i64 string_index(String str, String search) {
   for (i64 i = 0; i < str.count; i += 1) {
-    if (MemoryEquals(str.data + i, search.data, search.count)) {
+    if (memory_equals(str.data + i, search.data, search.count)) {
       return i;
     }
   }
@@ -327,27 +327,27 @@ i64 StringIndex(String str, String search) {
   return -1;
 }
 
-bool StringContains(String str, String search) {
-  return StringIndex(str, search) >= 0;
+bool string_contains(String str, String search) {
+  return string_index(str, search) >= 0;
 }
 
-String StringJoin(String a, String b) {
+String string_join(String a, String b) {
   u8 *data = (u8 *)talloc(a.count + b.count);
 
-  MemoryCopy(a.data, data + 0,       a.count);
-  MemoryCopy(b.data, data + a.count, b.count);
+  memory_copy(a.data, data + 0,       a.count);
+  memory_copy(b.data, data + a.count, b.count);
 
-  return MakeString(data, a.count + b.count);
+  return make_string(data, a.count + b.count);
 }
 
-String StringJoin(String a, String b, String c) {
+String string_join(String a, String b, String c) {
   u8 *data = (u8 *)talloc(a.count + b.count + c.count);
 
-  MemoryCopy(a.data, data + 0,                 a.count);
-  MemoryCopy(b.data, data + a.count,           b.count);
-  MemoryCopy(c.data, data + a.count + b.count, c.count);
+  memory_copy(a.data, data + 0,                 a.count);
+  memory_copy(b.data, data + a.count,           b.count);
+  memory_copy(c.data, data + a.count + b.count, c.count);
 
-  return MakeString(data, a.count + b.count + c.count);
+  return make_string(data, a.count + b.count + c.count);
 }
 
 #include <stdarg.h>
@@ -372,12 +372,12 @@ String string_printv(Arena *arena, const char *format, va_list args) {
   if (actual_size > 0) {
     if (actual_size < buffer_size) {
       arena_pop(arena, buffer_size - actual_size - 1);
-      result = MakeString(buffer, actual_size);
+      result = make_string(buffer, actual_size);
     } else {
       arena_pop(arena, buffer_size);
       u8 *fixed_buffer = push_array(arena, u8, actual_size + 1);
       u64 final_size = print_to_buffer((char *)fixed_buffer, actual_size + 1, format, args2);
-      result = MakeString(fixed_buffer, final_size);
+      result = make_string(fixed_buffer, final_size);
     }
   }
 
@@ -457,8 +457,8 @@ String_List string_list_split(Arena *arena, String str, String split) {
   for (; at < str_end; at += 1) {
     if (*at == split.data[0])
     {
-      if (StringStartsWith(StringRange(at, str_end), split)) {
-        String slice = StringRange(word_first, at);
+      if (string_starts_with(string_range(at, str_end), split)) {
+        String slice = string_range(word_first, at);
         string_list_push(arena, &result, slice);
 
         at += split.count - 1;
@@ -468,7 +468,7 @@ String_List string_list_split(Arena *arena, String str, String split) {
     }
   }
 
-  String slice = StringRange(word_first, str_end);
+  String slice = string_range(word_first, str_end);
   string_list_push(arena, &result, slice);
 
   return result;
@@ -482,16 +482,16 @@ String string_list_join(Arena *arena, String_List *list, String join) {
   u8 *at = data;
   for (String_Node *it = list->first; it != NULL; it = it->next) {
     if (is_mid) {
-      MemoryCopy(join.data, at, join.count);
+      memory_copy(join.data, at, join.count);
       at += join.count;
     }
 
-    MemoryCopy(it->str.data, at, it->str.count);
+    memory_copy(it->str.data, at, it->str.count);
     at += it->str.count;
     is_mid = it->next != NULL;
   }
 
-  return MakeString(data, size);
+  return make_string(data, size);
 }
 
 void string_list_print(Arena *arena, String_List *list, const char *format, ...) {
@@ -522,7 +522,7 @@ struct String_Decode {
   u8 size; // 1 - 4
 };
 
-String_Decode StringDecodeUtf8(u8 *str, u32 capacity) {
+String_Decode string_decode_utf8(u8 *str, u32 capacity) {
   static u8 high_bits_to_count[] = {
     1, 1, 1, 1, 1, 1, 1, 1,
     1, 1, 1, 1, 1, 1, 1, 1,
@@ -562,7 +562,7 @@ String_Decode StringDecodeUtf8(u8 *str, u32 capacity) {
   return result;
 }
 
-u32 StringEncodeUtf8(u8 *dest, u32 codepoint) {
+u32 string_encode_utf8(u8 *dest, u32 codepoint) {
   u32 size = 0;
 
   if (codepoint <= 0x7f) {
@@ -595,7 +595,7 @@ u32 StringEncodeUtf8(u8 *dest, u32 codepoint) {
   return size;
 }
 
-String_Decode StringDecodeUtf16(u16 *str, u32 capacity) {
+String_Decode string_decode_utf16(u16 *str, u32 capacity) {
   String_Decode result = {'?', 1};
 
   u16 x = str[0];
@@ -614,7 +614,7 @@ String_Decode StringDecodeUtf16(u16 *str, u32 capacity) {
   return result;
 }
 
-u32 StringEncodeUtf16(u16 *dest, u32 codepoint) {
+u32 string_encode_utf16(u16 *dest, u32 codepoint) {
   u32 size = 0;
 
   if (codepoint < 0x10000) {
@@ -630,7 +630,7 @@ u32 StringEncodeUtf16(u16 *dest, u32 codepoint) {
   return size;
 }
 
-String32 String32FromString(String str) {
+String32 string32_from_string(String str) {
   u32 *memory = cast(u32 *)talloc(str.count * sizeof(u32));
 
   u8 *p0 = str.data;
@@ -639,7 +639,7 @@ String32 String32FromString(String str) {
   u64 remaining = str.count;
 
   while (p0 < p1) {
-    auto decode = StringDecodeUtf8(p0, remaining);
+    auto decode = string_decode_utf8(p0, remaining);
 
     *at = decode.codepoint;
     p0 += decode.size;
@@ -657,7 +657,7 @@ String32 String32FromString(String str) {
   return result;
 }
 
-String StringFromString32(String32 str) {
+String string_from_string32(String32 str) {
   u8 *memory = cast(u8 *)talloc(str.count * 4);
 
   u32 *p0 = str.data;
@@ -665,7 +665,7 @@ String StringFromString32(String32 str) {
   u8 *at = memory;
 
   while (p0 < p1) {
-    auto size = StringEncodeUtf8(at, *p0);
+    auto size = string_encode_utf8(at, *p0);
 
     p0 += 1;
     at += size;
@@ -681,7 +681,7 @@ String StringFromString32(String32 str) {
   return result;
 }
 
-String16 String16FromString(String str) {
+String16 string16_from_string(String str) {
   u16 *memory = cast(u16 *)talloc((str.count + 1) * sizeof(u16));
 
   u8 *p0 = str.data;
@@ -690,8 +690,8 @@ String16 String16FromString(String str) {
   u64 remaining = str.count;
 
   while (p0 < p1) {
-    auto decode = StringDecodeUtf8(p0, remaining);
-    u32 encode_size = StringEncodeUtf16(at, decode.codepoint);
+    auto decode = string_decode_utf8(p0, remaining);
+    u32 encode_size = string_encode_utf16(at, decode.codepoint);
 
     at += encode_size;
     p0 += decode.size;
@@ -710,7 +710,7 @@ String16 String16FromString(String str) {
   return result;
 }
 
-String StringFromString16(String16 str) {
+String string_from_string16(String16 str) {
   String result = {};
   result.data = cast(u8 *)talloc(str.count * 2);
 
@@ -719,8 +719,8 @@ String StringFromString16(String16 str) {
   u8 *at = result.data;
 
   while (p0 < p1) {
-    auto decode = StringDecodeUtf16(p0, cast(u64)(p1 - p0));
-    u32 encode_size = StringEncodeUtf8(at, decode.codepoint);
+    auto decode = string_decode_utf16(p0, cast(u64)(p1 - p0));
+    u32 encode_size = string_encode_utf8(at, decode.codepoint);
 
     p0 += decode.size;
     at += encode_size;
@@ -752,17 +752,17 @@ String StringFromString16(String16 str) {
 #define SIGN(x) ((x > 0) - (x < 0))
 #define ABS(x) ((x < 0) ? -(x) : (x))
 
-inline i32 min(i32 a, i32 b) { return MIN(a, b); }
-inline u32 min(u32 a, u32 b) { return MIN(a, b); }
-inline u64 min(u64 a, u64 b) { return MIN(a, b); }
-inline f32 min(f32 a, f32 b) { return MIN(a, b); }
-inline f64 min(f64 a, f64 b) { return MIN(a, b); }
+inline i32 Min(i32 a, i32 b) { return MIN(a, b); }
+inline u32 Min(u32 a, u32 b) { return MIN(a, b); }
+inline u64 Min(u64 a, u64 b) { return MIN(a, b); }
+inline f32 Min(f32 a, f32 b) { return MIN(a, b); }
+inline f64 Min(f64 a, f64 b) { return MIN(a, b); }
 
-inline i32 max(i32 a, i32 b) { return MAX(a, b); }
-inline u32 max(u32 a, u32 b) { return MAX(a, b); }
-inline u64 max(u64 a, u64 b) { return MAX(a, b); }
-inline f32 max(f32 a, f32 b) { return MAX(a, b); }
-inline f64 max(f64 a, f64 b) { return MAX(a, b); }
+inline i32 Max(i32 a, i32 b) { return MAX(a, b); }
+inline u32 Max(u32 a, u32 b) { return MAX(a, b); }
+inline u64 Max(u64 a, u64 b) { return MAX(a, b); }
+inline f32 Max(f32 a, f32 b) { return MAX(a, b); }
+inline f64 Max(f64 a, f64 b) { return MAX(a, b); }
 
 inline i32 clamp(i32 value, i32 lower, i32 upper) { return MAX(MIN(value, upper), lower); }
 inline u32 clamp(u32 value, u32 lower, u32 upper) { return MAX(MIN(value, upper), lower); }
@@ -797,7 +797,7 @@ inline f32 square(f32 x) {
 #define NOMINMAX
 #include <windows.h>
 
-void OS_Init() {
+void os_init() {
   AttachConsole(ATTACH_PARENT_PROCESS);
 
   reset_temporary_storage();
@@ -821,18 +821,18 @@ char *print_callback(const char *buf, void *user, int len) {
 // @Robustness: make this thread-safe
 char output_buffer[2 * STB_SPRINTF_MIN];
 
-void OS_Print(const char *format, ...) {
+void os_print(const char *format, ...) {
   va_list args;
   va_start(args, format);
   stbsp_vsprintfcb(print_callback, 0, output_buffer, format, args);
   va_end(args);
 }
 
-String OS_ReadEntireFile(String path) {
+String os_read_entire_file(String path) {
   String result = {};
 
   // @Cleanup: do we always want to null-terminate String16 s?
-  String16 str = String16FromString(path);
+  String16 str = string16_from_string(path);
   HANDLE handle = CreateFileW(cast(WCHAR *)str.data, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
 
   if (handle == INVALID_HANDLE_VALUE) {
@@ -864,8 +864,8 @@ String OS_ReadEntireFile(String path) {
   return result;
 }
 
-bool OS_WriteEntireFile(String path, String contents) {
-  String16 str = String16FromString(path);
+bool os_write_entire_file(String path, String contents) {
+  String16 str = string16_from_string(path);
   HANDLE handle = CreateFileW(cast(WCHAR *)str.data, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_ALWAYS, 0, 0);
 
   if (handle == INVALID_HANDLE_VALUE) {
@@ -893,25 +893,25 @@ bool OS_WriteEntireFile(String path, String contents) {
   return true;
 }
 
-bool OS_DeleteFile(String path) {
-  String16 str = String16FromString(path);
+bool os_delete_file(String path) {
+  String16 str = string16_from_string(path);
   return DeleteFileW(cast(WCHAR *)str.data);
 }
 
-bool OS_CreateDirectory(String path) {
-  String16 str = String16FromString(path);
+bool os_create_directory(String path) {
+  String16 str = string16_from_string(path);
   BOOL success = CreateDirectoryW(cast(WCHAR *)str.data, NULL);
   return success;
 }
 
-bool OS_DeleteDirectory(String path) {
-  String16 str = String16FromString(path);
+bool os_delete_directory(String path) {
+  String16 str = string16_from_string(path);
   BOOL success = RemoveDirectoryW(cast(WCHAR *)str.data);
   return success;
 }
 
-bool OS_DeleteEntireDirectory(String path) {
-  char *find_path = (char *)StringJoin(path, S("\\*.*\0")).data;
+bool os_delete_entire_directory(String path) {
+  char *find_path = (char *)string_join(path, S("\\*.*\0")).data;
 
   bool success = true;
 
@@ -920,16 +920,16 @@ bool OS_DeleteEntireDirectory(String path) {
 
   if (handle != INVALID_HANDLE_VALUE) {
     do {
-      String file_name = StringFromCStr(data.cFileName);
+      String file_name = string_from_cstr(data.cFileName);
 
-      if (StringEquals(file_name, S(".")) || StringEquals(file_name, S(".."))) continue;
+      if (string_equals(file_name, S(".")) || string_equals(file_name, S(".."))) continue;
 
-      String file_path = StringJoin(path, S("/"), file_name);
+      String file_path = string_join(path, S("/"), file_name);
 
       if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-        success |= OS_DeleteEntireDirectory(file_path);
+        success |= os_delete_entire_directory(file_path);
       } else {
-        success |= OS_DeleteFile(file_path);
+        success |= os_delete_file(file_path);
       }
 
     } while(FindNextFile(handle, &data));
@@ -937,12 +937,12 @@ bool OS_DeleteEntireDirectory(String path) {
 
   FindClose(handle);
 
-  success |= OS_DeleteDirectory(path);
+  success |= os_delete_directory(path);
 
   return success;
 }
 
-void Win32NormalizePath(String path) {
+void win32_normalize_path(String path) {
   u8 *at = path.data;
 
   for (u64 i = 0; i < path.count; i++) {
@@ -954,7 +954,7 @@ void Win32NormalizePath(String path) {
   }
 }
 
-String OS_GetExecutablePath() {
+String os_get_executable_path() {
   WCHAR buffer[1024];
 
   DWORD length = GetModuleFileNameW(NULL, buffer, sizeof(buffer));
@@ -963,13 +963,13 @@ String OS_GetExecutablePath() {
   }
 
   String16 temp = {length, cast(u16 *)buffer};
-  String result = StringFromString16(temp);
-  Win32NormalizePath(result);
+  String result = string_from_string16(temp);
+  win32_normalize_path(result);
 
   return result;
 }
 
-String OS_GetCurrentDirectory() {
+String os_get_current_directory() {
   WCHAR buffer[1024];
 
   DWORD length = GetCurrentDirectoryW(sizeof(buffer), buffer);
@@ -978,8 +978,8 @@ String OS_GetCurrentDirectory() {
   }
 
   String16 temp = {length, cast(u16 *)buffer};
-  String result = StringFromString16(temp);
-  Win32NormalizePath(result);
+  String result = string_from_string16(temp);
+  win32_normalize_path(result);
 
   return result;
 }
