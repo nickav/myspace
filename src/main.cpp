@@ -21,7 +21,8 @@
 #include "deps/stb_image_write.h"
 
 /* TODO(nick):
-  - process image assets (resize)
+  - create site look / homepage
+  - 404 page
   - create blog files structure
 */
 
@@ -221,11 +222,72 @@ Style *PushStyleRule(String rule) {
   return style;
 }
 
-void ParsePostMeta(String contents) {
-  if (string_starts_with(contents, S("---"))) {
-    contents.data  += 3;
-    contents.count -= 3;
+struct Post {
+  String title;
+  String description;
+  String date;
+  String image;
+
+  String body;
+};
+
+// NOTE(nick): order should match Post fields
+static String post_keywords[] = {S("title:"), S("description:"), S("date:"), S("image:")};
+
+Post parse_post(String contents) {
+  Post result = {};
+
+  String at = contents;
+
+  if (string_starts_with(at, S("---"))) {
+    at.data  += 3;
+    at.count -= 3;
+
+    while (at.count > 0) {
+      if (char_is_whitespace(at.data[0])) {
+        at.count -= 1;
+        at.data += 1;
+        continue;
+      }
+
+      if (string_starts_with(at, S("---"))) {
+        at.count -= 3;
+        at.data += 3;
+
+        while (at.count > 0 && char_is_whitespace(at.data[0])) {
+          at.count -= 1;
+          at.data += 1;
+        }
+
+        break;
+      }
+
+      for (int i = 0; i < count_of(post_keywords); i ++) {
+        auto keyword = post_keywords[i];
+
+        if (string_starts_with(at, keyword)) {
+          i64 index = string_index(at, S("\n"));
+          if (index >= 0) {
+            String it = string_trim_whitespace(string_slice(at, keyword.count, index));
+
+            assert(i < offset_of(Post, body) / sizeof(String));
+            ((String *)&result)[i] = it;
+          }
+
+          at.data += index;
+          at.count -= index;
+          continue;
+        }
+      }
+
+      at.count -= 1;
+      at.data += 1;
+    }
   }
+
+  result.body = at;
+
+  return result;
 }
 
 Image parse_image(String image) {
@@ -271,11 +333,38 @@ Image find_image_asset(Html_Site *site, String asset_name) {
   return image;
 }
 
-String write_image_size_variant(Html_Site *site, String asset_name, Image image, u32 size) {
+int stbir_resize_uint8_pixel_perfect(     const unsigned char *input_pixels , int input_w , int input_h , int input_stride_in_bytes,
+                                           unsigned char *output_pixels, int output_w, int output_h, int output_stride_in_bytes,
+                                     int num_channels)
+{
+    return stbir__resize_arbitrary(NULL, input_pixels, input_w, input_h, input_stride_in_bytes,
+        output_pixels, output_w, output_h, output_stride_in_bytes,
+        0,0,1,1,NULL,num_channels,-1,0, STBIR_TYPE_UINT8, STBIR_FILTER_BOX, STBIR_FILTER_BOX,
+        STBIR_EDGE_CLAMP, STBIR_EDGE_CLAMP, STBIR_COLORSPACE_LINEAR);
+}
+
+String write_image_size_variant(Html_Site *site, String asset_name, Image image, u32 width, u32 height, bool want_pixel_perfect) {
   auto name = path_strip_extension(asset_name);
   auto ext = path_get_extension(asset_name);
 
-  auto hash = ComputeAssetHash(image.pixels, image.width * image.height * sizeof(u32), DefaultSeed);
+  Image resized_image = {};
+  if (image.width == width && image.height == height) {
+    resized_image = image;
+  } else {
+    u8 *output_pixels = (u8 *)malloc(width * height * sizeof(u32));
+
+    if (want_pixel_perfect) {
+      stbir_resize_uint8_pixel_perfect(image.pixels, image.width, image.height, 0, output_pixels, width, height, 0, 4);
+    } else {
+      stbir_resize_uint8(image.pixels, image.width, image.height, 0, output_pixels, width, height, 0, 4);
+    }
+
+    resized_image.width = width;
+    resized_image.height = height;
+    resized_image.pixels = output_pixels;
+  }
+
+  auto hash = ComputeAssetHash(resized_image.pixels, resized_image.width * resized_image.height * sizeof(u32), DefaultSeed);
   u8 *bytes = (u8 *)&hash.value;
 
   auto postfix = sprint("_%02x%02x%02x%02x%02x%02x%02x%02x", bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7]);
@@ -284,7 +373,7 @@ String write_image_size_variant(Html_Site *site, String asset_name, Image image,
   auto relative_path = path_join(S("r"), variant_name);
 
   auto out_path = path_join(site->output_dir, relative_path);
-  write_image(out_path, image);
+  write_image(out_path, resized_image);
 
   return relative_path;
 }
@@ -328,12 +417,11 @@ bool WriteHtmlPage(String path, Html_Site &site, Html_Meta &meta, String body) {
   fprintf(file, "<meta name='msapplication-TileColor' content='%.*s' />\n", LIT(site.theme_color));
 
   // icons
-  //i32 image_sizes[] = {1050, 525, 263, 132, 16, 32, 48, 64, 57, 60, 72, 76, 96, 114, 120, 128, 144, 152, 160, 167, 180, 196, 228};
-  i32 image_sizes[] = {16, 32, 64};
+  i32 image_sizes[] = {1050, 525, 263, 132, 16, 32, 48, 64, 57, 60, 72, 76, 96, 114, 120, 128, 144, 152, 160, 167, 180, 196, 228};
   Image logo = find_image_asset(&site, S("logo.png"));
   for (int i = 0; i < count_of(image_sizes); i ++) {
     i32 size = image_sizes[i];
-    String asset_path = write_image_size_variant(&site, S("logo.png"), logo, size);
+    String asset_path = write_image_size_variant(&site, S("logo.png"), logo, size, size, true);
 
     fprintf(file, "<link rel='icon' type='image/png' href='%.*s' sizes='%dx%d' />\n", LIT(asset_path), size, size);
     fprintf(file, "<link rel='apple-touch-icon' sizes='%dx%d' href='%.*s' />\n", size, size, LIT(asset_path));
@@ -373,12 +461,6 @@ int main(int argc, char **argv)
   for (int i = 0; i < 26 * 3; i += 1) {
     print("%s\n", cn(i));
   }
-  #endif
-
-  #if 0
-  auto content = os_read_entire_file(S("C:/dev/myspace/assets/blog/post_0001.txt"));
-  ParsePostMeta(content);
-  print("%.*s\n", LIT(content));
   #endif
 
   //PushStyleRule(S("font-size:14px"));
@@ -423,8 +505,15 @@ int main(int argc, char **argv)
   write_image(path_join(resource_dir, S("logo2.png")), image);
   #endif
 
-  String out = S("bin/index.html");
-  WriteHtmlPage(out, site, meta, S("Hello, Sailor!"));
+  //String out = S("bin/index.html");
+  //WriteHtmlPage(out, site, meta, S("Hello, Sailor!"));
+
+  auto content = os_read_entire_file(path_join(asset_dir, S("blog/post_0001.txt")));
+  auto post = parse_post(content);
+  print("title: %S\n", post.title);
+  print("description: %S\n", post.description);
+  print("date: %S\n", post.date);
+  print("body: %S\n", post.body);
 
   //stbir_resize_uint8(pixels);
 

@@ -27,7 +27,7 @@ void os_print(const char *format, ...);
 #define cast(type) (type)
 
 #define count_of(array) (sizeof(array) / sizeof((array)[0]))
-#define offset_of(Type, member) ((uptr) & (((Type *)0)->member))
+#define offset_of(Type, member) ((uint64_t) & (((Type *)0)->member))
 
 #define kilobytes(value) (value * 1024LL)
 #define megabytes(value) (value * 1024LL * 1024LL)
@@ -303,6 +303,10 @@ bool string_starts_with(String str, String prefix) {
   return str.count >= prefix.count && memory_equals(str.data, prefix.data, prefix.count);
 }
 
+bool string_ends_with(String str, String postfix) {
+  return str.count >= postfix.count && memory_equals(str.data + (str.count - postfix.count), postfix.data, postfix.count);
+}
+
 String string_slice(String str, i64 start_index, i64 end_index) {
   assert(start_index >= 0 && start_index <= str.count);
   assert(end_index >= 0 && end_index <= str.count);
@@ -318,8 +322,8 @@ String string_range(u8 *at, u8 *end) {
   return make_string(at, (end - at));
 }
 
-i64 string_index(String str, String search) {
-  for (i64 i = 0; i < str.count; i += 1) {
+i64 string_index(String str, String search, i64 start_index = 0) {
+  for (i64 i = start_index; i < str.count; i += 1) {
     if (memory_equals(str.data + i, search.data, search.count)) {
       return i;
     }
@@ -360,6 +364,30 @@ String string_join(String a, String b, String c, String d) {
   memory_copy(d.data, data + a.count + b.count + c.count, d.count);
 
   return make_string(data, a.count + b.count + c.count + d.count);
+}
+
+void string_advance(String *str, u64 amount) {
+  assert(str->count >= amount);
+
+  str->count -= amount;
+  str->data  += amount;
+}
+
+bool char_is_whitespace(char ch) {
+  return ch == ' ' || ch == '\n' || ch == '\t' || ch == '\r';
+}
+
+String string_trim_whitespace(String str) {
+  while (str.count > 0 && char_is_whitespace(str.data[0])) {
+    str.data ++;
+    str.count --;
+  }
+
+  while (str.count > 0 && char_is_whitespace(str.data[str.count - 1])) {
+    str.count --;
+  }
+
+  return str;
 }
 
 #include <stdarg.h>
@@ -473,6 +501,21 @@ String path_get_extension(String path) {
 
   return {};
 }
+
+String to_string(bool x) { if (x) return S("true"); return S("false"); }
+String to_string(char x) { return sprint("%c", x); }
+String to_string(char *x) { return string_from_cstr(x); }
+String to_string(i8 x)  { return sprint("%d", x); }
+String to_string(u8 x)  { return sprint("%d", x); }
+String to_string(i16 x) { return sprint("%d", x); }
+String to_string(u16 x) { return sprint("%d", x); }
+String to_string(i32 x) { return sprint("%d", x); }
+String to_string(u32 x) { return sprint("%d", x); }
+String to_string(i64 x) { return sprint("%d", x); }
+String to_string(u64 x) { return sprint("%llu", x); }
+String to_string(f32 x) { return sprint("%.2f", x); }
+String to_string(f64 x) { return sprint("%.4f", x); }
+String to_string(String x) { return x; }
 
 //
 // String list
