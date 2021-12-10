@@ -4,17 +4,25 @@
 
 #include "nja.h"
 
-//#define STB_IMAGE_IMPLEMENTATION
-//#include "deps/stb_image.h"
+#define STBI_NO_BMP
+#define STBI_NO_GIF
+#define STBI_NO_PSD
+#define STBI_NO_PIC
+#define STBI_NO_PNM
+#define STBI_NO_HDR
+#define STBI_NO_TGA
+#define STB_IMAGE_IMPLEMENTATION
+#include "deps/stb_image.h"
+
+#define STB_IMAGE_RESIZE_IMPLEMENTATION
+#include "deps/stb_image_resize.h"
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "deps/stb_image_write.h"
 
 /* TODO(nick):
   - process image assets (resize)
   - create blog files structure
-
-  Bonus fun:
-  - custom PNG parser
-  - custom JPEG parser
-  - custom image resizer (downsample only)
 */
 
 struct Html_Site {
@@ -23,6 +31,9 @@ struct Html_Site {
   String locale;
   String logo_path;
   String theme_color;
+
+  String asset_dir;
+  String output_dir;
 };
 
 struct Html_Meta {
@@ -33,11 +44,11 @@ struct Html_Meta {
   String og_type;
 };
 
-String EscapeSingleQuotes(String str) {
-  Arena *arena = &global_temporary_storage;
-  auto parts = string_list_split(arena, str, S("'"));
-  return string_list_join(arena, &parts, S("\\'"));
-}
+struct Image {
+  u32 width;
+  u32 height;
+  u8 *pixels;
+};
 
 struct Asset_Hash {
   __m128i value;
@@ -115,6 +126,12 @@ static bool AssetHashesAreEqual(Asset_Hash a, Asset_Hash b) {
   __m128i compare = _mm_cmpeq_epi32(a.value, b.value);
   int result = _mm_movemask_epi8(compare) == 0xffff;
   return result;
+}
+
+String EscapeSingleQuotes(String str) {
+  Arena *arena = &temporary_allocator;
+  auto parts = string_list_split(arena, str, S("'"));
+  return string_list_join(arena, &parts, S("\\'"));
 }
 
 static void fprint_bytes(FILE *handle, char *bytes, int length)
@@ -211,6 +228,67 @@ void ParsePostMeta(String contents) {
   }
 }
 
+Image parse_image(String image) {
+  Image result = {};
+
+  int width = 0;
+  int height = 0;
+  int channels = 0;
+  result.pixels = stbi_load_from_memory(image.data, image.count, &width, &height, &channels, 4);
+
+  result.width = (u32) width;
+  result.height = (u32) height;
+
+  return result;
+}
+
+Image read_image(String image_path) {
+  auto raw_image = os_read_entire_file(image_path);
+  auto image = parse_image(raw_image);
+  return image;
+}
+
+bool write_image(String image_path, Image image) {
+  String buf = {};
+
+  int length = 0;
+  u8 *data = stbi_write_png_to_mem(image.pixels, 0, image.width, image.height, 4, &length);
+  buf.data = data;
+  buf.count = (u32)length;
+
+  return os_write_entire_file(image_path, buf);
+}
+
+Image find_image_asset(Html_Site *site, String asset_name) {
+  auto src_path = path_join(site->asset_dir, asset_name);
+  auto raw_image = os_read_entire_file(src_path);
+
+  if (!raw_image.data) {
+    return {};
+  }
+
+  auto image = parse_image(raw_image);
+  return image;
+}
+
+String write_image_size_variant(Html_Site *site, String asset_name, Image image, u32 size) {
+  auto name = path_strip_extension(asset_name);
+  auto ext = path_get_extension(asset_name);
+
+  auto hash = ComputeAssetHash(image.pixels, image.width * image.height * sizeof(u32), DefaultSeed);
+  u8 *bytes = (u8 *)&hash.value;
+
+  auto postfix = sprint("_%02x%02x%02x%02x%02x%02x%02x%02x", bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7]);
+  auto variant_name = string_join(name, postfix, ext);
+
+  auto relative_path = path_join(S("r"), variant_name);
+
+  auto out_path = path_join(site->output_dir, relative_path);
+  write_image(out_path, image);
+
+  return relative_path;
+}
+
 bool WriteHtmlPage(String path, Html_Site &site, Html_Meta &meta, String body) {
   FILE *file;
   file = fopen(string_to_cstr(path), "w+");
@@ -250,11 +328,15 @@ bool WriteHtmlPage(String path, Html_Site &site, Html_Meta &meta, String body) {
   fprintf(file, "<meta name='msapplication-TileColor' content='%.*s' />\n", LIT(site.theme_color));
 
   // icons
-  i32 image_sizes[] = {1050, 525, 263, 132, 16, 32, 48, 65, 57, 60, 72, 76, 96, 114, 128, 144, 152, 160, 167, 180, 196, 228};
+  //i32 image_sizes[] = {1050, 525, 263, 132, 16, 32, 48, 64, 57, 60, 72, 76, 96, 114, 120, 128, 144, 152, 160, 167, 180, 196, 228};
+  i32 image_sizes[] = {16, 32, 64};
+  Image logo = find_image_asset(&site, S("logo.png"));
   for (int i = 0; i < count_of(image_sizes); i ++) {
     i32 size = image_sizes[i];
-    fprintf(file, "<link rel='icon' type='image/png' href='/r/logo.png' sizes='%dx%d' />\n", size, size);
-    fprintf(file, "<link rel='apple-touch-icon' href='/r/logo.png' sizes='%dx%d' />\n", size, size);
+    String asset_path = write_image_size_variant(&site, S("logo.png"), logo, size);
+
+    fprintf(file, "<link rel='icon' type='image/png' href='%.*s' sizes='%dx%d' />\n", LIT(asset_path), size, size);
+    fprintf(file, "<link rel='apple-touch-icon' sizes='%dx%d' href='%.*s' />\n", size, size, LIT(asset_path));
   }
   
   // styles
@@ -283,30 +365,6 @@ bool WriteHtmlPage(String path, Html_Site &site, Html_Meta &meta, String body) {
 
 int main(int argc, char **argv)
 {
-  Html_Site site = {};
-  site.name = S("Nick Aversano");
-  site.twitter_handle = S("@nickaversano");
-  site.locale = S("en_us");
-  site.theme_color = S("#000000");
-
-  Html_Meta meta = {};
-  meta.title = S("Nick Aversano");
-  meta.description = S("A place to put things.");
-  meta.image_url = S("/");
-  meta.url = S("http://nickav.co");
-  meta.og_type = S("site");
-
-  Arena *arena = &global_temporary_storage;
-  String_List list = make_string_list();
-
-  string_list_print(arena, &list, "Hello");
-  string_list_print(arena, &list, ", Sailor!");
-
-  String body = string_list_join(arena, &list, {});
-
-  print("%.*s\n", LIT(body));
-
-
   #if 0
   unsigned char buf[16] = {0};
   auto hash = ComputeAssetHash(buf, count_of(buf), DefaultSeed);
@@ -317,14 +375,58 @@ int main(int argc, char **argv)
   }
   #endif
 
+  #if 0
   auto content = os_read_entire_file(S("C:/dev/myspace/assets/blog/post_0001.txt"));
   ParsePostMeta(content);
   print("%.*s\n", LIT(content));
+  #endif
 
-  PushStyleRule(S("font-size:14px"));
+  //PushStyleRule(S("font-size:14px"));
+
+  auto build_dir = os_get_executable_directory();
+  auto project_root = path_dirname(build_dir);
+  auto asset_dir = path_join(project_root, S("assets"));
+
+  auto output_dir = path_join(build_dir, S("bin"));
+  auto resource_dir = path_join(output_dir, S("r"));
+
+  print("output_dir: %S\n", output_dir);
+
+
+  Html_Site site = {};
+  site.name = S("Nick Aversano");
+  site.twitter_handle = S("@nickaversano");
+  site.locale = S("en_us");
+  site.theme_color = S("#000000");
+
+  site.asset_dir = asset_dir;
+  site.output_dir = output_dir;
+
+  Html_Meta meta = {};
+  meta.title = S("Nick Aversano");
+  meta.description = S("A place to put things.");
+  meta.image_url = S("/");
+  meta.url = S("http://nickav.co");
+  meta.og_type = S("site");
+
+
+  //os_delete_entire_directory(output_dir);
+  //os_create_directory(output_dir);
+  //os_create_directory(resource_dir);
+
+  #if 0
+  auto image_path = path_join(asset_dir, S("logo.png"));
+
+  auto raw_image = os_read_entire_file(image_path);
+  auto image = parse_image(raw_image);
+
+  write_image(path_join(resource_dir, S("logo2.png")), image);
+  #endif
 
   String out = S("bin/index.html");
   WriteHtmlPage(out, site, meta, S("Hello, Sailor!"));
+
+  //stbir_resize_uint8(pixels);
 
   return 0;
 }

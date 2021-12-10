@@ -194,7 +194,7 @@ void arena_reset(Arena *arena) {
   memory_zero(arena->data, arena->size);
 }
 
-void *arena_push_size(Arena *arena, u64 size) {
+void *arena_push(Arena *arena, u64 size) {
   void *result = 0;
 
   if (arena->offset + size < arena->size) {
@@ -206,10 +206,10 @@ void *arena_push_size(Arena *arena, u64 size) {
 }
 
 #define push_struct(arena, Struct)  \
-  (Struct *)arena_push_size(arena, sizeof(Struct))
+  (Struct *)arena_push(arena, sizeof(Struct))
 
 #define push_array(arena, Struct, count)  \
-  (Struct *)arena_push_size(arena, count * sizeof(Struct))
+  (Struct *)arena_push(arena, count * sizeof(Struct))
 
 Arena_Mark arena_get_mark(Arena *arena) {
   Arena_Mark result = {};
@@ -221,22 +221,23 @@ void arena_set_mark(Arena *arena, Arena_Mark mark) {
   arena->offset = mark.offset;
 }
 
+// @Incomplete: allow this to be overrided
 const u64 temporary_storage_size = megabytes(32);
 static u8 temporary_storage_buffer[temporary_storage_size];
-static Arena global_temporary_storage = {temporary_storage_buffer, 0, temporary_storage_size};
+static Arena temporary_allocator = {temporary_storage_buffer, 0, temporary_storage_size};
 
 // @Robustness: support overflowing
 // @Robustness: support arbitrary temp storage size
 void *talloc(u64 size) {
-  return arena_alloc(&global_temporary_storage, size);
+  return arena_alloc(&temporary_allocator, size);
 }
 
 void tpop(u64 size) {
-  arena_pop(&global_temporary_storage, size);
+  arena_pop(&temporary_allocator, size);
 }
 
 void reset_temporary_storage() {
-  arena_reset(&global_temporary_storage);
+  arena_reset(&temporary_allocator);
 }
 
 //
@@ -350,6 +351,17 @@ String string_join(String a, String b, String c) {
   return make_string(data, a.count + b.count + c.count);
 }
 
+String string_join(String a, String b, String c, String d) {
+  u8 *data = (u8 *)talloc(a.count + b.count + c.count);
+
+  memory_copy(a.data, data + 0,                           a.count);
+  memory_copy(b.data, data + a.count,                     b.count);
+  memory_copy(c.data, data + a.count + b.count,           c.count);
+  memory_copy(d.data, data + a.count + b.count + c.count, d.count);
+
+  return make_string(data, a.count + b.count + c.count + d.count);
+}
+
 #include <stdarg.h>
 
 extern "C" int stbsp_vsnprintf( char * buf, int count, char const * fmt, va_list va );
@@ -402,10 +414,64 @@ String sprint(const char *format, ...) {
 
   va_list args;
   va_start(args, format);
-  result = string_printv(&global_temporary_storage, format, args);
+  result = string_printv(&temporary_allocator, format, args);
   va_end(args);
 
   return result;
+}
+
+// NOTE(nick): The path_* functions assume that we are working with a normalized (unix-like) path string.
+// All paths should be normalized at the OS interface level, so we can make that assumption here.
+
+String path_join(String path1, String path2) {
+  return sprint("%.*s/%.*s", path1.count, path1.data, path2.count, path2.data);
+}
+
+String path_join(String path1, String path2, String path3) {
+  return sprint("%.*s/%.*s/%.*s", path1.count, path1.data, path2.count, path2.data, path3.count, path3.data);
+}
+
+String path_dirname(String filename) {
+  for (i32 i = filename.count - 1; i >= 0; i--) {
+    if (filename.data[i] == '/') {
+      return string_slice(filename, 0, i);
+    }
+  }
+
+  return sprint("./");
+}
+
+String path_filename(String path) {
+  for (i32 i = path.count - 1; i >= 0; i--) {
+    char ch = path[i];
+    if (ch == '/') {
+      return string_slice(path, i + 1, path.count);
+    }
+  }
+
+  return path;
+}
+
+String path_strip_extension(String path) {
+  for (i32 i = path.count - 1; i >= 0; i--) {
+    char ch = path[i];
+    if (ch == '.') {
+      return string_slice(path, 0, i);
+    }
+  }
+
+  return path;
+}
+
+String path_get_extension(String path) {
+  for (i32 i = path.count - 1; i >= 0; i--) {
+    char ch = path[i];
+    if (ch == '.') {
+      return string_slice(path, i, path.count);
+    }
+  }
+
+  return {};
 }
 
 //
@@ -812,6 +878,7 @@ char *print_callback(const char *buf, void *user, int len) {
   return (char *)buf;
 }
 
+// TODO: remove this from this file
 #define STB_SPRINTF_IMPLEMENTATION
 #include "deps/stb_sprintf.h"
 
@@ -828,7 +895,7 @@ void os_print(const char *format, ...) {
   va_end(args);
 }
 
-String os_read_entire_file(String path) {
+String os_read_entire_file(Arena *arena, String path) {
   String result = {};
 
   // @Cleanup: do we always want to null-terminate String16 s?
@@ -845,7 +912,7 @@ String os_read_entire_file(String path) {
 
   u64 size = ((cast(u64)hi_size) << 32) | cast(u64)lo_size;
 
-  result.data = cast(u8 *)talloc(size + 1); // space for null character.
+  result.data = cast(u8 *)arena_alloc(arena, size + 1); // space for null character.
   result.data[size] = 0;
   result.count = size;
 
@@ -862,6 +929,10 @@ String os_read_entire_file(String path) {
   CloseHandle(handle);
 
   return result;
+}
+
+String os_read_entire_file(String path) {
+  return os_read_entire_file(&temporary_allocator, path);
 }
 
 bool os_write_entire_file(String path, String contents) {
@@ -986,6 +1057,11 @@ String os_get_current_directory() {
 
 
 #endif // OS_WIN32
+
+String os_get_executable_directory() {
+  String result = os_get_executable_path();
+  return path_dirname(result);
+}
 
 
 #endif // NJA_H
