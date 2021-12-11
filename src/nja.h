@@ -262,15 +262,19 @@ String make_string(u8 *data, u64 count) {
   return String{count, data};
 }
 
-char *string_to_cstr(String str) {
+char *string_to_cstr(Arena *arena, String str) {
   if (!str.count || !str.data) {
     return NULL;
   }
 
-  char *result = cast(char *)talloc(str.count + 1); // size for null character
+  char *result = push_array(arena, char, str.count + 1); // size for null character
   memory_copy(str.data, result, str.count);
   result[str.count] = 0;
   return result;
+}
+
+char *string_to_cstr(String str) {
+  return string_to_cstr(&temporary_allocator, str);
 }
 
 i64 cstr_length(char *str) {
@@ -336,8 +340,15 @@ bool string_contains(String str, String search) {
   return string_index(str, search) >= 0;
 }
 
-String string_join(String a, String b) {
-  u8 *data = (u8 *)talloc(a.count + b.count);
+String string_copy(Arena *arena, String other) {
+  u8 *data = push_array(arena, u8, other.count);
+  String copy = make_string(data, other.count);
+  memory_copy(other.data, copy.data, other.count);
+  return copy;
+}
+
+String string_join(Arena *arena, String a, String b) {
+  u8 *data = push_array(arena, u8, a.count + b.count);
 
   memory_copy(a.data, data + 0,       a.count);
   memory_copy(b.data, data + a.count, b.count);
@@ -345,8 +356,12 @@ String string_join(String a, String b) {
   return make_string(data, a.count + b.count);
 }
 
-String string_join(String a, String b, String c) {
-  u8 *data = (u8 *)talloc(a.count + b.count + c.count);
+String string_join(String a, String b) {
+  return string_join(&temporary_allocator, a, b);
+}
+
+String string_join(Arena *arena, String a, String b, String c) {
+  u8 *data = push_array(arena, u8, a.count + b.count + c.count);
 
   memory_copy(a.data, data + 0,                 a.count);
   memory_copy(b.data, data + a.count,           b.count);
@@ -355,15 +370,8 @@ String string_join(String a, String b, String c) {
   return make_string(data, a.count + b.count + c.count);
 }
 
-String string_join(String a, String b, String c, String d) {
-  u8 *data = (u8 *)talloc(a.count + b.count + c.count);
-
-  memory_copy(a.data, data + 0,                           a.count);
-  memory_copy(b.data, data + a.count,                     b.count);
-  memory_copy(c.data, data + a.count + b.count,           c.count);
-  memory_copy(d.data, data + a.count + b.count + c.count, d.count);
-
-  return make_string(data, a.count + b.count + c.count + d.count);
+String string_join(String a, String b, String c) {
+  return string_join(&temporary_allocator, a, b, c);
 }
 
 void string_advance(String *str, u64 amount) {
@@ -437,16 +445,22 @@ String string_print(Arena *arena, const char *format, ...) {
   return result;
 }
 
-String sprint(const char *format, ...) {
+char *cstr_print(Arena *arena, const char *format, ...) {
   String result = {};
 
   va_list args;
   va_start(args, format);
-  result = string_printv(&temporary_allocator, format, args);
+  result = string_printv(arena, format, args);
   va_end(args);
 
-  return result;
+  char *null_terminator = (char *)arena_push(arena, 1);
+  *null_terminator = 0;
+
+  return (char *)result.data;
 }
+
+#define sprint(...) string_print(&temporary_allocator, __VA_ARGS__)
+#define cprint(...) cstr_print(&temporary_allocator, __VA_ARGS__)
 
 // NOTE(nick): The path_* functions assume that we are working with a normalized (unix-like) path string.
 // All paths should be normalized at the OS interface level, so we can make that assumption here.
@@ -471,7 +485,7 @@ String path_dirname(String filename) {
 
 String path_filename(String path) {
   for (i32 i = path.count - 1; i >= 0; i--) {
-    char ch = path[i];
+    char ch = path.data[i];
     if (ch == '/') {
       return string_slice(path, i + 1, path.count);
     }
@@ -482,7 +496,7 @@ String path_filename(String path) {
 
 String path_strip_extension(String path) {
   for (i32 i = path.count - 1; i >= 0; i--) {
-    char ch = path[i];
+    char ch = path.data[i];
     if (ch == '.') {
       return string_slice(path, 0, i);
     }
@@ -493,7 +507,7 @@ String path_strip_extension(String path) {
 
 String path_get_extension(String path) {
   for (i32 i = path.count - 1; i >= 0; i--) {
-    char ch = path[i];
+    char ch = path.data[i];
     if (ch == '.') {
       return string_slice(path, i, path.count);
     }
@@ -739,8 +753,8 @@ u32 string_encode_utf16(u16 *dest, u32 codepoint) {
   return size;
 }
 
-String32 string32_from_string(String str) {
-  u32 *memory = cast(u32 *)talloc(str.count * sizeof(u32));
+String32 string32_from_string(Arena *arena, String str) {
+  u32 *memory = push_array(arena, u32, str.count);;
 
   u8 *p0 = str.data;
   u8 *p1 = str.data + str.count;
@@ -760,14 +774,14 @@ String32 string32_from_string(String str) {
   u64 string_count = cast(u64)(at - memory);
   u64 unused_count = string_count - alloc_count;
 
-  tpop(unused_count * sizeof(u32));
+  arena_pop(arena, unused_count * sizeof(u32));
 
   String32 result = {string_count, memory};
   return result;
 }
 
-String string_from_string32(String32 str) {
-  u8 *memory = cast(u8 *)talloc(str.count * 4);
+String string_from_string32(Arena *arena, String32 str) {
+  u8 *memory = push_array(arena, u8, str.count * 4);
 
   u32 *p0 = str.data;
   u32 *p1 = str.data + str.count;
@@ -784,14 +798,14 @@ String string_from_string32(String32 str) {
   u64 string_count = cast(u64)(at - memory);
   u64 unused_count = alloc_count - string_count;
 
-  tpop(unused_count);
+  arena_pop(arena, unused_count);
 
   String result = {string_count, memory};
   return result;
 }
 
-String16 string16_from_string(String str) {
-  u16 *memory = cast(u16 *)talloc((str.count + 1) * sizeof(u16));
+String16 string16_from_string(Arena *arena, String str) {
+  u16 *memory = push_array(arena, u16, str.count + 1);
 
   u8 *p0 = str.data;
   u8 *p1 = str.data + str.count;
@@ -813,15 +827,15 @@ String16 string16_from_string(String str) {
   u64 string_count = cast(u64)(at - memory);
   u64 unused_count = alloc_count - string_count - 1;
 
-  tpop(unused_count * sizeof(u16));
+  arena_pop(arena, unused_count * sizeof(u16));
 
   String16 result = {string_count, memory};
   return result;
 }
 
-String string_from_string16(String16 str) {
+String string_from_string16(Arena *arena, String16 str) {
   String result = {};
-  result.data = cast(u8 *)talloc(str.count * 2);
+  result.data = push_array(arena, u8, str.count * 2);
 
   u16 *p0 = str.data;
   u16 *p1 = str.data + str.count;
@@ -838,7 +852,7 @@ String string_from_string16(String16 str) {
   result.count = at - result.data;
 
   u64 unused_size = (result.count - str.count);
-  tpop(unused_size);
+  arena_pop(arena, unused_size);
 
   return result;
 }
@@ -873,21 +887,21 @@ inline u64 Max(u64 a, u64 b) { return MAX(a, b); }
 inline f32 Max(f32 a, f32 b) { return MAX(a, b); }
 inline f64 Max(f64 a, f64 b) { return MAX(a, b); }
 
-inline i32 clamp(i32 value, i32 lower, i32 upper) { return MAX(MIN(value, upper), lower); }
-inline u32 clamp(u32 value, u32 lower, u32 upper) { return MAX(MIN(value, upper), lower); }
-inline u64 clamp(u64 value, u64 lower, u64 upper) { return MAX(MIN(value, upper), lower); }
-inline f32 clamp(f32 value, f32 lower, f32 upper) { return MAX(MIN(value, upper), lower); }
-inline f64 clamp(f64 value, f64 lower, f64 upper) { return MAX(MIN(value, upper), lower); }
+inline i32 Clamp(i32 value, i32 lower, i32 upper) { return MAX(MIN(value, upper), lower); }
+inline u32 Clamp(u32 value, u32 lower, u32 upper) { return MAX(MIN(value, upper), lower); }
+inline u64 Clamp(u64 value, u64 lower, u64 upper) { return MAX(MIN(value, upper), lower); }
+inline f32 Clamp(f32 value, f32 lower, f32 upper) { return MAX(MIN(value, upper), lower); }
+inline f64 Clamp(f64 value, f64 lower, f64 upper) { return MAX(MIN(value, upper), lower); }
 
-inline f32 lerp(f32 a, f32 b, f32 t) {
+inline f32 Lerp(f32 a, f32 b, f32 t) {
   return (1 - t) * a + b * t;
 }
 
-inline f32 unlerp(f32 a, f32 b, f32 v) {
+inline f32 Unlerp(f32 a, f32 b, f32 v) {
   return (v - a) / (b - a);
 }
 
-inline f32 square(f32 x) {
+inline f32 Square(f32 x) {
   return x * x;
 }
 
@@ -898,6 +912,25 @@ inline f32 square(f32 x) {
 //
 // OS
 //
+
+struct File {
+  void *handle;
+  bool has_errors;
+  u64 offset;
+};
+
+struct File_Info {
+  u64 date;
+  u64 size;
+  String name;
+  bool is_directory;
+};
+
+enum File_Mode {
+  FILE_MODE_READ   = 0x1,
+  FILE_MODE_WRITE  = 0x2,
+  FILE_MODE_APPEND = 0x4,
+};
 
 #if OS_WIN32
 
@@ -942,7 +975,7 @@ String os_read_entire_file(Arena *arena, String path) {
   String result = {};
 
   // @Cleanup: do we always want to null-terminate String16 s?
-  String16 str = string16_from_string(path);
+  String16 str = string16_from_string(arena, path);
   HANDLE handle = CreateFileW(cast(WCHAR *)str.data, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
 
   if (handle == INVALID_HANDLE_VALUE) {
@@ -979,7 +1012,7 @@ String os_read_entire_file(String path) {
 }
 
 bool os_write_entire_file(String path, String contents) {
-  String16 str = string16_from_string(path);
+  String16 str = string16_from_string(&temporary_allocator, path);
   HANDLE handle = CreateFileW(cast(WCHAR *)str.data, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_ALWAYS, 0, 0);
 
   if (handle == INVALID_HANDLE_VALUE) {
@@ -1008,18 +1041,18 @@ bool os_write_entire_file(String path, String contents) {
 }
 
 bool os_delete_file(String path) {
-  String16 str = string16_from_string(path);
+  String16 str = string16_from_string(&temporary_allocator, path);
   return DeleteFileW(cast(WCHAR *)str.data);
 }
 
 bool os_create_directory(String path) {
-  String16 str = string16_from_string(path);
+  String16 str = string16_from_string(&temporary_allocator, path);
   BOOL success = CreateDirectoryW(cast(WCHAR *)str.data, NULL);
   return success;
 }
 
 bool os_delete_directory(String path) {
-  String16 str = string16_from_string(path);
+  String16 str = string16_from_string(&temporary_allocator, path);
   BOOL success = RemoveDirectoryW(cast(WCHAR *)str.data);
   return success;
 }
@@ -1056,6 +1089,61 @@ bool os_delete_entire_directory(String path) {
   return success;
 }
 
+struct Scan_Result {
+  File_Info *files;
+  u32 count;
+};
+
+Scan_Result os_scan_directory(Arena *arena, String path) {
+  Scan_Result result = {};
+
+  char *find_path = cstr_print(arena, "%.*s\\*.*", LIT(path));
+
+  // @Speed: we could avoid doing this twice by assuming a small-ish number to start and only re-scanning if we're wrong
+  // but then that wastes a bunch of memory
+  // and is this block actually slow?
+  u32 count = 0; 
+  {
+    WIN32_FIND_DATA data;
+    HANDLE handle = FindFirstFile(find_path, &data);
+
+    if (handle != INVALID_HANDLE_VALUE) {
+      do {
+        count += 1;
+      } while (FindNextFile(handle, &data));
+    }
+
+    FindClose(handle);
+  }
+
+  result.files = push_array(arena, File_Info, count);
+
+  WIN32_FIND_DATA data;
+  HANDLE handle = FindFirstFile(find_path, &data);
+
+  if (handle != INVALID_HANDLE_VALUE) {
+    do {
+      String base_name = string_from_cstr(data.cFileName);
+      // Ignore . and .. "directories"
+      if (string_equals(base_name, S(".")) || string_equals(base_name, S(".."))) continue;
+
+      File_Info *info = &result.files[result.count];
+      result.count += 1;
+
+      *info = {};
+      info->name         = string_copy(arena, base_name);
+      info->date         = ((u64)data.ftLastWriteTime.dwHighDateTime << (u64)32) | (u64)data.ftLastWriteTime.dwLowDateTime;
+      info->size         = ((u64)data.nFileSizeHigh << (u64)32) | (u64)data.nFileSizeLow;
+      info->is_directory = data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
+
+    } while (FindNextFile(handle, &data));
+  }
+
+  FindClose(handle);
+
+  return result;
+}
+
 void win32_normalize_path(String path) {
   u8 *at = path.data;
 
@@ -1077,7 +1165,7 @@ String os_get_executable_path() {
   }
 
   String16 temp = {length, cast(u16 *)buffer};
-  String result = string_from_string16(temp);
+  String result = string_from_string16(&temporary_allocator, temp);
   win32_normalize_path(result);
 
   return result;
@@ -1092,7 +1180,7 @@ String os_get_current_directory() {
   }
 
   String16 temp = {length, cast(u16 *)buffer};
-  String result = string_from_string16(temp);
+  String result = string_from_string16(&temporary_allocator, temp);
   win32_normalize_path(result);
 
   return result;
@@ -1105,6 +1193,457 @@ String os_get_executable_directory() {
   String result = os_get_executable_path();
   return path_dirname(result);
 }
+
+//
+// Array
+//
+
+#if 0
+
+#define Array_Foreach(item, array)                                             \
+  for (i64 index = 0;                                                          \
+       index < cast(i64)(array).count ? (item) = (array).data[index], true : false; \
+       index++)
+
+#define Array_Foreach_Pointer(item, array)                                     \
+  for (i64 index = 0;                                                          \
+       index < cast(i64)(array).count ? (item) = &(array).data[index], true : false; \
+       index++)
+
+#define Array_Foreach_Reverse(item, array)                                     \
+  for (i64 index = cast(i64)(array).count - 1;                             \
+       index >= 0 ? (item) = (array).data[index], true : false;                \
+       index--)
+
+#define Array_Foreach_Pointer_Reverse(item, array)                             \
+  for (i64 index = cast(i64)(array).count - 1;                             \
+       index >= 0 ? (item) = &(array).data[index], true : false;               \
+       index--)
+
+#define For(array) for (auto it : array)
+
+#define Forv(array, it) for (auto it : array)
+
+#define Forp(array)   \
+  auto CONCAT(__array, __LINE__) = (array);   \
+  for (auto it = CONCAT(__array, __LINE__).begin_ptr(); it < CONCAT(__array, __LINE__).end_ptr(); it++)
+
+#define For_Index(array) for (i64 index = 0; index < cast(i64)(array).count; index++)
+
+#define Fori For_Index
+
+#define For_Index_Reverse(array)                                               \
+  for (i64 index = cast(i64)(array).count - 1; index >= 0; index--)
+
+#define Array_Remove_Current_Item_Unordered(array)  \
+  do { (array).remove_unordered(index); index --; } while(0)
+
+template <typename T> struct Array;
+
+template <typename T>
+struct Array_Iterator {
+  const Array<T> *array;
+  u64 index;
+
+  Array_Iterator(const Array<T> *_array, u64 _index) : array(_array), index(_index) {};
+
+  bool operator != (const Array_Iterator<T> &other) const {
+    return index != other.index;
+  }
+
+  T &operator *() const {
+    return array->data[index];
+  }
+
+  const Array_Iterator &operator++ () {
+    index++;
+    return *this;
+  }
+};
+
+template <typename T> struct Array {
+  Allocator *allocator = context.allocator;
+  u64 capacity = 0;
+  u64 count = 0;
+  T *data = NULL;
+
+  T &operator[](u64 i) {
+    assert(i >= 0 && i < capacity);
+    return data[i];
+  }
+
+  bool at_capacity() { return capacity <= count; }
+
+  T *pop() {
+    T *removed = peek();
+    if (count > 0) count --;
+    return removed;
+  }
+
+  T *peek() {
+    return count > 0 ? &data[count - 1] : NULL;
+  }
+
+  void remove_unordered(u64 index) {
+    assert(index >= 0 && index < count);
+    //data[index] = data[count - 1];
+    memory_copy(&data[count - 1], &data[index], sizeof(T));
+    count--;
+  }
+
+  void remove_while_keeping_order(u64 index, u64 num_to_remove = 1) {
+    assert(index >= 0 && index < count);
+    assert(num_to_remove > 0 && index + num_to_remove <= count);
+
+    // @Speed: this could be replaced with memory_move, the problem is overlapping memory
+    for (u64 i = index + num_to_remove; i < count; i++) {
+      data[i - num_to_remove] = data[i];
+    }
+
+    count -= num_to_remove;
+  }
+
+  void reset() {
+    count = 0;
+  }
+
+  Array_Iterator<T> begin() const {
+    return Array_Iterator<T>(this, 0);
+  }
+
+  Array_Iterator<T> end() const {
+    return Array_Iterator<T>(this, count);
+  }
+
+  T *begin_ptr() {
+    return data ? &data[0] : NULL;
+  }
+
+  T *end_ptr() {
+    return data ? &data[count] : NULL;
+  }
+
+  void init(u64 initial_capacity = 16) {
+    count = 0;
+    data = NULL;
+    resize(initial_capacity);
+  }
+
+  void free() {
+    if (data) {
+      Free(data);
+      data = NULL;
+      capacity = 0;
+      count = 0;
+    }
+  }
+
+  void resize(u64 next_capacity) {
+    if (data && capacity == next_capacity) return;
+
+    u64 prev_size = capacity * sizeof(T);
+    u64 next_size = next_capacity * sizeof(T);
+
+    data = (T *)Realloc(data, next_size, prev_size, allocator);
+    assert(data);
+    capacity = next_capacity;
+  }
+
+  void reserve(u64 minimum_count) {
+    if (capacity < minimum_count) { resize(minimum_count); }
+  }
+
+  void push(T item) {
+    if (count >= capacity) resize(capacity ? capacity * 2 : 16);
+
+    data[count] = item;
+    count++;
+  }
+
+  T *push() {
+    if (count >= capacity) resize(capacity ? capacity * 2 : 16);
+
+    memory_set(data + count, 0, sizeof(T));
+    return &data[count ++];
+  }
+
+  void copy(const Array<T> other) {
+    if (!other.capacity || !other.data) return;
+
+    resize(other.capacity);
+    memory_copy(other.data, data, other.count * sizeof(T));
+    count = other.count;
+  }
+
+  void concat(const Array<T> other) {
+    if (!other.capacity || !other.data || other.count == 0) return;
+
+    reserve(count + other.count);
+    memory_copy(other.data, &data[count], other.count * sizeof(T));
+    count += other.count;
+  }
+
+  Array<T> slice(u64 low, u64 high) {
+    assert(high >= low);
+
+    Array<T> result = {};
+    if (high > low) {
+      result.data = data + low;
+      result.count = high - low;
+      result.capacity = result.count;
+    }
+
+    return result;
+  }
+};
+
+template <typename T> struct Static_Array;
+
+template <typename T>
+struct Static_Array_Iterator {
+  const Static_Array<T> *array;
+  u64 index;
+
+  Static_Array_Iterator(const Static_Array<T> *_array, u64 _index) : array(_array), index(_index) {};
+
+  bool operator != (const Static_Array_Iterator<T> &other) const {
+    return index != other.index;
+  }
+
+  T &operator *() const {
+    return array->data[index];
+  }
+
+  const Static_Array_Iterator &operator++ () {
+    index++;
+    return *this;
+  }
+};
+
+template <typename T>
+struct Static_Array {
+  u64 count;
+  T *data;
+
+  T &operator[](u64 i) {
+    assert(i >= 0 && i < count);
+    return data[i];
+  }
+
+  Static_Array_Iterator<T> begin() const {
+    return Static_Array_Iterator<T>(this, 0);
+  }
+
+  Static_Array_Iterator<T> end() const {
+    return Static_Array_Iterator<T>(this, count);
+  }
+
+  T *begin_ptr() {
+    return data ? &data[0] : NULL;
+  }
+
+  T *end_ptr() {
+    return data ? &data[count] : NULL;
+  }
+};
+
+
+//
+// Hash Table
+//
+
+#define For_Table(table)                                    \
+  for (auto it = (table).begin(); it < (table).end(); it++) \
+    if (it->hash < FIRST_VALID_HASH) continue; else
+
+const int NEVER_OCCUPIED_HASH = 0;
+const int REMOVED_HASH = 1;
+const int FIRST_VALID_HASH = 2;
+
+// NOTE(nick): djb2 algorithm
+u32 compute_hash(char *str) {
+  u32 hash = 5381;
+  i32 c;
+
+  while ((c = *str++)) {
+    hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+  }
+
+  return hash;
+}
+
+u32 compute_hash(u32 value) {
+  value ^= (value >> 20) ^ (value >> 12);
+  return value ^ (value >> 7) ^ (value >> 4);
+}
+
+template <typename K>
+bool hash_compare_keys(const K &a, const K &b) {
+  return a == b;
+}
+
+template <typename K, typename V> struct Hash_Table {
+  struct Entry {
+    u32 hash;
+    K key;
+    V value;
+  };
+
+  Allocator *allocator = context.allocator;
+  u32 capacity = 0;
+  u32 count = 0;
+  u32 slots_filled = 0;
+  Entry *data = 0;
+
+  void init(u32 table_size) {
+    capacity = next_power_of_two(table_size);
+    count = 0;
+    slots_filled = 0;
+
+    assert((capacity & (capacity - 1)) == 0); // Must be a power of two!
+
+    data = (Entry *)Alloc(capacity * sizeof(Entry), allocator);
+    reset();
+  }
+
+  void free() {
+    if (data) {
+      Free(data, allocator);
+      data = NULL;
+      capacity = 0;
+      count = 0;
+      slots_filled = 0;
+    }
+  }
+
+  void expand() {
+    u32 next_capacity = capacity ? capacity * 2 : 32;
+
+    #if 0
+    u32 num_removed = slots_filled - count;
+    if (capacity > 0 && (capacity - num_removed) * 2 <= capacity) {
+      next_capacity = capacity;
+    }
+    #endif
+
+    assert((next_capacity & (next_capacity - 1)) == 0); // Must be a power of two!
+
+    Entry *old_data = data;
+    u32 old_capacity = capacity;
+
+    init(next_capacity);
+
+    // count and slots_filled will be incremented by add.
+    count        = 0;
+    slots_filled = 0;
+
+    for (u32 i = 0; i < old_capacity; i++) {
+      Entry *entry = &old_data[i];
+
+      // Note that if we removed some stuff we will over-allocate the new table.
+      // Maybe we should count the number of clobbers and subtract that? I dunno.
+      if (entry->hash >= FIRST_VALID_HASH) add(entry->key, entry->value);
+    }
+
+    Free(old_data, allocator);
+  }
+
+  // Sets the key-value pair, replacing it if it already exists.
+  V *set(K key, V value) {
+    auto result = find_pointer(key);
+    if (result) {
+      *result = value;
+      return result;
+    } else {
+      return add(key, value);
+    }
+  }
+
+  // Adds the given key-value pair to the table, returns a pointer to the inserted item.
+  V *add(K key, V value) {
+    // The + 1 is here to handle the weird case where the table size is 1 and you add the first item
+    // slots_filled / capacity >= 7 / 10 ...therefore:
+    // slots_filled * 10 >= capacity * 7
+    if ((slots_filled + 1) * 10 >= capacity * 7) expand();
+    assert(slots_filled <= capacity);
+
+    u32 hash = compute_hash(key);
+    if (hash < FIRST_VALID_HASH) hash += FIRST_VALID_HASH;
+    u32 index = hash & (capacity - 1);
+
+    while (data[index].hash) {
+      index = (index + 1) & (capacity - 1);
+    }
+
+    count ++;
+    slots_filled ++;
+    data[index] = {hash, key, value};
+
+    return &data[index].value;
+  }
+
+  V *find_pointer(K key) {
+    if (!data) return NULL; // @Incomplete: do we want this extra branch hit here?
+
+    assert(data); // Must be initialized!
+
+    u32 hash = compute_hash(key);
+    if (hash < FIRST_VALID_HASH) hash += FIRST_VALID_HASH;
+    u32 index = hash & (capacity - 1);
+
+    while (data[index].hash) {
+      auto entry = &data[index];
+      if (entry->hash == hash && hash_compare_keys(entry->key, key)) {
+        return &entry->value;
+      }
+
+      index = (index + 1) & (capacity - 1);
+    }
+
+    return NULL;
+  }
+
+  FORCE_INLINE V find(K key) {
+    V *result = find_pointer(key);
+    if (result) return *result;
+    return {};
+  }
+
+  bool remove(K key) {
+    assert(data); // Must be initialized!
+
+    u32 hash = compute_hash(key);
+    if (hash < FIRST_VALID_HASH) hash += FIRST_VALID_HASH;
+    u32 index = hash & (capacity - 1);
+
+    while (data[index].hash) {
+      if (data[index].hash == hash && hash_compare_keys(data[index].key, key)) {
+        data[index].hash = REMOVED_HASH; // No valid entry will ever hash to REMOVED_HASH.
+        count --;
+        return true;
+      }
+
+      index = (index + 1) & (capacity - 1);
+    }
+
+    return false;
+  }
+
+  void reset() {
+    count = 0;
+    slots_filled = 0;
+
+    if (data) {
+      for (u32 i = 0; i < capacity; i++) { data[i].hash = 0; }
+    }
+  }
+
+  Entry *begin() { return data ? &data[0] : NULL; }
+
+  Entry *end() { return data ? &data[capacity] : NULL; }
+};
+
+#endif
 
 
 #endif // NJA_H

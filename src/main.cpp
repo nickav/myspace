@@ -32,9 +32,6 @@ struct Html_Site {
   String locale;
   String logo_path;
   String theme_color;
-
-  String asset_dir;
-  String output_dir;
 };
 
 struct Html_Meta {
@@ -43,6 +40,11 @@ struct Html_Meta {
   String image_url;
   String url;
   String og_type;
+};
+
+struct Build_State {
+  String asset_dir;
+  String output_dir;
 };
 
 struct Image {
@@ -321,8 +323,16 @@ bool write_image(String image_path, Image image) {
   return os_write_entire_file(image_path, buf);
 }
 
-Image find_image_asset(Html_Site *site, String asset_name) {
-  auto src_path = path_join(site->asset_dir, asset_name);
+String get_asset_path(Build_State *state, String asset_name) {
+  return path_join(state->asset_dir, asset_name);
+}
+
+String get_output_path(Build_State *state, String asset_name) {
+  return path_join(state->output_dir, asset_name);
+}
+
+Image find_image_asset(Build_State *state, String asset_name) {
+  auto src_path = path_join(state->asset_dir, asset_name);
   auto raw_image = os_read_entire_file(src_path);
 
   if (!raw_image.data) {
@@ -343,7 +353,7 @@ int stbir_resize_uint8_pixel_perfect(     const unsigned char *input_pixels , in
         STBIR_EDGE_CLAMP, STBIR_EDGE_CLAMP, STBIR_COLORSPACE_LINEAR);
 }
 
-String write_image_size_variant(Html_Site *site, String asset_name, Image image, u32 width, u32 height, bool want_pixel_perfect) {
+String write_image_size_variant(Build_State *state, String asset_name, Image image, u32 width, u32 height, bool want_pixel_perfect) {
   auto name = path_strip_extension(asset_name);
   auto ext = path_get_extension(asset_name);
 
@@ -372,13 +382,15 @@ String write_image_size_variant(Html_Site *site, String asset_name, Image image,
 
   auto relative_path = path_join(S("r"), variant_name);
 
-  auto out_path = path_join(site->output_dir, relative_path);
+  auto out_path = path_join(state->output_dir, relative_path);
   write_image(out_path, resized_image);
 
   return relative_path;
 }
 
-bool WriteHtmlPage(String path, Html_Site &site, Html_Meta &meta, String body) {
+bool WriteHtmlPage(Build_State *state, String page_name, Html_Site &site, Html_Meta &meta, String body) {
+  String path = path_join(state->output_dir, page_name);
+
   FILE *file;
   file = fopen(string_to_cstr(path), "w+");
 
@@ -418,10 +430,10 @@ bool WriteHtmlPage(String path, Html_Site &site, Html_Meta &meta, String body) {
 
   // icons
   i32 image_sizes[] = {1050, 525, 263, 132, 16, 32, 48, 64, 57, 60, 72, 76, 96, 114, 120, 128, 144, 152, 160, 167, 180, 196, 228};
-  Image logo = find_image_asset(&site, S("logo.png"));
+  Image logo = find_image_asset(state, S("logo.png"));
   for (int i = 0; i < count_of(image_sizes); i ++) {
     i32 size = image_sizes[i];
-    String asset_path = write_image_size_variant(&site, S("logo.png"), logo, size, size, true);
+    String asset_path = write_image_size_variant(state, S("logo.png"), logo, size, size, true);
 
     fprintf(file, "<link rel='icon' type='image/png' href='%.*s' sizes='%dx%d' />\n", LIT(asset_path), size, size);
     fprintf(file, "<link rel='apple-touch-icon' sizes='%dx%d' href='%.*s' />\n", size, size, LIT(asset_path));
@@ -429,7 +441,7 @@ bool WriteHtmlPage(String path, Html_Site &site, Html_Meta &meta, String body) {
   
   // styles
   fprintf(file, "<style type='text/css'>\n");
-  fprintf(file, "html{margin:0;background:#000;font-family:Consolas,Menlo-Regular,monospace;font-size:16px;min-height:100vh}");
+  fprintf(file, "html{margin:0;background:#fff;font-family:Consolas,Menlo-Regular,monospace;font-size:16px;min-height:100vh}");
   fprintf(file, "body{margin:0;padding:0;display:flex;flex-direction:column;min-height:100vh}");
 
   Style *it = styles.first;
@@ -481,15 +493,16 @@ int main(int argc, char **argv)
   site.locale = S("en_us");
   site.theme_color = S("#000000");
 
-  site.asset_dir = asset_dir;
-  site.output_dir = output_dir;
-
   Html_Meta meta = {};
   meta.title = S("Nick Aversano");
   meta.description = S("A place to put things.");
   meta.image_url = S("/");
   meta.url = S("http://nickav.co");
   meta.og_type = S("site");
+
+  Build_State state = {};
+  state.asset_dir = asset_dir;
+  state.output_dir = output_dir;
 
 
   //os_delete_entire_directory(output_dir);
@@ -505,8 +518,7 @@ int main(int argc, char **argv)
   write_image(path_join(resource_dir, S("logo2.png")), image);
   #endif
 
-  //String out = S("bin/index.html");
-  //WriteHtmlPage(out, site, meta, S("Hello, Sailor!"));
+  WriteHtmlPage(&state, S("index.html"), site, meta, S("Hello, Sailor!"));
 
   auto content = os_read_entire_file(path_join(asset_dir, S("blog/post_0001.txt")));
   auto post = parse_post(content);
@@ -514,6 +526,20 @@ int main(int argc, char **argv)
   print("description: %S\n", post.description);
   print("date: %S\n", post.date);
   print("body: %S\n", post.body);
+
+  auto post_dir = path_join(asset_dir, S("blog"));
+  auto result = os_scan_directory(&temporary_allocator, post_dir);
+
+  for (int i = 0; i < result.count; i ++) {
+    auto it = result.files[i];
+    auto path = path_join(post_dir, it.name);
+
+    print("%S\n", path);
+    print("  name:         %S\n", it.name);
+    print("  size:         %d\n", it.size);
+    print("  date:         %d\n", it.date);
+    print("  is_directory: %d\n", it.is_directory);
+  }
 
   //stbir_resize_uint8(pixels);
 
