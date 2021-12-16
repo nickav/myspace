@@ -346,6 +346,11 @@ static STBSP__ASAN stbsp__uint32 stbsp__strlen_limited(char const *s, stbsp__uin
    return (stbsp__uint32)(sn - s);
 }
 
+struct stbsp_String {
+  u64 count;
+  u8 *data;
+};
+
 STBSP__PUBLICDEF int STB_SPRINTF_DECORATE(vsprintfcb)(STBSP_SPRINTFCB *callback, void *user, char *buf, char const *fmt, va_list va)
 {
    static char hex[] = "0123456789abcdefxp";
@@ -575,7 +580,7 @@ STBSP__PUBLICDEF int STB_SPRINTF_DECORATE(vsprintfcb)(STBSP_SPRINTFCB *callback,
          char lead[8];
          char tail[8];
          char *s;
-         String str;
+         stbsp_String str;
          char const *h;
          stbsp__uint32 l, n, cs;
          stbsp__uint64 n64;
@@ -604,7 +609,7 @@ STBSP__PUBLICDEF int STB_SPRINTF_DECORATE(vsprintfcb)(STBSP_SPRINTFCB *callback,
       // NOTE(nick): String-specific handler
       case 'S':
          // get the string
-         str = va_arg(va, String);
+         str = va_arg(va, stbsp_String);
 
          if (str.count == 0) {
             s = (char *)"null";

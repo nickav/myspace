@@ -211,13 +211,13 @@ void *arena_push(Arena *arena, u64 size) {
 #define push_array(arena, Struct, count)  \
   (Struct *)arena_push(arena, count * sizeof(Struct))
 
-Arena_Mark arena_get_mark(Arena *arena) {
+Arena_Mark arena_get_position(Arena *arena) {
   Arena_Mark result = {};
   result.offset = arena->offset;
   return result;
 }
 
-void arena_set_mark(Arena *arena, Arena_Mark mark) {
+void arena_set_position(Arena *arena, Arena_Mark mark) {
   arena->offset = mark.offset;
 }
 
@@ -932,6 +932,19 @@ enum File_Mode {
   FILE_MODE_APPEND = 0x4,
 };
 
+#define THREAD_PROC(name) u32 name(void *data)
+typedef THREAD_PROC(Thread_Proc);
+
+struct Thread {
+  u32 id;
+  void *handle;
+};
+
+struct Thread_Params {
+  Thread_Proc *proc;
+  void *data;
+};
+
 #if OS_WIN32
 
 #define WIN32_LEAN_AND_MEAN
@@ -939,10 +952,48 @@ enum File_Mode {
 #define NOMINMAX
 #include <windows.h>
 
+static LARGE_INTEGER win32_perf_frequency;
+static LARGE_INTEGER win32_perf_counter;
+
+static DWORD win32_thread_context_index = 0;
+
 void os_init() {
   AttachConsole(ATTACH_PARENT_PROCESS);
 
-  reset_temporary_storage();
+  QueryPerformanceFrequency(&win32_perf_frequency);
+  QueryPerformanceCounter(&win32_perf_counter);
+
+  win32_thread_context_index = TlsAlloc();
+}
+
+void os_set_thread_context(void *ptr) {
+  TlsSetValue(win32_thread_context_index, ptr);
+}
+
+void *os_get_thread_context() {
+  void *result = TlsGetValue(win32_thread_context_index);
+  return result;
+}
+
+f64 os_time_in_miliseconds() {
+  assert(win32_perf_frequency.QuadPart);
+
+  LARGE_INTEGER current_time;
+  QueryPerformanceCounter(&current_time);
+
+  LARGE_INTEGER elapsed;
+  elapsed.QuadPart = current_time.QuadPart - win32_perf_counter.QuadPart;
+  return (f64)(elapsed.QuadPart * 1000) / win32_perf_frequency.QuadPart;
+}
+
+void os_sleep(f64 miliseconds) {
+  LARGE_INTEGER ft;
+  ft.QuadPart = -(10 * (__int64)(miliseconds * 1000));
+
+  HANDLE timer = CreateWaitableTimer(NULL, TRUE, NULL);
+  SetWaitableTimer(timer, &ft, 0, NULL, NULL, 0);
+  WaitForSingleObject(timer, INFINITE);
+  CloseHandle(timer);
 }
 
 char *print_callback(const char *buf, void *user, int len) {
@@ -969,6 +1020,28 @@ void os_print(const char *format, ...) {
   va_start(args, format);
   stbsp_vsprintfcb(print_callback, 0, output_buffer, format, args);
   va_end(args);
+}
+
+void os_set_high_process_priority(bool enable) {
+  if (enable) {
+    SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+  } else {
+    SetPriorityClass(GetCurrentProcess(), NORMAL_PRIORITY_CLASS);
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL);
+  }
+}
+
+void *os_alloc(u64 size) {
+  // Memory allocated by this function is automatically initialized to zero.
+  return VirtualAlloc(0, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+}
+
+void os_free(void *memory) {
+  if (memory) {
+    VirtualFree(memory, 0, MEM_RELEASE);
+    memory = 0;
+  }
 }
 
 String os_read_entire_file(Arena *arena, String path) {
@@ -1012,6 +1085,7 @@ String os_read_entire_file(String path) {
 }
 
 bool os_write_entire_file(String path, String contents) {
+  // :ScratchMemory
   String16 str = string16_from_string(&temporary_allocator, path);
   HANDLE handle = CreateFileW(cast(WCHAR *)str.data, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_ALWAYS, 0, 0);
 
@@ -1041,24 +1115,43 @@ bool os_write_entire_file(String path, String contents) {
 }
 
 bool os_delete_file(String path) {
-  String16 str = string16_from_string(&temporary_allocator, path);
-  return DeleteFileW(cast(WCHAR *)str.data);
+  Arena *arena = &temporary_allocator;
+
+  auto restore_point = arena_get_position(arena);
+  String16 str = string16_from_string(arena, path);
+  BOOL success = DeleteFileW(cast(WCHAR *)str.data);
+  arena_set_position(arena, restore_point);
+
+  return success;
 }
 
-bool os_create_directory(String path) {
-  String16 str = string16_from_string(&temporary_allocator, path);
+bool os_make_directory(String path) {
+  Arena *arena = &temporary_allocator;
+
+  auto restore_point = arena_get_position(arena);
+  String16 str = string16_from_string(arena, path);
   BOOL success = CreateDirectoryW(cast(WCHAR *)str.data, NULL);
+  arena_set_position(arena, restore_point);
+
   return success;
 }
 
 bool os_delete_directory(String path) {
-  String16 str = string16_from_string(&temporary_allocator, path);
+  Arena *arena = &temporary_allocator;
+
+  auto restore_point = arena_get_position(arena);
+  String16 str = string16_from_string(arena, path);
   BOOL success = RemoveDirectoryW(cast(WCHAR *)str.data);
+  arena_set_position(arena, restore_point);
+
   return success;
 }
 
 bool os_delete_entire_directory(String path) {
-  char *find_path = (char *)string_join(path, S("\\*.*\0")).data;
+  Arena *arena = &temporary_allocator;
+
+  auto restore_point = arena_get_position(arena);
+  char *find_path = cstr_print(arena, "%.*s\\*.*", LIT(path));
 
   bool success = true;
 
@@ -1086,6 +1179,8 @@ bool os_delete_entire_directory(String path) {
 
   success |= os_delete_directory(path);
 
+  arena_set_position(arena, restore_point);
+
   return success;
 }
 
@@ -1097,6 +1192,7 @@ struct Scan_Result {
 Scan_Result os_scan_directory(Arena *arena, String path) {
   Scan_Result result = {};
 
+  // :ScratchMemory
   char *find_path = cstr_print(arena, "%.*s\\*.*", LIT(path));
 
   // @Speed: we could avoid doing this twice by assuming a small-ish number to start and only re-scanning if we're wrong
@@ -1123,15 +1219,15 @@ Scan_Result os_scan_directory(Arena *arena, String path) {
 
   if (handle != INVALID_HANDLE_VALUE) {
     do {
-      String base_name = string_from_cstr(data.cFileName);
+      String name = string_from_cstr(data.cFileName);
       // Ignore . and .. "directories"
-      if (string_equals(base_name, S(".")) || string_equals(base_name, S(".."))) continue;
+      if (string_equals(name, S(".")) || string_equals(name, S(".."))) continue;
 
       File_Info *info = &result.files[result.count];
       result.count += 1;
 
       *info = {};
-      info->name         = string_copy(arena, base_name);
+      info->name         = string_copy(arena, name);
       info->date         = ((u64)data.ftLastWriteTime.dwHighDateTime << (u64)32) | (u64)data.ftLastWriteTime.dwLowDateTime;
       info->size         = ((u64)data.nFileSizeHigh << (u64)32) | (u64)data.nFileSizeLow;
       info->is_directory = data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
@@ -1141,6 +1237,64 @@ Scan_Result os_scan_directory(Arena *arena, String path) {
 
   FindClose(handle);
 
+  return result;
+}
+
+File_Info os_get_file_info(Arena *arena, String path) {
+  File_Info result = {};
+
+  // :ScratchMemory
+  char *cpath = string_to_cstr(arena, path);
+
+  WIN32_FILE_ATTRIBUTE_DATA data;
+  if (GetFileAttributesExA(cpath, GetFileExInfoStandard, &data)) {
+    result.name         = path_filename(path);
+    result.date         = ((u64)data.ftLastWriteTime.dwHighDateTime << (u64)32) | (u64)data.ftLastWriteTime.dwLowDateTime;
+    result.size         = ((u64)data.nFileSizeHigh << (u64)32) | (u64)data.nFileSizeLow;
+    result.is_directory = data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
+  }
+
+  return result;
+}
+
+DWORD WINAPI win32_thread_proc(LPVOID lpParameter) {
+  Thread_Params *params = (Thread_Params *)lpParameter;
+
+  //init_thread_context();
+  assert(params->proc);
+  u32 result = params->proc(params->data);
+  //free_thread_context();
+
+  os_free(params);
+
+  return result;
+}
+
+Thread os_create_thread(u64 stack_size, Thread_Proc *proc, void *data) {
+  Thread_Params *params = (Thread_Params *)os_alloc(sizeof(Thread_Params));
+  params->proc = proc;
+  params->data = data;
+
+  DWORD thread_id;
+  HANDLE handle = CreateThread(0, stack_size, win32_thread_proc, params, 0, &thread_id);
+
+  Thread result = {};
+  result.handle = handle;
+  result.id = thread_id;
+  return result;
+}
+
+void os_detatch_thread(Thread thread) {
+  HANDLE handle = (HANDLE)thread.handle;
+  CloseHandle(handle);
+}
+
+u32 os_await_thread(Thread thread) {
+  HANDLE handle = (HANDLE)thread.handle;
+  WaitForSingleObject(handle, INFINITE);
+  DWORD result;
+  GetExitCodeThread(handle, &result);
+  // @MemoryLeak: free Thread_Params
   return result;
 }
 

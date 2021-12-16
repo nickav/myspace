@@ -506,7 +506,7 @@ int main(int argc, char **argv)
 
 
   //os_delete_entire_directory(output_dir);
-  //os_create_directory(output_dir);
+  //os_make_directory(output_dir);
   //os_create_directory(resource_dir);
 
   #if 0
@@ -528,6 +528,8 @@ int main(int argc, char **argv)
   print("body: %S\n", post.body);
 
   auto post_dir = path_join(asset_dir, S("blog"));
+
+  #if 0
   auto result = os_scan_directory(&temporary_allocator, post_dir);
 
   for (int i = 0; i < result.count; i ++) {
@@ -540,6 +542,7 @@ int main(int argc, char **argv)
     print("  date:         %d\n", it.date);
     print("  is_directory: %d\n", it.is_directory);
   }
+  #endif
 
   //stbir_resize_uint8(pixels);
 
