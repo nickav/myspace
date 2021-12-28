@@ -893,6 +893,9 @@ inline u64 Clamp(u64 value, u64 lower, u64 upper) { return MAX(MIN(value, upper)
 inline f32 Clamp(f32 value, f32 lower, f32 upper) { return MAX(MIN(value, upper), lower); }
 inline f64 Clamp(f64 value, f64 lower, f64 upper) { return MAX(MIN(value, upper), lower); }
 
+#define ClampTop Max
+#define ClampBot Min
+
 inline f32 Lerp(f32 a, f32 b, f32 t) {
   return (1 - t) * a + b * t;
 }
@@ -1238,6 +1241,60 @@ Scan_Result os_scan_directory(Arena *arena, String path) {
   FindClose(handle);
 
   return result;
+}
+
+struct File_Lister {
+  char *find_path;
+
+  HANDLE handle;
+  WIN32_FIND_DATA data;
+};
+
+File_Lister os_file_list_begin(Arena *arena, String path) {
+  File_Lister result = {};
+
+  char *find_path = cstr_print(arena, "%.*s\\*.*", LIT(path));
+  result.find_path = find_path;
+  result.handle = 0;
+
+  return result;
+}
+
+bool os_file_list_next(File_Lister *iter, File_Info *info) {
+  bool should_continue = true;
+
+  if (!iter->handle) {
+    iter->handle = FindFirstFile(iter->find_path, &iter->data);
+  } else {
+    should_continue = FindNextFile(iter->handle, &iter->data);
+  }
+
+  if (iter->handle != INVALID_HANDLE_VALUE) {
+    String name = string_from_cstr(iter->data.cFileName);
+
+    // Ignore . and .. "directories"
+    while (should_continue && (string_equals(name, S(".")) || string_equals(name, S("..")))) {
+      should_continue = FindNextFile(iter->handle, &iter->data);
+      name = string_from_cstr(iter->data.cFileName);
+    }
+
+    *info = {};
+    info->name         = name;
+    info->date         = ((u64)iter->data.ftLastWriteTime.dwHighDateTime << (u64)32) | (u64)iter->data.ftLastWriteTime.dwLowDateTime;
+    info->size         = ((u64)iter->data.nFileSizeHigh << (u64)32) | (u64)iter->data.nFileSizeLow;
+    info->is_directory = iter->data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
+  } else {
+    should_continue = false;
+  }
+
+  return should_continue;
+}
+
+void os_file_list_end(File_Lister *iter) {
+  if (iter->handle) {
+    FindClose(iter->handle);
+    iter->handle = 0;
+  }
 }
 
 File_Info os_get_file_info(Arena *arena, String path) {

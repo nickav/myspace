@@ -529,6 +529,21 @@ int main(int argc, char **argv)
 
   auto post_dir = path_join(asset_dir, S("blog"));
 
+  File_Info it = {};
+  auto iter = os_file_list_begin(&temporary_allocator, post_dir);
+
+  while (os_file_list_next(&iter, &it)) {
+    auto path = path_join(post_dir, it.name);
+
+    print("%S\n", path);
+    print("  name:         %S\n", it.name);
+    print("  size:         %d\n", it.size);
+    print("  date:         %d\n", it.date);
+    print("  is_directory: %d\n", it.is_directory);
+  }
+
+  os_file_list_end(&iter);
+
   #if 0
   auto result = os_scan_directory(&temporary_allocator, post_dir);
 
