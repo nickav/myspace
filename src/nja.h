@@ -221,23 +221,32 @@ void arena_set_position(Arena *arena, Arena_Mark mark) {
   arena->offset = mark.offset;
 }
 
-// @Incomplete: allow this to be overrided
-const u64 temporary_storage_size = megabytes(32);
-static u8 temporary_storage_buffer[temporary_storage_size];
-static Arena temporary_allocator = {temporary_storage_buffer, 0, temporary_storage_size};
+struct Thread_Context {
+  Arena temporary_storage;
+};
+
+void *os_thread_get_context();
+
+Arena *thread_get_temporary_arena() {
+  Thread_Context *ctx = (Thread_Context *)os_thread_get_context();
+  return &ctx->temporary_storage;
+}
 
 // @Robustness: support overflowing
 // @Robustness: support arbitrary temp storage size
 void *talloc(u64 size) {
-  return arena_alloc(&temporary_allocator, size);
+  Arena *arena = thread_get_temporary_arena();
+  return arena_alloc(arena, size);
 }
 
 void tpop(u64 size) {
-  arena_pop(&temporary_allocator, size);
+  Arena *arena = thread_get_temporary_arena();
+  arena_pop(arena, size);
 }
 
 void reset_temporary_storage() {
-  arena_reset(&temporary_allocator);
+  Arena *arena = thread_get_temporary_arena();
+  arena_reset(arena);
 }
 
 //
@@ -274,7 +283,8 @@ char *string_to_cstr(Arena *arena, String str) {
 }
 
 char *string_to_cstr(String str) {
-  return string_to_cstr(&temporary_allocator, str);
+  Arena *arena = thread_get_temporary_arena();
+  return string_to_cstr(arena, str);
 }
 
 i64 cstr_length(char *str) {
@@ -357,7 +367,8 @@ String string_join(Arena *arena, String a, String b) {
 }
 
 String string_join(String a, String b) {
-  return string_join(&temporary_allocator, a, b);
+  Arena *arena = thread_get_temporary_arena();
+  return string_join(arena, a, b);
 }
 
 String string_join(Arena *arena, String a, String b, String c) {
@@ -371,7 +382,8 @@ String string_join(Arena *arena, String a, String b, String c) {
 }
 
 String string_join(String a, String b, String c) {
-  return string_join(&temporary_allocator, a, b, c);
+  Arena *arena = thread_get_temporary_arena();
+  return string_join(arena, a, b, c);
 }
 
 void string_advance(String *str, u64 amount) {
@@ -459,8 +471,8 @@ char *cstr_print(Arena *arena, const char *format, ...) {
   return (char *)result.data;
 }
 
-#define sprint(...) string_print(&temporary_allocator, __VA_ARGS__)
-#define cprint(...) cstr_print(&temporary_allocator, __VA_ARGS__)
+#define sprint(...) string_print(thread_get_temporary_arena(), __VA_ARGS__)
+#define cprint(...) cstr_print(thread_get_temporary_arena(), __VA_ARGS__)
 
 // NOTE(nick): The path_* functions assume that we are working with a normalized (unix-like) path string.
 // All paths should be normalized at the OS interface level, so we can make that assumption here.
@@ -960,20 +972,40 @@ static LARGE_INTEGER win32_perf_counter;
 
 static DWORD win32_thread_context_index = 0;
 
+static bool os_was_initted = false;
+
+void *os_alloc(u64 size);
+void os_thread_set_context(void *ptr);
+
+void init_thread_context(u64 temporary_storage_size) {
+  Thread_Context *ctx = (Thread_Context *)os_alloc(sizeof(Thread_Context));
+
+  u8 *data = (u8 *)os_alloc(temporary_storage_size);
+  arena_init(&ctx->temporary_storage, data, temporary_storage_size);
+
+  os_thread_set_context(ctx);
+}
+
 void os_init() {
+  if (os_was_initted) return;
+
   AttachConsole(ATTACH_PARENT_PROCESS);
 
   QueryPerformanceFrequency(&win32_perf_frequency);
   QueryPerformanceCounter(&win32_perf_counter);
 
   win32_thread_context_index = TlsAlloc();
+
+  init_thread_context(megabytes(16));
+
+  os_was_initted = true;
 }
 
-void os_set_thread_context(void *ptr) {
+void os_thread_set_context(void *ptr) {
   TlsSetValue(win32_thread_context_index, ptr);
 }
 
-void *os_get_thread_context() {
+void *os_thread_get_context() {
   void *result = TlsGetValue(win32_thread_context_index);
   return result;
 }
@@ -1035,15 +1067,31 @@ void os_set_high_process_priority(bool enable) {
   }
 }
 
+void *os_memory_reserve(u64 size) {
+  return VirtualAlloc(0, size, MEM_RESERVE, PAGE_READWRITE);
+}
+
+void os_memory_commit(void *ptr, u64 size) {
+  VirtualAlloc(ptr, size, MEM_COMMIT, PAGE_READWRITE);
+}
+
+void os_memory_decommit(void *ptr, u64 size) {
+  VirtualFree(ptr, size, MEM_DECOMMIT);
+}
+
+void os_memory_release(void *ptr) {
+  VirtualFree(ptr, 0, MEM_RELEASE);
+}
+
 void *os_alloc(u64 size) {
   // Memory allocated by this function is automatically initialized to zero.
   return VirtualAlloc(0, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 }
 
-void os_free(void *memory) {
-  if (memory) {
-    VirtualFree(memory, 0, MEM_RELEASE);
-    memory = 0;
+void os_free(void *ptr) {
+  if (ptr) {
+    VirtualFree(ptr, 0, MEM_RELEASE);
+    ptr = 0;
   }
 }
 
@@ -1084,12 +1132,15 @@ String os_read_entire_file(Arena *arena, String path) {
 }
 
 String os_read_entire_file(String path) {
-  return os_read_entire_file(&temporary_allocator, path);
+  Arena *arena = thread_get_temporary_arena();
+  return os_read_entire_file(arena, path);
 }
 
 bool os_write_entire_file(String path, String contents) {
+  Arena *arena = thread_get_temporary_arena();
+
   // :ScratchMemory
-  String16 str = string16_from_string(&temporary_allocator, path);
+  String16 str = string16_from_string(arena, path);
   HANDLE handle = CreateFileW(cast(WCHAR *)str.data, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_ALWAYS, 0, 0);
 
   if (handle == INVALID_HANDLE_VALUE) {
@@ -1118,7 +1169,7 @@ bool os_write_entire_file(String path, String contents) {
 }
 
 bool os_delete_file(String path) {
-  Arena *arena = &temporary_allocator;
+  Arena *arena = thread_get_temporary_arena();
 
   auto restore_point = arena_get_position(arena);
   String16 str = string16_from_string(arena, path);
@@ -1129,7 +1180,7 @@ bool os_delete_file(String path) {
 }
 
 bool os_make_directory(String path) {
-  Arena *arena = &temporary_allocator;
+  Arena *arena = thread_get_temporary_arena();
 
   auto restore_point = arena_get_position(arena);
   String16 str = string16_from_string(arena, path);
@@ -1140,7 +1191,7 @@ bool os_make_directory(String path) {
 }
 
 bool os_delete_directory(String path) {
-  Arena *arena = &temporary_allocator;
+  Arena *arena = thread_get_temporary_arena();
 
   auto restore_point = arena_get_position(arena);
   String16 str = string16_from_string(arena, path);
@@ -1151,7 +1202,7 @@ bool os_delete_directory(String path) {
 }
 
 bool os_delete_entire_directory(String path) {
-  Arena *arena = &temporary_allocator;
+  Arena *arena = thread_get_temporary_arena();
 
   auto restore_point = arena_get_position(arena);
   char *find_path = cstr_print(arena, "%.*s\\*.*", LIT(path));
@@ -1376,7 +1427,9 @@ String os_get_executable_path() {
   }
 
   String16 temp = {length, cast(u16 *)buffer};
-  String result = string_from_string16(&temporary_allocator, temp);
+
+  Arena *arena = thread_get_temporary_arena();
+  String result = string_from_string16(arena, temp);
   win32_normalize_path(result);
 
   return result;
@@ -1391,7 +1444,9 @@ String os_get_current_directory() {
   }
 
   String16 temp = {length, cast(u16 *)buffer};
-  String result = string_from_string16(&temporary_allocator, temp);
+
+  Arena *arena = thread_get_temporary_arena();
+  String result = string_from_string16(arena, temp);
   win32_normalize_path(result);
 
   return result;

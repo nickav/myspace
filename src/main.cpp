@@ -20,12 +20,6 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "deps/stb_image_write.h"
 
-/* TODO(nick):
-  - create site look / homepage
-  - 404 page
-  - create blog files structure
-*/
-
 struct Html_Site {
   String name;
   String twitter_handle;
@@ -132,7 +126,7 @@ static bool AssetHashesAreEqual(Asset_Hash a, Asset_Hash b) {
 }
 
 String EscapeSingleQuotes(String str) {
-  Arena *arena = &temporary_allocator;
+  Arena *arena = thread_get_temporary_arena();
   auto parts = string_list_split(arena, str, S("'"));
   return string_list_join(arena, &parts, S("\\'"));
 }
@@ -465,6 +459,8 @@ bool WriteHtmlPage(Build_State *state, String page_name, Html_Site &site, Html_M
 
 int main(int argc, char **argv)
 {
+  os_init();
+
   #if 0
   unsigned char buf[16] = {0};
   auto hash = ComputeAssetHash(buf, count_of(buf), DefaultSeed);
@@ -518,6 +514,12 @@ int main(int argc, char **argv)
   write_image(path_join(resource_dir, S("logo2.png")), image);
   #endif
 
+  u8 *memory_test = (u8 *)os_memory_reserve(gigabytes(8));
+  os_memory_commit(memory_test, megabytes(32));
+  memory_test[0] = 10;
+  os_memory_decommit(memory_test, megabytes(32));
+  //memory_test[0] = 123;
+
   WriteHtmlPage(&state, S("index.html"), site, meta, S("Hello, Sailor!"));
 
   auto content = os_read_entire_file(path_join(asset_dir, S("blog/post_0001.txt")));
@@ -530,7 +532,7 @@ int main(int argc, char **argv)
   auto post_dir = path_join(asset_dir, S("blog"));
 
   File_Info it = {};
-  auto iter = os_file_list_begin(&temporary_allocator, post_dir);
+  auto iter = os_file_list_begin(thread_get_temporary_arena(), post_dir);
 
   while (os_file_list_next(&iter, &it)) {
     auto path = path_join(post_dir, it.name);
@@ -545,7 +547,7 @@ int main(int argc, char **argv)
   os_file_list_end(&iter);
 
   #if 0
-  auto result = os_scan_directory(&temporary_allocator, post_dir);
+  auto result = os_scan_directory(thread_get_temporary_arena(), post_dir);
 
   for (int i = 0; i < result.count; i ++) {
     auto it = result.files[i];
