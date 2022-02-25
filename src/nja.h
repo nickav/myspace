@@ -1448,7 +1448,6 @@ String os_get_executable_directory() {
 //
 
 #if 0
-
 #define Array_Foreach(item, array)                                             \
   for (i64 index = 0;                                                          \
        index < cast(i64)(array).count ? (item) = (array).data[index], true : false; \
@@ -1509,143 +1508,174 @@ struct Array_Iterator {
     return *this;
   }
 };
+#endif
 
-template <typename T> struct Array {
-  Allocator *allocator = context.allocator;
+struct Sized_Pointer {
+  u8  *data;
+  u16 stride;
+
+  u8 &operator[](u64 i) {
+    assert(stride > 0);
+    return data[i * stride];
+  }
+
+  void operator=(const void* _data) {
+    data = (u8 *)_data;
+  }
+};
+
+struct Raw_Array {
   u64 capacity = 0;
   u64 count = 0;
-  T *data = NULL;
 
+  Sized_Pointer data = {NULL, 0};
+
+/*
   T &operator[](u64 i) {
     assert(i >= 0 && i < capacity);
     return data[i];
   }
+*/
+};
 
-  bool at_capacity() { return capacity <= count; }
+void array_reset(Raw_Array &it) {
+  it.count = 0;
+}
 
-  T *pop() {
-    T *removed = peek();
-    if (count > 0) count --;
-    return removed;
+bool array_at_capacity(Raw_Array &it) {
+  return it.capacity <= it.count;
+}
+
+void *array_peek(Raw_Array &it) {
+  return it.count > 0 ? &it.data[it.count - 1] : NULL;
+}
+
+void *array_pop(Raw_Array &it) {
+  void *removed = array_peek(it);
+  if (removed) it.count --;
+  return removed;
+}
+
+void array_remove_unordered(Raw_Array &it, u64 index) {
+  assert(index >= 0 && index < it.count);
+  memory_copy(&it.data[it.count - 1], &it.data[index], it.data.stride);
+  it.count--;
+}
+
+void array_remove_while_keeping_order(Raw_Array &it, u64 index, u64 num_to_remove = 1) {
+  assert(index >= 0 && index < it.count);
+  assert(num_to_remove > 0 && index + num_to_remove <= it.count);
+
+  // @Speed: this could be replaced with memory_move, the problem is overlapping memory
+  for (u64 i = index + num_to_remove; i < it.count; i++) {
+    memory_copy(&it.data[i], &it.data[i - num_to_remove], it.data.stride);
   }
 
-  T *peek() {
-    return count > 0 ? &data[count - 1] : NULL;
+  it.count -= num_to_remove;
+}
+
+void array_resize(Raw_Array &it, u64 next_capacity) {
+  if (it.data.data && it.capacity == next_capacity) return;
+
+  u64 prev_size = it.capacity * it.data.stride;
+  u64 next_size = next_capacity * it.data.stride;
+
+  // @Speed: realloc
+  //it.data = realloc(it.data.data, next_size, prev_size);
+  // @Cleanup
+  if (it.data.data) os_free(it.data.data);
+  it.data = (u8 *)os_alloc(next_size * it.data.stride);
+  assert(it.data.data);
+  it.capacity = next_capacity;
+}
+
+void array_init(Raw_Array &it, u64 initial_capacity = 16) {
+  it.count = 0;
+  it.data = NULL;
+  array_resize(it, initial_capacity);
+}
+
+void array_free(Raw_Array &it) {
+  // @Cleanup
+  if (it.data.data) {
+    os_free(it.data.data);
+    it.data.data = NULL;
+    it.capacity = 0;
+    it.count = 0;
+  }
+}
+
+void array_reserve(Raw_Array &it, u64 minimum_count) {
+  if (it.capacity < minimum_count) {
+    array_resize(it, minimum_count);
+  }
+}
+
+void *array_push(Raw_Array &it) {
+  if (it.count >= it.capacity) {
+    array_resize(it, it.capacity ? it.capacity * 2 : 16);
   }
 
-  void remove_unordered(u64 index) {
-    assert(index >= 0 && index < count);
-    //data[index] = data[count - 1];
-    memory_copy(&data[count - 1], &data[index], sizeof(T));
-    count--;
+  memory_set(&it.data[it.count], 0, it.data.stride);
+  return &it.data[it.count ++];
+}
+
+template <typename T>
+struct Array : Raw_Array {
+  Array() {
+    data.stride = sizeof(T);
   }
 
-  void remove_while_keeping_order(u64 index, u64 num_to_remove = 1) {
-    assert(index >= 0 && index < count);
-    assert(num_to_remove > 0 && index + num_to_remove <= count);
-
-    // @Speed: this could be replaced with memory_move, the problem is overlapping memory
-    for (u64 i = index + num_to_remove; i < count; i++) {
-      data[i - num_to_remove] = data[i];
-    }
-
-    count -= num_to_remove;
+  Array(u64 _capacity, u64 _count) {
+    capacity = _capacity;
+    count = _count;
+    data.stride = sizeof(T);
   }
 
-  void reset() {
-    count = 0;
+  Array(u64 _capacity, u64 _count, void *_data) {
+    capacity = _capacity;
+    count = _count;
+    data.data = (u8 *)_data;
+    data.stride = sizeof(T);
   }
 
-  Array_Iterator<T> begin() const {
-    return Array_Iterator<T>(this, 0);
-  }
+  T &operator[](u64 i) {
+    assert(i >= 0 && i < capacity);
+    assert(data.stride == sizeof(T));
 
-  Array_Iterator<T> end() const {
-    return Array_Iterator<T>(this, count);
-  }
-
-  T *begin_ptr() {
-    return data ? &data[0] : NULL;
-  }
-
-  T *end_ptr() {
-    return data ? &data[count] : NULL;
-  }
-
-  void init(u64 initial_capacity = 16) {
-    count = 0;
-    data = NULL;
-    resize(initial_capacity);
-  }
-
-  void free() {
-    if (data) {
-      Free(data);
-      data = NULL;
-      capacity = 0;
-      count = 0;
-    }
-  }
-
-  void resize(u64 next_capacity) {
-    if (data && capacity == next_capacity) return;
-
-    u64 prev_size = capacity * sizeof(T);
-    u64 next_size = next_capacity * sizeof(T);
-
-    data = (T *)Realloc(data, next_size, prev_size, allocator);
-    assert(data);
-    capacity = next_capacity;
-  }
-
-  void reserve(u64 minimum_count) {
-    if (capacity < minimum_count) { resize(minimum_count); }
-  }
-
-  void push(T item) {
-    if (count >= capacity) resize(capacity ? capacity * 2 : 16);
-
-    data[count] = item;
-    count++;
-  }
-
-  T *push() {
-    if (count >= capacity) resize(capacity ? capacity * 2 : 16);
-
-    memory_set(data + count, 0, sizeof(T));
-    return &data[count ++];
-  }
-
-  void copy(const Array<T> other) {
-    if (!other.capacity || !other.data) return;
-
-    resize(other.capacity);
-    memory_copy(other.data, data, other.count * sizeof(T));
-    count = other.count;
-  }
-
-  void concat(const Array<T> other) {
-    if (!other.capacity || !other.data || other.count == 0) return;
-
-    reserve(count + other.count);
-    memory_copy(other.data, &data[count], other.count * sizeof(T));
-    count += other.count;
-  }
-
-  Array<T> slice(u64 low, u64 high) {
-    assert(high >= low);
-
-    Array<T> result = {};
-    if (high > low) {
-      result.data = data + low;
-      result.count = high - low;
-      result.capacity = result.count;
-    }
-
-    return result;
+    return (T &)data[i];
   }
 };
 
+template <typename T> T *array_peek(Array<T> &it) { return (T *)array_peek((Raw_Array &)(it)); }
+template <typename T> T *array_pop(Array<T> &it) { return (T *)array_pop((Raw_Array &)(it)); }
+template <typename T> T *array_push(Array<T> &it) { return (T *)array_push((Raw_Array &)(it)); }
+template <typename T> T *array_push(Array<T> &it, T item) {
+  if (it.count >= it.capacity) array_resize(it, it.capacity ? it.capacity * 2 : 16);
+
+  memory_copy(&item, &it.data[it.count], it.data.stride);
+  return (T *)&it.data[it.count ++];
+}
+
+#if 0
+Array_Iterator<T> begin() const {
+  return Array_Iterator<T>(this, 0);
+}
+
+Array_Iterator<T> end() const {
+  return Array_Iterator<T>(this, count);
+}
+
+T *begin_ptr() {
+  return data ? &data[0] : NULL;
+}
+
+T *end_ptr() {
+  return data ? &data[count] : NULL;
+}
+#endif
+
+#if 0
 template <typename T> struct Static_Array;
 
 template <typename T>
@@ -1695,8 +1725,10 @@ struct Static_Array {
     return data ? &data[count] : NULL;
   }
 };
+#endif
 
 
+#if 0
 //
 // Hash Table
 //
