@@ -2,7 +2,34 @@
 #include <assert.h>
 #include <intrin.h>
 
+extern "C" int stbsp_vsnprintf( char * buf, int count, char const * fmt, va_list va );
+void stb_print(const char *format, ...);
+#define print stb_print
+#define print_to_buffer stbsp_vsnprintf
+
 #include "nja.h"
+
+#define STB_SPRINTF_IMPLEMENTATION
+#include "deps/stb_sprintf.h"
+
+char *print_callback(const char *buf, void *user, int len) {
+  DWORD bytes_written;
+
+  HANDLE handle = GetStdHandle(STD_OUTPUT_HANDLE);
+  WriteFile(handle, buf, len, &bytes_written, 0);
+
+  return (char *)buf;
+}
+
+// @Robustness: make this thread-safe
+char output_buffer[2 * STB_SPRINTF_MIN];
+
+void stb_print(const char *format, ...) {
+  va_list args;
+  va_start(args, format);
+  stbsp_vsprintfcb(print_callback, 0, output_buffer, format, args);
+  va_end(args);
+}
 
 #define STBI_NO_BMP
 #define STBI_NO_GIF
@@ -539,8 +566,8 @@ int main(int argc, char **argv)
 
     print("%S\n", path);
     print("  name:         %S\n", it.name);
-    print("  size:         %d\n", it.size);
-    print("  date:         %d\n", it.date);
+    print("  size:         %llu\n", it.size);
+    print("  date:         %llu\n", it.date);
     print("  is_directory: %d\n", it.is_directory);
   }
 

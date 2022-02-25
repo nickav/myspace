@@ -13,8 +13,15 @@
   #define null nullptr
 #endif
 
-void os_print(const char *format, ...);
-#define print os_print
+#ifndef print
+  #include <stdio.h>
+  #define print(...) do { printf(__VA_ARGS__); fflush(stdout); } while(0)
+#endif
+
+#ifndef print_to_buffer
+  #include <stdio.h>
+  #define print_to_buffer(data, max_length, format, args) vsnprintf(data, max_length, format, args)
+#endif
 
 #ifndef assert
 #ifdef DEBUG
@@ -411,12 +418,6 @@ String string_trim_whitespace(String str) {
 }
 
 #include <stdarg.h>
-
-extern "C" int stbsp_vsnprintf( char * buf, int count, char const * fmt, va_list va );
-
-i32 print_to_buffer(char *data, i32 max_length, const char *format, va_list args) {
-  return stbsp_vsnprintf(data, max_length, format, args);
-}
 
 String string_printv(Arena *arena, const char *format, va_list args) {
   // in case we need to try a second time
@@ -972,9 +973,10 @@ static LARGE_INTEGER win32_perf_counter;
 
 static DWORD win32_thread_context_index = 0;
 
-static bool os_was_initted = false;
+static bool did_init_os = false;
 
 void *os_alloc(u64 size);
+void os_free(void *ptr);
 void os_thread_set_context(void *ptr);
 
 void init_thread_context(u64 temporary_storage_size) {
@@ -986,8 +988,15 @@ void init_thread_context(u64 temporary_storage_size) {
   os_thread_set_context(ctx);
 }
 
+void free_thread_context() {
+  Thread_Context *ctx = (Thread_Context *)os_thread_get_context();
+
+  os_free(&ctx->temporary_storage.data);
+  os_free(ctx);
+}
+
 void os_init() {
-  if (os_was_initted) return;
+  if (did_init_os) return;
 
   AttachConsole(ATTACH_PARENT_PROCESS);
 
@@ -996,9 +1005,9 @@ void os_init() {
 
   win32_thread_context_index = TlsAlloc();
 
-  init_thread_context(megabytes(16));
+  init_thread_context(megabytes(32));
 
-  os_was_initted = true;
+  did_init_os = true;
 }
 
 void os_thread_set_context(void *ptr) {
@@ -1029,32 +1038,6 @@ void os_sleep(f64 miliseconds) {
   SetWaitableTimer(timer, &ft, 0, NULL, NULL, 0);
   WaitForSingleObject(timer, INFINITE);
   CloseHandle(timer);
-}
-
-char *print_callback(const char *buf, void *user, int len) {
-  DWORD bytes_written;
-
-  HANDLE handle = GetStdHandle(STD_OUTPUT_HANDLE);
-  WriteFile(handle, buf, len, &bytes_written, 0);
-
-  return (char *)buf;
-}
-
-// TODO: remove this from this file
-#define STB_SPRINTF_IMPLEMENTATION
-#include "deps/stb_sprintf.h"
-
-// #define thread_local __declspec(thread)
-// #define thread_local __thread
-
-// @Robustness: make this thread-safe
-char output_buffer[2 * STB_SPRINTF_MIN];
-
-void os_print(const char *format, ...) {
-  va_list args;
-  va_start(args, format);
-  stbsp_vsprintfcb(print_callback, 0, output_buffer, format, args);
-  va_end(args);
 }
 
 void os_set_high_process_priority(bool enable) {
@@ -1123,7 +1106,7 @@ String os_read_entire_file(Arena *arena, String path) {
     print("[file] Failed to read entire file: %.*s\n", LIT(path));
   } else if (bytes_read != size) {
     // @Robustness: should this keep reading until it reads everything?
-    print("[file] Warning byte read mismatch, expected %d but got %d for file: %.*s\n", size, bytes_read, LIT(path));
+    print("[file] Warning byte read mismatch, expected %llu but got %lu for file: %.*s\n", size, bytes_read, LIT(path));
   }
 
   CloseHandle(handle);
@@ -1159,7 +1142,7 @@ bool os_write_entire_file(String path, String contents) {
     return false;
   } else if (bytes_written != contents.count) {
     // @Robustness: keep writing until everything is written?
-    print("[file] Warning byte read mismatch, expected %d but got %d for file: %.*s\n", contents.count, bytes_written, LIT(path));
+    print("[file] Warning byte read mismatch, expected %llu but got %lu for file: %.*s\n", contents.count, bytes_written, LIT(path));
     return false;
   }
 
@@ -1368,10 +1351,10 @@ File_Info os_get_file_info(Arena *arena, String path) {
 DWORD WINAPI win32_thread_proc(LPVOID lpParameter) {
   Thread_Params *params = (Thread_Params *)lpParameter;
 
-  //init_thread_context();
+  init_thread_context(megabytes(16));
   assert(params->proc);
   u32 result = params->proc(params->data);
-  //free_thread_context();
+  free_thread_context();
 
   os_free(params);
 
