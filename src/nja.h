@@ -1050,6 +1050,15 @@ void os_set_high_process_priority(bool enable) {
   }
 }
 
+#if 0
+struct OS_Memory {
+  void *reserve(u64 size);
+  void commit(void *ptr, u64 size);
+  void decommit(void *ptr, u64 size);
+  void release(void *ptr);
+};
+#endif
+
 void *os_memory_reserve(u64 size) {
   return VirtualAlloc(0, size, MEM_RESERVE, PAGE_READWRITE);
 }
@@ -1447,30 +1456,9 @@ String os_get_executable_directory() {
 // Array
 //
 
-#if 0
-#define Array_Foreach(item, array)                                             \
-  for (i64 index = 0;                                                          \
-       index < cast(i64)(array).count ? (item) = (array).data[index], true : false; \
-       index++)
-
-#define Array_Foreach_Pointer(item, array)                                     \
-  for (i64 index = 0;                                                          \
-       index < cast(i64)(array).count ? (item) = &(array).data[index], true : false; \
-       index++)
-
-#define Array_Foreach_Reverse(item, array)                                     \
-  for (i64 index = cast(i64)(array).count - 1;                             \
-       index >= 0 ? (item) = (array).data[index], true : false;                \
-       index--)
-
-#define Array_Foreach_Pointer_Reverse(item, array)                             \
-  for (i64 index = cast(i64)(array).count - 1;                             \
-       index >= 0 ? (item) = &(array).data[index], true : false;               \
-       index--)
-
 #define For(array) for (auto it : array)
 
-#define Forv(array, it) for (auto it : array)
+#define Forv(it, array) for (auto it : array)
 
 #define Forp(array)   \
   auto CONCAT(__array, __LINE__) = (array);   \
@@ -1478,13 +1466,8 @@ String os_get_executable_directory() {
 
 #define For_Index(array) for (i64 index = 0; index < cast(i64)(array).count; index++)
 
-#define Fori For_Index
-
 #define For_Index_Reverse(array)                                               \
   for (i64 index = cast(i64)(array).count - 1; index >= 0; index--)
-
-#define Array_Remove_Current_Item_Unordered(array)  \
-  do { (array).remove_unordered(index); index --; } while(0)
 
 template <typename T> struct Array;
 
@@ -1508,213 +1491,24 @@ struct Array_Iterator {
     return *this;
   }
 };
-#endif
 
-struct Sized_Pointer {
-  u8  *data;
-  u16 stride;
-
-  u8 &operator[](u64 i) {
-    assert(stride > 0);
-    return data[i * stride];
-  }
-
-  void operator=(const void* _data) {
-    data = (u8 *)_data;
-  }
-};
-
-struct Raw_Array {
+template <typename T>
+struct Array {
   u64 capacity = 0;
   u64 count = 0;
+  T *data = NULL;
 
-  Sized_Pointer data = {NULL, 0};
-
-/*
   T &operator[](u64 i) {
     assert(i >= 0 && i < capacity);
     return data[i];
   }
-*/
-};
 
-void array_reset(Raw_Array &it) {
-  it.count = 0;
-}
-
-bool array_at_capacity(Raw_Array &it) {
-  return it.capacity <= it.count;
-}
-
-void *array_peek(Raw_Array &it) {
-  return it.count > 0 ? &it.data[it.count - 1] : NULL;
-}
-
-void *array_pop(Raw_Array &it) {
-  void *removed = array_peek(it);
-  if (removed) it.count --;
-  return removed;
-}
-
-void array_remove_unordered(Raw_Array &it, u64 index) {
-  assert(index >= 0 && index < it.count);
-  memory_copy(&it.data[it.count - 1], &it.data[index], it.data.stride);
-  it.count--;
-}
-
-void array_remove_while_keeping_order(Raw_Array &it, u64 index, u64 num_to_remove = 1) {
-  assert(index >= 0 && index < it.count);
-  assert(num_to_remove > 0 && index + num_to_remove <= it.count);
-
-  // @Speed: this could be replaced with memory_move, the problem is overlapping memory
-  for (u64 i = index + num_to_remove; i < it.count; i++) {
-    memory_copy(&it.data[i], &it.data[i - num_to_remove], it.data.stride);
+  Array_Iterator<T> begin() const {
+    return Array_Iterator<T>(this, 0);
   }
 
-  it.count -= num_to_remove;
-}
-
-void array_resize(Raw_Array &it, u64 next_capacity) {
-  if (it.data.data && it.capacity == next_capacity) return;
-
-  u64 prev_size = it.capacity * it.data.stride;
-  u64 next_size = next_capacity * it.data.stride;
-
-  // @Speed: realloc
-  //it.data = realloc(it.data.data, next_size, prev_size);
-  // @Cleanup
-  if (it.data.data) os_free(it.data.data);
-  it.data = (u8 *)os_alloc(next_size * it.data.stride);
-  assert(it.data.data);
-  it.capacity = next_capacity;
-}
-
-void array_init(Raw_Array &it, u64 initial_capacity = 16) {
-  it.count = 0;
-  it.data = NULL;
-  array_resize(it, initial_capacity);
-}
-
-void array_free(Raw_Array &it) {
-  // @Cleanup
-  if (it.data.data) {
-    os_free(it.data.data);
-    it.data.data = NULL;
-    it.capacity = 0;
-    it.count = 0;
-  }
-}
-
-void array_reserve(Raw_Array &it, u64 minimum_count) {
-  if (it.capacity < minimum_count) {
-    array_resize(it, minimum_count);
-  }
-}
-
-void *array_push(Raw_Array &it) {
-  if (it.count >= it.capacity) {
-    array_resize(it, it.capacity ? it.capacity * 2 : 16);
-  }
-
-  memory_set(&it.data[it.count], 0, it.data.stride);
-  return &it.data[it.count ++];
-}
-
-template <typename T>
-struct Array : Raw_Array {
-  Array() {
-    data.stride = sizeof(T);
-  }
-
-  Array(u64 _capacity, u64 _count) {
-    capacity = _capacity;
-    count = _count;
-    data.stride = sizeof(T);
-  }
-
-  Array(u64 _capacity, u64 _count, void *_data) {
-    capacity = _capacity;
-    count = _count;
-    data.data = (u8 *)_data;
-    data.stride = sizeof(T);
-  }
-
-  T &operator[](u64 i) {
-    assert(i >= 0 && i < capacity);
-    assert(data.stride == sizeof(T));
-
-    return (T &)data[i];
-  }
-};
-
-template <typename T> T *array_peek(Array<T> &it) { return (T *)array_peek((Raw_Array &)(it)); }
-template <typename T> T *array_pop(Array<T> &it) { return (T *)array_pop((Raw_Array &)(it)); }
-template <typename T> T *array_push(Array<T> &it) { return (T *)array_push((Raw_Array &)(it)); }
-template <typename T> T *array_push(Array<T> &it, T item) {
-  if (it.count >= it.capacity) array_resize(it, it.capacity ? it.capacity * 2 : 16);
-
-  memory_copy(&item, &it.data[it.count], it.data.stride);
-  return (T *)&it.data[it.count ++];
-}
-
-#if 0
-Array_Iterator<T> begin() const {
-  return Array_Iterator<T>(this, 0);
-}
-
-Array_Iterator<T> end() const {
-  return Array_Iterator<T>(this, count);
-}
-
-T *begin_ptr() {
-  return data ? &data[0] : NULL;
-}
-
-T *end_ptr() {
-  return data ? &data[count] : NULL;
-}
-#endif
-
-#if 0
-template <typename T> struct Static_Array;
-
-template <typename T>
-struct Static_Array_Iterator {
-  const Static_Array<T> *array;
-  u64 index;
-
-  Static_Array_Iterator(const Static_Array<T> *_array, u64 _index) : array(_array), index(_index) {};
-
-  bool operator != (const Static_Array_Iterator<T> &other) const {
-    return index != other.index;
-  }
-
-  T &operator *() const {
-    return array->data[index];
-  }
-
-  const Static_Array_Iterator &operator++ () {
-    index++;
-    return *this;
-  }
-};
-
-template <typename T>
-struct Static_Array {
-  u64 count;
-  T *data;
-
-  T &operator[](u64 i) {
-    assert(i >= 0 && i < count);
-    return data[i];
-  }
-
-  Static_Array_Iterator<T> begin() const {
-    return Static_Array_Iterator<T>(this, 0);
-  }
-
-  Static_Array_Iterator<T> end() const {
-    return Static_Array_Iterator<T>(this, count);
+  Array_Iterator<T> end() const {
+    return Array_Iterator<T>(this, count);
   }
 
   T *begin_ptr() {
@@ -1725,16 +1519,113 @@ struct Static_Array {
     return data ? &data[count] : NULL;
   }
 };
-#endif
+
+template <typename T>
+void array_reset(Array<T> &it) {
+  it.count = 0;
+}
+
+template <typename T>
+bool array_at_capacity(Array<T> &it) {
+  return it.capacity <= it.count;
+}
+
+template <typename T>
+T *array_peek(Array<T> &it) {
+  return it.count > 0 ? &it.data[it.count - 1] : NULL;
+}
+
+template <typename T>
+void *array_pop(Array<T> &it) {
+  void *removed = array_peek(it);
+  if (removed) it.count --;
+  return removed;
+}
+
+template <typename T>
+void array_remove_unordered(Array<T> &it, u64 index) {
+  assert(index >= 0 && index < it.count);
+  memory_copy(&it.data[it.count - 1], &it.data[index], sizeof(T));
+  it.count--;
+}
+
+template <typename T>
+void array_remove_while_keeping_order(Array<T> &it, u64 index, u64 num_to_remove = 1) {
+  assert(index >= 0 && index < it.count);
+  assert(num_to_remove > 0 && index + num_to_remove <= it.count);
+
+  // @Speed: this could be replaced with memory_move, the problem is overlapping memory
+  for (u64 i = index + num_to_remove; i < it.count; i++) {
+    memory_copy(&it.data[i], &it.data[i - num_to_remove], sizeof(T));
+  }
+
+  it.count -= num_to_remove;
+}
+
+template <typename T>
+void array_resize(Array<T> &it, u64 next_capacity) {
+  if (it.data && it.capacity == next_capacity) return;
+
+  u64 prev_size = it.capacity * sizeof(T);
+  u64 next_size = next_capacity * sizeof(T);
+
+  if (it.data) os_free(it.data);
+  it.data = (T *)os_alloc(next_size * sizeof(T));
+  assert(it.data);
+  it.capacity = next_capacity;
+}
+
+template <typename T>
+void array_init(Array<T> &it, u64 initial_capacity = 16) {
+  it.count = 0;
+  it.data = NULL;
+  array_resize(it, initial_capacity);
+}
+
+template <typename T>
+void array_free(Array<T> &it) {
+  if (it.data) {
+    os_free(it.data);
+    it.data = NULL;
+    it.capacity = 0;
+    it.count = 0;
+  }
+}
+
+template <typename T>
+void array_reserve(Array<T> &it, u64 minimum_count) {
+  if (it.capacity < minimum_count) {
+    array_resize(it, minimum_count);
+  }
+}
+
+template <typename T>
+T *array_push(Array<T> &it) {
+  if (it.count >= it.capacity) {
+    array_resize(it, it.capacity ? it.capacity * 2 : 16);
+  }
+
+  memory_set(&it.data[it.count], 0, sizeof(T));
+  return &it.data[it.count ++];
+}
+
+template <typename T>
+T *array_push(Array<T> &it, T item) {
+  if (it.count >= it.capacity) {
+    array_resize(it, it.capacity ? it.capacity * 2 : 16);
+  }
+
+  it.data[it.count] = item;
+  return &it.data[it.count ++];
+}
 
 
-#if 0
 //
 // Hash Table
 //
 
 #define For_Table(table)                                    \
-  for (auto it = (table).begin(); it < (table).end(); it++) \
+  for (auto it = (table).begin_ptr(); it < (table).end_ptr(); it++) \
     if (it->hash < FIRST_VALID_HASH) continue; else
 
 const int NEVER_OCCUPIED_HASH = 0;
@@ -1742,7 +1633,8 @@ const int REMOVED_HASH = 1;
 const int FIRST_VALID_HASH = 2;
 
 // NOTE(nick): djb2 algorithm
-u32 compute_hash(char *str) {
+// @Incomplete: should we force users to define these methods?
+u32 table_compute_hash(char *str) {
   u32 hash = 5381;
   i32 c;
 
@@ -1753,178 +1645,196 @@ u32 compute_hash(char *str) {
   return hash;
 }
 
-u32 compute_hash(u32 value) {
+u32 table_compute_hash(u32 value) {
   value ^= (value >> 20) ^ (value >> 12);
   return value ^ (value >> 7) ^ (value >> 4);
 }
 
 template <typename K>
-bool hash_compare_keys(const K &a, const K &b) {
+bool table_compare_keys(const K &a, const K &b) {
   return a == b;
 }
 
-template <typename K, typename V> struct Hash_Table {
+u32 next_power_of_two(u32 x) {
+  assert(x != 0);
+
+  --x;
+  x |= x >> 1;
+  x |= x >> 2;
+  x |= x >> 4;
+  x |= x >> 8;
+  x |= x >> 16;
+
+  return ++x;
+}
+
+template <typename K, typename V>
+struct Hash_Table {
   struct Entry {
     u32 hash;
     K key;
     V value;
   };
 
-  Allocator *allocator = context.allocator;
+  //Allocator *allocator = context.allocator; // @Incomplete
   u32 capacity = 0;
   u32 count = 0;
   u32 slots_filled = 0;
   Entry *data = 0;
 
-  void init(u32 table_size) {
-    capacity = next_power_of_two(table_size);
-    count = 0;
-    slots_filled = 0;
+  Entry *begin_ptr() { return data ? &data[0] : NULL; }
 
-    assert((capacity & (capacity - 1)) == 0); // Must be a power of two!
-
-    data = (Entry *)Alloc(capacity * sizeof(Entry), allocator);
-    reset();
-  }
-
-  void free() {
-    if (data) {
-      Free(data, allocator);
-      data = NULL;
-      capacity = 0;
-      count = 0;
-      slots_filled = 0;
-    }
-  }
-
-  void expand() {
-    u32 next_capacity = capacity ? capacity * 2 : 32;
-
-    #if 0
-    u32 num_removed = slots_filled - count;
-    if (capacity > 0 && (capacity - num_removed) * 2 <= capacity) {
-      next_capacity = capacity;
-    }
-    #endif
-
-    assert((next_capacity & (next_capacity - 1)) == 0); // Must be a power of two!
-
-    Entry *old_data = data;
-    u32 old_capacity = capacity;
-
-    init(next_capacity);
-
-    // count and slots_filled will be incremented by add.
-    count        = 0;
-    slots_filled = 0;
-
-    for (u32 i = 0; i < old_capacity; i++) {
-      Entry *entry = &old_data[i];
-
-      // Note that if we removed some stuff we will over-allocate the new table.
-      // Maybe we should count the number of clobbers and subtract that? I dunno.
-      if (entry->hash >= FIRST_VALID_HASH) add(entry->key, entry->value);
-    }
-
-    Free(old_data, allocator);
-  }
-
-  // Sets the key-value pair, replacing it if it already exists.
-  V *set(K key, V value) {
-    auto result = find_pointer(key);
-    if (result) {
-      *result = value;
-      return result;
-    } else {
-      return add(key, value);
-    }
-  }
-
-  // Adds the given key-value pair to the table, returns a pointer to the inserted item.
-  V *add(K key, V value) {
-    // The + 1 is here to handle the weird case where the table size is 1 and you add the first item
-    // slots_filled / capacity >= 7 / 10 ...therefore:
-    // slots_filled * 10 >= capacity * 7
-    if ((slots_filled + 1) * 10 >= capacity * 7) expand();
-    assert(slots_filled <= capacity);
-
-    u32 hash = compute_hash(key);
-    if (hash < FIRST_VALID_HASH) hash += FIRST_VALID_HASH;
-    u32 index = hash & (capacity - 1);
-
-    while (data[index].hash) {
-      index = (index + 1) & (capacity - 1);
-    }
-
-    count ++;
-    slots_filled ++;
-    data[index] = {hash, key, value};
-
-    return &data[index].value;
-  }
-
-  V *find_pointer(K key) {
-    if (!data) return NULL; // @Incomplete: do we want this extra branch hit here?
-
-    assert(data); // Must be initialized!
-
-    u32 hash = compute_hash(key);
-    if (hash < FIRST_VALID_HASH) hash += FIRST_VALID_HASH;
-    u32 index = hash & (capacity - 1);
-
-    while (data[index].hash) {
-      auto entry = &data[index];
-      if (entry->hash == hash && hash_compare_keys(entry->key, key)) {
-        return &entry->value;
-      }
-
-      index = (index + 1) & (capacity - 1);
-    }
-
-    return NULL;
-  }
-
-  FORCE_INLINE V find(K key) {
-    V *result = find_pointer(key);
-    if (result) return *result;
-    return {};
-  }
-
-  bool remove(K key) {
-    assert(data); // Must be initialized!
-
-    u32 hash = compute_hash(key);
-    if (hash < FIRST_VALID_HASH) hash += FIRST_VALID_HASH;
-    u32 index = hash & (capacity - 1);
-
-    while (data[index].hash) {
-      if (data[index].hash == hash && hash_compare_keys(data[index].key, key)) {
-        data[index].hash = REMOVED_HASH; // No valid entry will ever hash to REMOVED_HASH.
-        count --;
-        return true;
-      }
-
-      index = (index + 1) & (capacity - 1);
-    }
-
-    return false;
-  }
-
-  void reset() {
-    count = 0;
-    slots_filled = 0;
-
-    if (data) {
-      for (u32 i = 0; i < capacity; i++) { data[i].hash = 0; }
-    }
-  }
-
-  Entry *begin() { return data ? &data[0] : NULL; }
-
-  Entry *end() { return data ? &data[capacity] : NULL; }
+  Entry *end_ptr() { return data ? &data[capacity] : NULL; }
 };
 
-#endif
+template <typename K, typename V>
+void table_init(Hash_Table<K, V> &it, u32 table_size) {
+  it.capacity = next_power_of_two(table_size);
+  it.count = 0;
+  it.slots_filled = 0;
+
+  assert((it.capacity & (it.capacity - 1)) == 0); // Must be a power of two!
+
+  it.data = (Hash_Table<K, V>::Entry *)os_alloc(it.capacity * sizeof(Hash_Table<K, V>::Entry));
+  table_reset(it);
+}
+
+template <typename K, typename V>
+void table_reset(Hash_Table<K, V> &it) {
+  it.count = 0;
+  it.slots_filled = 0;
+
+  if (it.data) {
+    for (u32 i = 0; i < it.capacity; i++) { it.data[i].hash = 0; }
+  }
+}
+
+template <typename K, typename V>
+void table_free(Hash_Table<K, V> &it) {
+  if (it.data) {
+    os_free(it.data);
+    it.data = NULL;
+    it.capacity = 0;
+    it.count = 0;
+    it.slots_filled = 0;
+  }
+}
+
+template <typename K, typename V>
+void table_expand(Hash_Table<K, V> &it) {
+  u32 next_capacity = it.capacity ? it.capacity * 2 : 32;
+
+  assert((next_capacity & (next_capacity - 1)) == 0); // Must be a power of two!
+
+  Hash_Table<K, V>::Entry *old_data = it.data;
+  u32 old_capacity = it.capacity;
+
+  table_init(it, next_capacity);
+
+  // count and slots_filled will be incremented by add.
+  it.count        = 0;
+  it.slots_filled = 0;
+
+  for (u32 i = 0; i < old_capacity; i++) {
+    auto *entry = &old_data[i];
+
+    // Note that if we removed some stuff we will over-allocate the new table.
+    // Maybe we should count the number of clobbers and subtract that? I dunno.
+    if (entry->hash >= FIRST_VALID_HASH) table_add(it, entry->key, entry->value);
+  }
+
+  os_free(old_data);
+}
+
+// Sets the key-value pair, replacing it if it already exists.
+template <typename K, typename V>
+V *table_set(Hash_Table<K, V> &it, K key, V value) {
+  auto result = table_find_pointer(key);
+  if (result) {
+    *result = value;
+    return result;
+  } else {
+    return table_add(key, value);
+  }
+}
+
+// Adds the given key-value pair to the table, returns a pointer to the inserted item.
+template <typename K, typename V>
+V *table_add(Hash_Table<K, V> &it, K key, V value) {
+  // The + 1 is here to handle the weird case where the table size is 1 and you add the first item
+  // slots_filled / capacity >= 7 / 10 ...therefore:
+  // slots_filled * 10 >= capacity * 7
+  if ((it.slots_filled + 1) * 10 >= it.capacity * 7) table_expand(it);
+  assert(it.slots_filled <= it.capacity);
+
+  u32 hash = table_compute_hash(key);
+  if (hash < FIRST_VALID_HASH) hash += FIRST_VALID_HASH;
+  u32 index = hash & (it.capacity - 1);
+
+  while (it.data[index].hash) {
+    index = (index + 1) & (it.capacity - 1);
+  }
+
+  it.count ++;
+  it.slots_filled ++;
+  it.data[index] = {hash, key, value};
+
+  return &it.data[index].value;
+}
+
+template <typename K, typename V>
+V *table_find_pointer(Hash_Table<K, V> &it, K key) {
+  if (!it.data) return NULL; // @Incomplete: do we want this extra branch hit here?
+
+  assert(it.data); // Must be initialized!
+
+  u32 hash = table_compute_hash(key);
+  if (hash < FIRST_VALID_HASH) hash += FIRST_VALID_HASH;
+  u32 index = hash & (it.capacity - 1);
+
+  while (it.data[index].hash) {
+    auto entry = &it.data[index];
+    if (entry->hash == hash && table_compare_keys(entry->key, key)) {
+      return &entry->value;
+    }
+
+    index = (index + 1) & (it.capacity - 1);
+  }
+
+  return NULL;
+}
+
+template <typename K, typename V>
+V table_find(Hash_Table<K, V> &it, K key) {
+  V *result = table_find_pointer(it, key);
+
+  if (result) {
+    return *result;
+  }
+
+  return {};
+}
+
+template <typename K, typename V>
+bool table_remove(Hash_Table<K, V> &it, K key) {
+  assert(it.data); // Must be initialized!
+
+  u32 hash = table_compute_hash(key);
+  if (hash < FIRST_VALID_HASH) hash += FIRST_VALID_HASH;
+  u32 index = hash & (it.capacity - 1);
+
+  while (it.data[index].hash) {
+    if (it.data[index].hash == hash && table_compare_keys(it.data[index].key, key)) {
+      it.data[index].hash = REMOVED_HASH; // No valid entry will ever hash to REMOVED_HASH.
+      it.count --;
+      return true;
+    }
+
+    index = (index + 1) & (it.capacity - 1);
+  }
+
+  return false;
+}
 
 
 #endif // NJA_H
