@@ -31,6 +31,14 @@
 #endif
 #endif
 
+#ifndef STATIC_ASSERT
+  #define STATIC_ASSERT3(cond, msg) typedef char static_assertion_##msg[(!!(cond))*2-1]
+  // NOTE(bill): Token pasting madness!!
+  #define STATIC_ASSERT2(cond, line) STATIC_ASSERT3(cond, static_assertion_at_line_##line)
+  #define STATIC_ASSERT1(cond, line) STATIC_ASSERT2(cond, line)
+  #define STATIC_ASSERT(cond)        STATIC_ASSERT1(cond, __LINE__)
+#endif
+
 #define cast(type) (type)
 
 #define count_of(array) (sizeof(array) / sizeof((array)[0]))
@@ -69,16 +77,18 @@
 //
 #include <stdint.h>
 
-typedef uint8_t  u8;
-typedef int8_t   i8;
-typedef uint16_t u16;
-typedef int16_t  i16;
-typedef uint32_t u32;
-typedef int32_t  i32;
-typedef uint64_t u64;
-typedef int64_t  i64;
-typedef float    f32;
-typedef double   f64;
+typedef uint8_t   u8;
+typedef int8_t    i8;
+typedef uint16_t  u16;
+typedef int16_t   i16;
+typedef uint32_t  u32;
+typedef int32_t   i32;
+typedef uint64_t  u64;
+typedef int64_t   i64;
+typedef float     f32;
+typedef double    f64;
+typedef size_t    usize;
+typedef ptrdiff_t isize;
 
 #define U8_MAX  0xff
 #define I8_MAX  0x7f
@@ -92,10 +102,10 @@ typedef double   f64;
 #define U64_MAX 0xffffffffffffffff
 #define I64_MAX 0x7fffffffffffffff
 #define I64_MIN 0x8000000000000000
-#define F32_MIN FLT_MIN
-#define F32_MAX FLT_MAX
-#define F64_MIN DBL_MIN
-#define F64_MAX DBL_MAX
+#define F32_MIN 1.17549435e-38f
+#define F32_MAX 3.40282347e+38f
+#define F64_MIN 2.2250738585072014e-308
+#define F64_MAX 1.7976931348623157e+308
 
 //
 // Memory
@@ -297,11 +307,21 @@ char *string_to_cstr(String str) {
 i64 cstr_length(char *str) {
   char *at = str;
 
+  // @Speed: this can be made wide
   while (*at != 0) {
     at ++;
   }
 
   return at - str;
+}
+
+bool cstr_equals(char *a, char *b) {
+  if (a == b) {
+    return true;
+  }
+
+  i64 length = cstr_length(a);
+  return b[length] == NULL && memory_equals(a, b, length);
 }
 
 String string_from_cstr(char *data) {
@@ -909,18 +929,6 @@ inline f64 Clamp(f64 value, f64 lower, f64 upper) { return MAX(MIN(value, upper)
 #define ClampTop Max
 #define ClampBot Min
 
-inline f32 Lerp(f32 a, f32 b, f32 t) {
-  return (1 - t) * a + b * t;
-}
-
-inline f32 Unlerp(f32 a, f32 b, f32 v) {
-  return (v - a) / (b - a);
-}
-
-inline f32 Square(f32 x) {
-  return x * x;
-}
-
 //
 // Math
 //
@@ -959,6 +967,13 @@ struct Thread {
 struct Thread_Params {
   Thread_Proc *proc;
   void *data;
+};
+
+struct OS_Memory {
+  void *(*reserve)(u64 size);
+  void *(commit)(void *ptr, u64 size);
+  void *(decommit)(void *ptr, u64 size);
+  void *(release)(void *ptr);
 };
 
 #if OS_WIN32
@@ -1049,15 +1064,6 @@ void os_set_high_process_priority(bool enable) {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL);
   }
 }
-
-#if 0
-struct OS_Memory {
-  void *reserve(u64 size);
-  void commit(void *ptr, u64 size);
-  void decommit(void *ptr, u64 size);
-  void release(void *ptr);
-};
-#endif
 
 void *os_memory_reserve(u64 size) {
   return VirtualAlloc(0, size, MEM_RESERVE, PAGE_READWRITE);
@@ -1453,6 +1459,74 @@ String os_get_executable_directory() {
 }
 
 //
+// Allocator
+//
+
+enum Allocator_Mode {
+  ALLOCATOR_MODE_ALLOC    = 0,
+  ALLOCATOR_MODE_RESIZE   = 1,
+  ALLOCATOR_MODE_FREE     = 2,
+  ALLOCATOR_MODE_FREE_ALL = 3,
+};
+
+#define ALLOCATOR_PROC(name) void *name(Allocator_Mode mode, u64 requested_size, u64 old_size, void *old_memory_pointer, void *allocator_data);
+typedef ALLOCATOR_PROC(Allocator_Proc);
+
+struct Allocator {
+  Allocator_Proc *proc;
+  void *data;
+};
+
+void *Alloc(u64 size, Allocator allocator) {
+  assert(allocator.proc);
+  void *result = allocator.proc(ALLOCATOR_MODE_ALLOC, size, 0, NULL, allocator.data);
+  return result;
+}
+
+void Free(void *data, Allocator allocator) {
+  assert(allocator.proc);
+  allocator.proc(ALLOCATOR_MODE_FREE, 0, 0, data, allocator.data);
+}
+
+void *Realloc(void *data, u64 new_size, u64 old_size, Allocator allocator) {
+  assert(allocator.proc);
+  return allocator.proc(ALLOCATOR_MODE_RESIZE, new_size, old_size, data, allocator.data);
+}
+
+void *os_allocator_proc(Allocator_Mode mode, u64 requested_size, u64 old_size, void *old_memory_pointer, void *allocator_data) {
+  switch (mode) {
+    default:
+    case ALLOCATOR_MODE_FREE: {
+      os_free(old_memory_pointer);
+      return NULL;
+    }
+
+    case ALLOCATOR_MODE_RESIZE:
+    case ALLOCATOR_MODE_ALLOC: {
+      u64 alignment = 8;
+      u64 extra = alignment - (requested_size & (alignment - 1));
+      extra &= (alignment - 1);
+
+      u64 actual_size = requested_size + extra;
+
+      void *result = os_alloc(actual_size);
+
+      if (result && old_memory_pointer && mode == ALLOCATOR_MODE_RESIZE) {
+        // @Incomplete: provide os-level realloc function
+        memory_copy(old_memory_pointer, result, Min(requested_size, old_size));
+        os_free(old_memory_pointer);
+      }
+
+      return result;
+    }
+  }
+}
+
+Allocator os_allocator() {
+  return Allocator{os_allocator_proc, 0};
+}
+
+//
 // Array
 //
 
@@ -1494,6 +1568,7 @@ struct Array_Iterator {
 
 template <typename T>
 struct Array {
+  Allocator allocator = os_allocator();
   u64 capacity = 0;
   u64 count = 0;
   T *data = NULL;
@@ -1503,21 +1578,11 @@ struct Array {
     return data[i];
   }
 
-  Array_Iterator<T> begin() const {
-    return Array_Iterator<T>(this, 0);
-  }
+  Array_Iterator<T> begin() const { return Array_Iterator<T>(this, 0); }
+  Array_Iterator<T> end() const   { return Array_Iterator<T>(this, count); }
 
-  Array_Iterator<T> end() const {
-    return Array_Iterator<T>(this, count);
-  }
-
-  T *begin_ptr() {
-    return data ? &data[0] : NULL;
-  }
-
-  T *end_ptr() {
-    return data ? &data[count] : NULL;
-  }
+  T *begin_ptr() { return data ? &data[0] : NULL; }
+  T *end_ptr()   { return data ? &data[count] : NULL; }
 };
 
 template <typename T>
@@ -1569,8 +1634,7 @@ void array_resize(Array<T> &it, u64 next_capacity) {
   u64 prev_size = it.capacity * sizeof(T);
   u64 next_size = next_capacity * sizeof(T);
 
-  if (it.data) os_free(it.data);
-  it.data = (T *)os_alloc(next_size * sizeof(T));
+  it.data = (T *)Realloc(it.data, next_size, prev_size, it.allocator);
   assert(it.data);
   it.capacity = next_capacity;
 }
@@ -1619,41 +1683,98 @@ T *array_push(Array<T> &it, T item) {
   return &it.data[it.count ++];
 }
 
-
 //
-// Hash Table
+// Hash
 //
 
-#define For_Table(table)                                    \
-  for (auto it = (table).begin_ptr(); it < (table).end_ptr(); it++) \
-    if (it->hash < FIRST_VALID_HASH) continue; else
+u32 murmur32_seed(void const *data, isize len, u32 seed) {
+  u32 const c1 = 0xcc9e2d51;
+  u32 const c2 = 0x1b873593;
+  u32 const r1 = 15;
+  u32 const r2 = 13;
+  u32 const m  = 5;
+  u32 const n  = 0xe6546b64;
 
-const int NEVER_OCCUPIED_HASH = 0;
-const int REMOVED_HASH = 1;
-const int FIRST_VALID_HASH = 2;
+  isize i, nblocks = len / 4;
+  u32 hash = seed, k1 = 0;
+  u32 const *blocks = cast(u32 const*)data;
+  u8 const *tail = cast(u8 const *)(data) + nblocks*4;
 
-// NOTE(nick): djb2 algorithm
-// @Incomplete: should we force users to define these methods?
-u32 table_compute_hash(char *str) {
-  u32 hash = 5381;
-  i32 c;
+  for (i = 0; i < nblocks; i++) {
+    u32 k = blocks[i];
+    k *= c1;
+    k = (k << r1) | (k >> (32 - r1));
+    k *= c2;
 
-  while ((c = *str++)) {
-    hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+    hash ^= k;
+    hash = ((hash << r2) | (hash >> (32 - r2))) * m + n;
   }
+
+  switch (len & 3) {
+  case 3:
+    k1 ^= tail[2] << 16;
+  case 2:
+    k1 ^= tail[1] << 8;
+  case 1:
+    k1 ^= tail[0];
+
+    k1 *= c1;
+    k1 = (k1 << r1) | (k1 >> (32 - r1));
+    k1 *= c2;
+    hash ^= k1;
+  }
+
+  hash ^= len;
+  hash ^= (hash >> 16);
+  hash *= 0x85ebca6b;
+  hash ^= (hash >> 13);
+  hash *= 0xc2b2ae35;
+  hash ^= (hash >> 16);
 
   return hash;
 }
 
-u32 table_compute_hash(u32 value) {
-  value ^= (value >> 20) ^ (value >> 12);
-  return value ^ (value >> 7) ^ (value >> 4);
+u64 murmur64_seed(void const *data_, isize len, u64 seed) {
+  u64 const m = 0xc6a4a7935bd1e995ULL;
+  i32 const r = 47;
+
+  u64 h = seed ^ (len * m);
+
+  u64 const *data = cast(u64 const *)data_;
+  u8  const *data2 = cast(u8 const *)data_;
+  u64 const* end = data + (len / 8);
+
+  while (data != end) {
+    u64 k = *data++;
+
+    k *= m;
+    k ^= k >> r;
+    k *= m;
+
+    h ^= k;
+    h *= m;
+  }
+
+  switch (len & 7) {
+  case 7: h ^= cast(u64)(data2[6]) << 48;
+  case 6: h ^= cast(u64)(data2[5]) << 40;
+  case 5: h ^= cast(u64)(data2[4]) << 32;
+  case 4: h ^= cast(u64)(data2[3]) << 24;
+  case 3: h ^= cast(u64)(data2[2]) << 16;
+  case 2: h ^= cast(u64)(data2[1]) << 8;
+  case 1: h ^= cast(u64)(data2[0]);
+    h *= m;
+  };
+
+  h ^= h >> r;
+  h *= m;
+  h ^= h >> r;
+
+  return h;
 }
 
-template <typename K>
-bool table_compare_keys(const K &a, const K &b) {
-  return a == b;
-}
+u32 murmur32(void const *data, isize len) { return murmur32_seed(data, len, 0x9747b28c); }
+u64 murmur64(void const *data, isize len) { return murmur64_seed(data, len, 0x9747b28c); }
 
 u32 next_power_of_two(u32 x) {
   assert(x != 0);
@@ -1668,23 +1789,107 @@ u32 next_power_of_two(u32 x) {
   return ++x;
 }
 
+
+//
+// Hash Table
+//
+
+#define For_Tablep(table)                                    \
+  for (auto it = (table).begin_ptr(); it < (table).end_ptr(); it++) \
+    if (it->hash < FIRST_VALID_HASH) continue; else
+
+template <typename K, typename V> struct Hash_Table;
+template <typename K, typename V> struct Hash_Table_Entry;
+
+template <typename K, typename V>
+struct Hash_Table_Iterator {
+  const Hash_Table<K, V> *table;
+  u64 index;
+
+  Hash_Table_Iterator(const Hash_Table<K, V> *_table, u64 _index) : table(_table), index(_index) {};
+
+  bool operator != (const Hash_Table_Iterator<K, V> &other) const {
+    return index != other.index;
+  }
+
+  Hash_Table_Entry<K, V> &operator *() const {
+    return table->data[index];
+  }
+
+  const Hash_Table_Iterator &operator++ () {
+    index ++;
+
+    while ((index < table->capacity) && (table->data[index].hash < FIRST_VALID_HASH)) {
+      index ++;
+    }
+
+    return *this;
+  }
+};
+
+const int NEVER_OCCUPIED_HASH = 0;
+const int REMOVED_HASH = 1;
+const int FIRST_VALID_HASH = 2;
+
+template <typename K>
+bool table_key_equals(const K &a, const K &b) {
+  return memory_equals(a, b, sizeof(K));
+}
+
+bool table_key_equals(const char *&a, const char *&b) {
+  return cstr_equals((char *)a, (char *)b); 
+}
+
+bool table_key_equals(const String &a, const String &b) {
+  return string_equals(a, b);
+}
+
+template <typename K>
+u32 table_key_hash(K key) {
+  return murmur64(&key, sizeof(K));
+}
+
+u32 table_key_hash(char *key) {
+  return murmur64(&key, cstr_length(key));
+}
+
+u32 table_key_hash(String key) {
+  return murmur64(key.data, key.count);
+}
+
+template <typename K, typename V>
+struct Hash_Table_Entry {
+  u32 hash;
+  K key;
+  V value;
+};
+
 template <typename K, typename V>
 struct Hash_Table {
-  struct Entry {
-    u32 hash;
-    K key;
-    V value;
-  };
-
-  //Allocator *allocator = context.allocator; // @Incomplete
+  Allocator allocator = os_allocator();
   u32 capacity = 0;
   u32 count = 0;
   u32 slots_filled = 0;
-  Entry *data = 0;
+  Hash_Table_Entry<K, V> *data = 0;
 
-  Entry *begin_ptr() { return data ? &data[0] : NULL; }
+  Hash_Table_Entry<K, V> &operator[](u64 i) {
+    assert(i >= 0 && i < capacity);
+    return data[i];
+  }
 
-  Entry *end_ptr() { return data ? &data[capacity] : NULL; }
+  Hash_Table_Iterator<K, V> begin() const {
+    u64 index = 0;
+
+    while ((index < this->capacity) && (this->data[index].hash < FIRST_VALID_HASH)) {
+      index ++;
+    }
+
+    return Hash_Table_Iterator<K, V>(this, index); 
+  }
+  Hash_Table_Iterator<K, V> end() const   { return Hash_Table_Iterator<K, V>(this, capacity); }
+
+  Hash_Table_Entry<K, V> *begin_ptr() { return data ? &data[0] : NULL; }
+  Hash_Table_Entry<K, V> *end_ptr()   { return data ? &data[capacity] : NULL; }
 };
 
 template <typename K, typename V>
@@ -1695,7 +1900,7 @@ void table_init(Hash_Table<K, V> &it, u32 table_size) {
 
   assert((it.capacity & (it.capacity - 1)) == 0); // Must be a power of two!
 
-  it.data = (Hash_Table<K, V>::Entry *)os_alloc(it.capacity * sizeof(Hash_Table<K, V>::Entry));
+  it.data = (Hash_Table_Entry<K, V> *)Alloc(it.capacity * sizeof(Hash_Table_Entry<K, V>), it.allocator);
   table_reset(it);
 }
 
@@ -1712,7 +1917,7 @@ void table_reset(Hash_Table<K, V> &it) {
 template <typename K, typename V>
 void table_free(Hash_Table<K, V> &it) {
   if (it.data) {
-    os_free(it.data);
+    Free(it.data, it.allocator);
     it.data = NULL;
     it.capacity = 0;
     it.count = 0;
@@ -1726,7 +1931,7 @@ void table_expand(Hash_Table<K, V> &it) {
 
   assert((next_capacity & (next_capacity - 1)) == 0); // Must be a power of two!
 
-  Hash_Table<K, V>::Entry *old_data = it.data;
+  auto *old_data = it.data;
   u32 old_capacity = it.capacity;
 
   table_init(it, next_capacity);
@@ -1743,7 +1948,7 @@ void table_expand(Hash_Table<K, V> &it) {
     if (entry->hash >= FIRST_VALID_HASH) table_add(it, entry->key, entry->value);
   }
 
-  os_free(old_data);
+  Free(old_data, it.allocator);
 }
 
 // Sets the key-value pair, replacing it if it already exists.
@@ -1767,7 +1972,7 @@ V *table_add(Hash_Table<K, V> &it, K key, V value) {
   if ((it.slots_filled + 1) * 10 >= it.capacity * 7) table_expand(it);
   assert(it.slots_filled <= it.capacity);
 
-  u32 hash = table_compute_hash(key);
+  u32 hash = table_key_hash(key);
   if (hash < FIRST_VALID_HASH) hash += FIRST_VALID_HASH;
   u32 index = hash & (it.capacity - 1);
 
@@ -1788,13 +1993,14 @@ V *table_find_pointer(Hash_Table<K, V> &it, K key) {
 
   assert(it.data); // Must be initialized!
 
-  u32 hash = table_compute_hash(key);
+  u32 hash = table_key_hash(key);
   if (hash < FIRST_VALID_HASH) hash += FIRST_VALID_HASH;
   u32 index = hash & (it.capacity - 1);
 
   while (it.data[index].hash) {
     auto entry = &it.data[index];
-    if (entry->hash == hash && table_compare_keys(entry->key, key)) {
+
+    if (entry->hash == hash && table_key_equals(&entry->key, &key)) {
       return &entry->value;
     }
 
@@ -1802,6 +2008,27 @@ V *table_find_pointer(Hash_Table<K, V> &it, K key) {
   }
 
   return NULL;
+}
+
+template <typename K, typename V>
+bool table_remove(Hash_Table<K, V> &it, K key) {
+  assert(it.data); // Must be initialized!
+
+  u32 hash = table_key_hash(key);
+  if (hash < FIRST_VALID_HASH) hash += FIRST_VALID_HASH;
+  u32 index = hash & (it.capacity - 1);
+
+  while (it.data[index].hash) {
+    if (it.data[index].hash == hash) {
+      it.data[index].hash = REMOVED_HASH; // No valid entry will ever hash to REMOVED_HASH.
+      it.count --;
+      return true;
+    }
+
+    index = (index + 1) & (it.capacity - 1);
+  }
+
+  return false;
 }
 
 template <typename K, typename V>
@@ -1816,24 +2043,8 @@ V table_find(Hash_Table<K, V> &it, K key) {
 }
 
 template <typename K, typename V>
-bool table_remove(Hash_Table<K, V> &it, K key) {
-  assert(it.data); // Must be initialized!
-
-  u32 hash = table_compute_hash(key);
-  if (hash < FIRST_VALID_HASH) hash += FIRST_VALID_HASH;
-  u32 index = hash & (it.capacity - 1);
-
-  while (it.data[index].hash) {
-    if (it.data[index].hash == hash && table_compare_keys(it.data[index].key, key)) {
-      it.data[index].hash = REMOVED_HASH; // No valid entry will ever hash to REMOVED_HASH.
-      it.count --;
-      return true;
-    }
-
-    index = (index + 1) & (it.capacity - 1);
-  }
-
-  return false;
+V table_contains(Hash_Table<K, V> &it, K key) {
+  return table_find_pointer(it, key) != NULL;
 }
 
 
