@@ -23,12 +23,50 @@
   #define print_to_buffer(data, max_length, format, args) vsnprintf(data, max_length, format, args)
 #endif
 
+#if DEBUG
+#ifndef DEBUG_TRAP
+
+  #if defined(_MSC_VER)
+    #if _MSC_VER < 1300
+    #define DEBUG_TRAP() __asm int 3 /* Trap to debugger! */
+    #else
+    #define DEBUG_TRAP() __debugbreak()
+    #endif
+  #else
+    #define DEBUG_TRAP() __builtin_trap()
+  #endif
+
+#endif
+#else
+  #define DEBUG_TRAP()
+#endif
+
 #ifndef assert
 #ifdef DEBUG
-  #define assert(expr) do { if (!(expr)) { print("%s %d: assert failed: %s\r\n", __FILE__, __LINE__, #expr); *(volatile int *)0 = 0; } } while (0)
+  void nja_assert_handler(char *prefix, char *expr, char *file, long line, char *msg) {
+    print("%s(%d): %s: ", file, line, prefix);
+    if (expr) {
+      print( "`%s` ", expr);
+    }
+    if (msg) {
+      print("- %s", msg);
+    }
+    print("\n");
+  }
+
+  #define assert_msg(expr, message) do { if (!(expr)) { nja_assert_handler("Assert Failed", #expr, __FILE__, __LINE__, message); DEBUG_TRAP(); } } while (0)
+
+  #define assert(expr) assert_msg(expr, (char *)NULL)
 #else
-  #define assert(expr)
+  #define assert_msg(...)
+  #define assert(...)
 #endif
+#endif
+
+#if DEBUG
+  #define dump(var) print("%s: %s\n", #var, string_to_cstr(to_string(var)))
+#else
+  #define dump(...)
 #endif
 
 #ifndef STATIC_ASSERT
@@ -39,29 +77,71 @@
   #define STATIC_ASSERT(cond)        STATIC_ASSERT1(cond, __LINE__)
 #endif
 
+#if defined(__cplusplus)
+  #define EXTERN extern "C"
+#else
+  #define EXTERN extern
+#endif
+
+#if defined(_WIN32)
+  #define DLL_EXPORT EXTERN __declspec(dllexport)
+  #define DLL_IMPORT EXTERN __declspec(dllimport)
+#else
+  #define DLL_EXPORT EXTERN __attribute__((visibility("default")))
+  #define DLL_IMPORT EXTERN
+#endif
+
 #define cast(type) (type)
 
 #define count_of(array) (sizeof(array) / sizeof((array)[0]))
+
 #define offset_of(Type, member) ((uint64_t) & (((Type *)0)->member))
 
-#define kilobytes(value) (value * 1024LL)
-#define megabytes(value) (value * 1024LL * 1024LL)
-#define gigabytes(value) (value * 1024LL * 1024LL * 1024LL)
-#define terabytes(value) (value * 1024LL * 1024LL * 1024LL * 1024LL)
+#define size_of(type) ((isize)sizeof(type))
 
+#define swap(Type, a, b) do { Type tmp = (a); (a) = (b); (b) = tmp; } while (0)
 
-#if defined(_WIN32)
-  #define OS_WIN32 1
-#elif defined(__APPLE__)
-  #define OS_MACOS 1
-#elif defined(__linux__)
-  #define OS_LINUX 1
-#else
-  #error "[OS] Unsupported operating system!"
+#if defined(__cplusplus) && !defined(defer)
+// Defer macro/thing.
+template<typename T>
+struct ExitScope {
+  T lambda;
+  ExitScope(T lambda) : lambda(lambda) {}
+  ~ExitScope() { lambda(); }
+  ExitScope(const ExitScope&);
+private:
+  ExitScope& operator =(const ExitScope&);
+};
+
+class ExitScopeHelp {
+public:
+  template<typename T>
+  ExitScope<T> operator+(T t) { return t; }
+};
+
+#define defer const auto& CONCAT(defer__, __LINE__) = ExitScopeHelp() + [&]()
 #endif
 
-#ifndef OS_WIN32
-  #define OS_WIN32 0
+#define set_flag(flags, flag, enable) do { if (enable) { flags |= (flag); } else { flags &= ~(flag); } } while(0)
+
+#if defined(_WIN32) || defined(_WIN64)
+  #define OS_WINDOWS 1
+#elif defined(__APPLE__)
+  #define OS_MACOS 1
+#elif defined(__unix__)
+
+  #if defined(__linux__)
+    #define OS_LINUX 1
+  #else
+    #error This UNIX operating system is not supported!
+  #endif
+
+#else
+  #error [OS] Unsupported operating system!
+#endif
+
+#ifndef OS_WINDOWS
+  #define OS_WINDOWS 0
 #endif
 
 #ifndef OS_MACOS
@@ -70,6 +150,28 @@
 
 #ifndef OS_LINUX
   #define OS_LINUX 0
+#endif
+
+#if defined(_MSC_VER)
+  #define COMPILER_MSVC 1
+#elif defined(__GNUC__)
+  #define COMPILER_GCC 1
+#elif defined(__clang__)
+  #define COMPILER_CLANG 1
+#else
+  #error Unknown compiler!
+#endif
+
+#ifndef COMPILER_MSVC
+  #define COMPILER_MSVC 0
+#endif
+
+#ifndef COMPILER_GCC
+  #define COMPILER_GCC 0
+#endif
+
+#ifndef COMPILER_CLANG
+  #define COMPILER_CLANG 0
 #endif
 
 //
@@ -107,9 +209,29 @@ typedef ptrdiff_t isize;
 #define F64_MIN 2.2250738585072014e-308
 #define F64_MAX 1.7976931348623157e+308
 
+STATIC_ASSERT(sizeof(u8)  == sizeof(i8));
+STATIC_ASSERT(sizeof(u16) == sizeof(i16));
+STATIC_ASSERT(sizeof(u32) == sizeof(i32));
+STATIC_ASSERT(sizeof(u64) == sizeof(i64));
+
+STATIC_ASSERT(sizeof(f32) == 4);
+STATIC_ASSERT(sizeof(f64) == 8);
+
+STATIC_ASSERT(sizeof(usize) == sizeof(isize));
+
+STATIC_ASSERT(sizeof(u8)  == 1);
+STATIC_ASSERT(sizeof(u16) == 2);
+STATIC_ASSERT(sizeof(u32) == 4);
+STATIC_ASSERT(sizeof(u64) == 8);
+
 //
 // Memory
 //
+
+#define kilobytes(value) (value * 1024LL)
+#define megabytes(value) (value * 1024LL * 1024LL)
+#define gigabytes(value) (value * 1024LL * 1024LL * 1024LL)
+#define terabytes(value) (value * 1024LL * 1024LL * 1024LL * 1024LL)
 
 void *memory_copy(void *from, void *to, u64 size) {
   u8 *src = cast(u8 *)from;
@@ -147,6 +269,45 @@ void memory_zero(void *ptr, u64 size) {
 // Arenas
 //
 
+bool nja_is_power_of_two(isize x) {
+  return x > 0 && !(x & (x - 1));
+}
+
+u64 nja_next_power_of_two(u64 x) {
+  assert(x != 0);
+
+  --x;
+  x |= x >> 1;
+  x |= x >> 2;
+  x |= x >> 4;
+  x |= x >> 8;
+  x |= x >> 16;
+
+  return ++x;
+}
+
+void *nja_align_forward(void *ptr, isize alignment) {
+  usize p;
+
+  assert(alignment >= 1);
+  assert(nja_is_power_of_two(alignment));
+
+  p = cast(usize)ptr;
+  return cast(void *)((p + (alignment - 1)) & ~(alignment - 1));
+}
+
+u64 nja_align_offset(void *ptr, isize alignment) {
+  usize base_address = (usize)ptr;
+
+  assert(alignment >= 1);
+  assert(nja_is_power_of_two(alignment));
+
+  u64 align_offset = alignment - (base_address & (alignment - 1));
+  align_offset &= (alignment - 1);
+
+  return align_offset;
+}
+
 struct Arena {
   u8 *data;
   u64 offset;
@@ -173,14 +334,7 @@ void arena_init(Arena *arena, u8 *data, u64 size) {
 void *arena_alloc_aligned(Arena *arena, u64 size, u64 alignment) {
   void *result = NULL;
 
-  assert(alignment >= 1);
-  // NOTE(nick): pow2
-  assert((alignment & ~(alignment - 1)) == alignment);
-
-  u64 base_address = (u64)(arena->data + arena->offset);
-  u64 align_offset = alignment - (base_address & (alignment - 1));
-  align_offset &= (alignment - 1);
-
+  u64 align_offset = nja_align_offset(arena->data + arena->offset, alignment);
   size += align_offset;
 
   if (arena->offset + size < arena->size) {
@@ -976,7 +1130,7 @@ struct OS_Memory {
   void *(release)(void *ptr);
 };
 
-#if OS_WIN32
+#if OS_WINDOWS
 
 #define WIN32_LEAN_AND_MEAN
 #define VC_EXTRALEAN
@@ -1451,7 +1605,7 @@ String os_get_current_directory() {
 }
 
 
-#endif // OS_WIN32
+#endif // OS_WINDOWS
 
 String os_get_executable_directory() {
   String result = os_get_executable_path();
@@ -1776,25 +1930,11 @@ u64 murmur64_seed(void const *data_, isize len, u64 seed) {
 u32 murmur32(void const *data, isize len) { return murmur32_seed(data, len, 0x9747b28c); }
 u64 murmur64(void const *data, isize len) { return murmur64_seed(data, len, 0x9747b28c); }
 
-u32 next_power_of_two(u32 x) {
-  assert(x != 0);
-
-  --x;
-  x |= x >> 1;
-  x |= x >> 2;
-  x |= x >> 4;
-  x |= x >> 8;
-  x |= x >> 16;
-
-  return ++x;
-}
-
-
 //
 // Hash Table
 //
 
-#define For_Tablep(table)                                    \
+#define For_Table(table)                                    \
   for (auto it = (table).begin_ptr(); it < (table).end_ptr(); it++) \
     if (it->hash < FIRST_VALID_HASH) continue; else
 
@@ -1894,7 +2034,7 @@ struct Hash_Table {
 
 template <typename K, typename V>
 void table_init(Hash_Table<K, V> &it, u32 table_size) {
-  it.capacity = next_power_of_two(table_size);
+  it.capacity = nja_next_power_of_two(table_size);
   it.count = 0;
   it.slots_filled = 0;
 
