@@ -99,7 +99,7 @@
 
 #define size_of(type) ((isize)sizeof(type))
 
-#define swap(Type, a, b) do { Type tmp = (a); (a) = (b); (b) = tmp; } while (0)
+#define nja_swap(Type, a, b) do { Type tmp = (a); (a) = (b); (b) = tmp; } while (0)
 
 #if defined(__cplusplus) && !defined(defer)
 // Defer macro/thing.
@@ -178,6 +178,7 @@ public:
 // Types
 //
 #include <stdint.h>
+#include <stddef.h>
 
 typedef uint8_t   u8;
 typedef int8_t    i8;
@@ -475,7 +476,7 @@ bool cstr_equals(char *a, char *b) {
   }
 
   i64 length = cstr_length(a);
-  return b[length] == NULL && memory_equals(a, b, length);
+  return b[length] == (char)NULL && memory_equals(a, b, length);
 }
 
 String string_from_cstr(char *data) {
@@ -1936,7 +1937,11 @@ u64 murmur64(void const *data, isize len) { return murmur64_seed(data, len, 0x97
 
 #define For_Table(table)                                    \
   for (auto it = (table).begin_ptr(); it < (table).end_ptr(); it++) \
-    if (it->hash < FIRST_VALID_HASH) continue; else
+    if (it->hash < TABLE_FIRST_VALID_HASH) continue; else
+
+const int TABLE_NEVER_OCCUPIED_HASH = 0;
+const int TABLE_REMOVED_HASH = 1;
+const int TABLE_FIRST_VALID_HASH = 2;
 
 template <typename K, typename V> struct Hash_Table;
 template <typename K, typename V> struct Hash_Table_Entry;
@@ -1959,17 +1964,13 @@ struct Hash_Table_Iterator {
   const Hash_Table_Iterator &operator++ () {
     index ++;
 
-    while ((index < table->capacity) && (table->data[index].hash < FIRST_VALID_HASH)) {
+    while ((index < table->capacity) && (table->data[index].hash < TABLE_FIRST_VALID_HASH)) {
       index ++;
     }
 
     return *this;
   }
 };
-
-const int NEVER_OCCUPIED_HASH = 0;
-const int REMOVED_HASH = 1;
-const int FIRST_VALID_HASH = 2;
 
 template <typename K>
 bool table_key_equals(const K &a, const K &b) {
@@ -2020,7 +2021,7 @@ struct Hash_Table {
   Hash_Table_Iterator<K, V> begin() const {
     u64 index = 0;
 
-    while ((index < this->capacity) && (this->data[index].hash < FIRST_VALID_HASH)) {
+    while ((index < this->capacity) && (this->data[index].hash < TABLE_FIRST_VALID_HASH)) {
       index ++;
     }
 
@@ -2085,7 +2086,7 @@ void table_expand(Hash_Table<K, V> &it) {
 
     // Note that if we removed some stuff we will over-allocate the new table.
     // Maybe we should count the number of clobbers and subtract that? I dunno.
-    if (entry->hash >= FIRST_VALID_HASH) table_add(it, entry->key, entry->value);
+    if (entry->hash >= TABLE_FIRST_VALID_HASH) table_add(it, entry->key, entry->value);
   }
 
   Free(old_data, it.allocator);
@@ -2113,7 +2114,7 @@ V *table_add(Hash_Table<K, V> &it, K key, V value) {
   assert(it.slots_filled <= it.capacity);
 
   u32 hash = table_key_hash(key);
-  if (hash < FIRST_VALID_HASH) hash += FIRST_VALID_HASH;
+  if (hash < TABLE_FIRST_VALID_HASH) hash += TABLE_FIRST_VALID_HASH;
   u32 index = hash & (it.capacity - 1);
 
   while (it.data[index].hash) {
@@ -2134,7 +2135,7 @@ V *table_find_pointer(Hash_Table<K, V> &it, K key) {
   assert(it.data); // Must be initialized!
 
   u32 hash = table_key_hash(key);
-  if (hash < FIRST_VALID_HASH) hash += FIRST_VALID_HASH;
+  if (hash < TABLE_FIRST_VALID_HASH) hash += TABLE_FIRST_VALID_HASH;
   u32 index = hash & (it.capacity - 1);
 
   while (it.data[index].hash) {
@@ -2155,12 +2156,12 @@ bool table_remove(Hash_Table<K, V> &it, K key) {
   assert(it.data); // Must be initialized!
 
   u32 hash = table_key_hash(key);
-  if (hash < FIRST_VALID_HASH) hash += FIRST_VALID_HASH;
+  if (hash < TABLE_FIRST_VALID_HASH) hash += TABLE_FIRST_VALID_HASH;
   u32 index = hash & (it.capacity - 1);
 
   while (it.data[index].hash) {
     if (it.data[index].hash == hash) {
-      it.data[index].hash = REMOVED_HASH; // No valid entry will ever hash to REMOVED_HASH.
+      it.data[index].hash = TABLE_REMOVED_HASH; // No valid entry will ever hash to TABLE_REMOVED_HASH.
       it.count --;
       return true;
     }

@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <assert.h>
-#include <intrin.h>
 
 extern "C" int stbsp_vsnprintf( char * buf, int count, char const * fmt, va_list va );
 void stb_print(const char *format, ...);
@@ -9,9 +8,18 @@ void stb_print(const char *format, ...);
 
 #include "nja.h"
 
+#if OS_WINDOWS
+#include <intrin.h>
+#elif OS_MACOS
+#include <immintrin.h>
+#else
+#error Missing intrisics import
+#endif
+
 #define STB_SPRINTF_IMPLEMENTATION
 #include "deps/stb_sprintf.h"
 
+#if OS_WINDOWS
 char *print_callback(const char *buf, void *user, int len) {
   DWORD bytes_written;
 
@@ -20,6 +28,14 @@ char *print_callback(const char *buf, void *user, int len) {
 
   return (char *)buf;
 }
+#elif OS_MACOS
+
+#include <stdio.h>
+char *print_callback(const char *buf, void *user, int len) {
+  fprintf(stdout, "%.*s", len, buf);
+  return (char *)buf;
+}
+#endif
 
 // @Robustness: make this thread-safe
 char output_buffer[2 * STB_SPRINTF_MIN];
@@ -131,7 +147,13 @@ static Asset_Hash ComputeAssetHash(char unsigned *At, size_t Count, char unsigne
     // TODO(casey): This needs to be improved - it's too slow, and the #if 0 branch would be nice but can't
     // work because of overrun, etc.
     char Temp[16];
+    
+    #if OS_WINDOWS
     __movsb((unsigned char *)Temp, At, Overhang);
+    #else
+    memcpy(Temp, At, Overhang);
+    #endif
+
     __m128i In = _mm_loadu_si128((__m128i *)Temp);
 #endif
     In = _mm_and_si128(In, _mm_loadu_si128((__m128i *)(OverhangMask + 16 - Overhang)));
