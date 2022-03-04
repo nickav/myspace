@@ -715,8 +715,8 @@ String to_string(i32 x) { return sprint("%d", x); }
 String to_string(u32 x) { return sprint("%d", x); }
 String to_string(i64 x) { return sprint("%d", x); }
 String to_string(u64 x) { return sprint("%llu", x); }
-String to_string(f32 x) { return sprint("%.2f", x); }
-String to_string(f64 x) { return sprint("%.4f", x); }
+String to_string(f32 x)    { return sprint("%.2f", x); }
+String to_string(f64 x)    { return sprint("%.4f", x); }
 String to_string(String x) { return x; }
 
 //
@@ -1058,8 +1058,8 @@ String string_from_string16(Arena *arena, String16 str) {
 
 #define MIN(a, b) ((a < b) ? (a) : (b))
 #define MAX(a, b) ((a > b) ? (a) : (b))
-
 #define CLAMP(value, lower, upper) (MAX(MIN(value, upper), lower))
+
 #define SIGN(x) ((x > 0) - (x < 0))
 #define ABS(x) ((x < 0) ? -(x) : (x))
 
@@ -1075,11 +1075,23 @@ inline u64 Max(u64 a, u64 b) { return MAX(a, b); }
 inline f32 Max(f32 a, f32 b) { return MAX(a, b); }
 inline f64 Max(f64 a, f64 b) { return MAX(a, b); }
 
-inline i32 Clamp(i32 value, i32 lower, i32 upper) { return MAX(MIN(value, upper), lower); }
-inline u32 Clamp(u32 value, u32 lower, u32 upper) { return MAX(MIN(value, upper), lower); }
-inline u64 Clamp(u64 value, u64 lower, u64 upper) { return MAX(MIN(value, upper), lower); }
-inline f32 Clamp(f32 value, f32 lower, f32 upper) { return MAX(MIN(value, upper), lower); }
-inline f64 Clamp(f64 value, f64 lower, f64 upper) { return MAX(MIN(value, upper), lower); }
+inline i32 Clamp(i32 value, i32 lower, i32 upper) { return CLAMP(value, lower, upper); }
+inline u32 Clamp(u32 value, u32 lower, u32 upper) { return CLAMP(value, lower, upper); }
+inline u64 Clamp(u64 value, u64 lower, u64 upper) { return CLAMP(value, lower, upper); } 
+inline f32 Clamp(f32 value, f32 lower, f32 upper) { return CLAMP(value, lower, upper); }
+inline f64 Clamp(f64 value, f64 lower, f64 upper) { return CLAMP(value, lower, upper); }
+
+inline i32 Sign(i32 a) { return SIGN(a); }
+inline u32 Sign(u32 a) { return SIGN(a); }
+inline u64 Sign(u64 a) { return SIGN(a); }
+inline f32 Sign(f32 a) { return SIGN(a); }
+inline f64 Sign(f64 a) { return SIGN(a); }
+
+inline i32 Abs(i32 a) { return ABS(a); }
+inline u32 Abs(u32 a) { return ABS(a); }
+inline u64 Abs(u64 a) { return ABS(a); }
+inline f32 Abs(f32 a) { return ABS(a); }
+inline f64 Abs(f64 a) { return ABS(a); }
 
 #define ClampTop Max
 #define ClampBot Min
@@ -1111,6 +1123,13 @@ enum File_Mode {
   FILE_MODE_APPEND = 0x4,
 };
 
+struct File_Lister;
+
+struct Scan_Result {
+  File_Info *files;
+  u32 count;
+};
+
 #define THREAD_PROC(name) u32 name(void *data)
 typedef THREAD_PROC(Thread_Proc);
 
@@ -1131,6 +1150,50 @@ struct OS_Memory {
   void *(release)(void *ptr);
 };
 
+bool os_init();
+
+void *os_alloc(u64 size);
+void os_free(void *ptr);
+void *os_memory_reserve(u64 size);
+void os_memory_commit(void *ptr, u64 size);
+void os_memory_decommit(void *ptr, u64 size);
+void os_memory_release(void *ptr);
+
+void os_thread_set_context(void *ptr);
+void *os_thread_get_context();
+
+f64 os_time_in_miliseconds();
+f64 os_time_utc_now();
+void os_sleep(f64 miliseconds);
+
+void os_set_high_process_priority(bool enable);
+
+String os_read_entire_file(Arena *arena, String path);
+String os_read_entire_file(String path);
+bool os_write_entire_file(String path, String contents);
+bool os_atomic_replace_file(String path, u64 size, void *data);
+bool os_delete_file(String path);
+bool os_make_directory(String path);
+bool os_delete_directory(String path);
+bool os_delete_entire_directory(String path);
+Scan_Result os_scan_directory(Arena *arena, String path);
+
+File_Lister os_file_list_begin(Arena *arena, String path);
+bool os_file_list_next(File_Lister *iter, File_Info *info);
+void os_file_list_end(File_Lister *iter);
+File_Info os_get_file_info(Arena *arena, String path);
+
+Thread os_create_thread(u64 stack_size, Thread_Proc *proc, void *data);
+void os_detatch_thread(Thread thread);
+u32 os_await_thread(Thread thread);
+
+String os_get_executable_path();
+String os_get_current_directory();
+String os_get_executable_directory();
+
+bool os_set_clipboard_text(String str);
+String os_get_clipboard_text();
+
 #if OS_WINDOWS
 
 #define WIN32_LEAN_AND_MEAN
@@ -1138,16 +1201,14 @@ struct OS_Memory {
 #define NOMINMAX
 #include <windows.h>
 
+#pragma comment(lib, "user32")
+
 static LARGE_INTEGER win32_perf_frequency;
 static LARGE_INTEGER win32_perf_counter;
 
 static DWORD win32_thread_context_index = 0;
 
 static bool did_init_os = false;
-
-void *os_alloc(u64 size);
-void os_free(void *ptr);
-void os_thread_set_context(void *ptr);
 
 void init_thread_context(u64 temporary_storage_size) {
   Thread_Context *ctx = (Thread_Context *)os_alloc(sizeof(Thread_Context));
@@ -1165,8 +1226,8 @@ void free_thread_context() {
   os_free(ctx);
 }
 
-void os_init() {
-  if (did_init_os) return;
+bool os_init() {
+  if (did_init_os) return false;
 
   AttachConsole(ATTACH_PARENT_PROCESS);
 
@@ -1178,6 +1239,7 @@ void os_init() {
   init_thread_context(megabytes(32));
 
   did_init_os = true;
+  return true;
 }
 
 void os_thread_set_context(void *ptr) {
@@ -1284,11 +1346,6 @@ String os_read_entire_file(Arena *arena, String path) {
   return result;
 }
 
-String os_read_entire_file(String path) {
-  Arena *arena = thread_get_temporary_arena();
-  return os_read_entire_file(arena, path);
-}
-
 bool os_write_entire_file(String path, String contents) {
   Arena *arena = thread_get_temporary_arena();
 
@@ -1319,6 +1376,39 @@ bool os_write_entire_file(String path, String contents) {
   CloseHandle(handle);
 
   return true;
+}
+
+bool os_atomic_replace_file(String path, u64 size, void *data) {
+  bool success = false;
+
+  char *temp_filename = cprint("%.*s.tmp", LIT(path));
+  HANDLE file = CreateFileA(temp_filename, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+
+  if (file == INVALID_HANDLE_VALUE) {
+    log("file", "Failed to open temporary file: %s\n", temp_filename);
+  }
+
+  if (file != INVALID_HANDLE_VALUE) {
+    bool write_success = false;
+    DWORD bytes_written = 0;
+    if (WriteFile(file, data, safe_truncate_to_u32(size), &bytes_written, 0)) {
+      write_success = bytes_written == size;
+    }
+
+    CloseHandle(file);
+
+    if (write_success) {
+      success = MoveFileExA(temp_filename, path.c_str(), MOVEFILE_REPLACE_EXISTING);
+    } else {
+      log("file", "Failed to atomically replace file: %s -> %s\n", temp_filename, path.c_str());
+    }
+  }
+
+  if (!success) {
+    DeleteFileA(temp_filename);
+  }
+
+  return success;
 }
 
 bool os_delete_file(String path) {
@@ -1390,11 +1480,6 @@ bool os_delete_entire_directory(String path) {
 
   return success;
 }
-
-struct Scan_Result {
-  File_Info *files;
-  u32 count;
-};
 
 Scan_Result os_scan_directory(Arena *arena, String path) {
   Scan_Result result = {};
@@ -1605,13 +1690,202 @@ String os_get_current_directory() {
   return result;
 }
 
+bool os_set_clipboard_text(String str) {
+  int count;
+  HANDLE handle;
+  WCHAR* buffer;
+
+  char *cstr = str.c_str();
+
+  count = MultiByteToWideChar(CP_UTF8, 0, cstr, -1, NULL, 0);
+
+  if (!count) {
+    return false;
+  }
+
+  handle = GlobalAlloc(GMEM_MOVEABLE, count * sizeof(WCHAR));
+  if (!handle) {
+    print("[clipboard] Failed to allocated global handle for clipboard.");
+    return false;
+  }
+
+  buffer = (WCHAR *)GlobalLock(handle);
+  if (!buffer) {
+    print("[clipboard] Failed to lock global handle.");
+    GlobalFree(handle);
+    return false;
+  }
+
+  MultiByteToWideChar(CP_UTF8, 0, cstr, -1, buffer, count);
+  GlobalUnlock(handle);
+
+  if (!OpenClipboard(NULL)) {
+    print("[clipboard] Failed to open clipboard.");
+    GlobalFree(handle);
+    return false;
+  }
+
+  EmptyClipboard();
+  SetClipboardData(CF_UNICODETEXT, handle);
+  CloseClipboard();
+
+  GlobalFree(handle);
+
+  return true;
+}
+
+String os_get_clipboard_text() {
+  if (!OpenClipboard(NULL)) {
+    print("[clipboard] Failed to open clipboard.");
+    return {};
+  }
+
+  HANDLE handle = GetClipboardData(CF_UNICODETEXT);
+  if (!handle) {
+    print("[clipboard] Failed to convert clipboard to string.");
+    CloseClipboard();
+    return {};
+  }
+
+  WCHAR *buffer = (WCHAR *)GlobalLock(handle);
+  if (!buffer) {
+    print("[clipboard] Failed to lock global handle.");
+    CloseClipboard();
+    return {};
+  }
+
+  u32 buffer_size = WideCharToMultiByte(CP_UTF8, 0, buffer, -1, NULL, 0, NULL, NULL);
+  String result = utf8_from_utf16(buffer, buffer_size);
+
+  GlobalUnlock(handle);
+  CloseClipboard();
+
+  return result;
+}
 
 #endif // OS_WINDOWS
+
+#if OS_MACOS
+
+#include <mach/clock.h> // clock_get_time
+#include <mach/mach_time.h> // mach_timebase_info, mach_absolute_time
+#include <mach/mach_host.h> // mach_host_self
+#include <mach/mach_port.h> // mach_port_deallocate
+
+#include <time.h>
+#include <unistd.h> // unlink, usleep, getcwd
+
+static f64 macos_perf_frequency = 0;
+static f64 macos_perf_counter = 0;
+
+bool os_init() {
+  mach_timebase_info_data_t rate_nsec;
+
+  macos_perf_frequency = 1000000LL * rate_nsec.numer / rate_nsec.denom;
+  macos_perf_counter = mach_absolute_time();
+
+  return true;
+}
+
+f64 os_time_in_miliseconds() {
+  f64 now = mach_absolute_time();
+  return (now - macos_perf_counter) / macos_perf_frequency;
+}
+
+f64 os_time_utc_now() {
+  struct timespec t;
+
+  clock_serv_t cclock;
+  mach_timespec_t mts;
+  host_get_clock_service(mach_host_self(), CALENDAR_CLOCK, &cclock);
+  clock_get_time(cclock, &mts);
+  mach_port_deallocate(mach_task_self(), cclock);
+  t.tv_sec = mts.tv_sec;
+  t.tv_nsec = mts.tv_nsec;
+
+  return cast(u64)t.tv_sec * 1000000ull + t.tv_nsec/1000 + 11644473600000000ull;
+}
+
+void os_sleep(f64 miliseconds) {
+  u32 ms = (u32)miliseconds;
+  struct timespec req = {(time_t)ms / 1000, (long)((ms % 1000) * 1000000)};
+  struct timespec rem = {0, 0};
+  nanosleep(&req, &rem);
+}
+
+#if defined(COMPILER_MSVC) && !defined(__clang__)
+  inline u64 os_rdtsc(void) {
+    return __rdtsc();
+  }
+#elif defined(__i386__)
+  inline u64 os_rdtsc(void) {
+    u64 x;
+    __asm__ volatile (".byte 0x0f, 0x31" : "=A" (x));
+    return x;
+  }
+#elif defined(__x86_64__)
+  inline u64 os_rdtsc(void) {
+    u32 hi, lo;
+    __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
+    return (cast(u64)lo) | ((cast(u64)hi)<<32);
+  }
+#endif
+
+#endif // OS_MACOS
+
+
+String os_read_entire_file(String path) {
+  Arena *arena = thread_get_temporary_arena();
+  return os_read_entire_file(arena, path);
+}
 
 String os_get_executable_directory() {
   String result = os_get_executable_path();
   return path_dirname(result);
 }
+
+//
+// DLLs
+//
+typedef void *DLL_Handle;
+typedef void (*DLL_Proc)(void);
+
+DLL_Handle dll_load(const char *filepath);
+void dll_unload(DLL_Handle dll);
+DLL_Proc dll_proc_address(DLL_Handle dll, const char *proc_name);
+
+#if OS_WINDOWS
+
+DLL_Handle dll_load(const char *filepath) {
+  return (DLL_Handle)LoadLibraryA(filepath);
+}
+
+inline void dll_unload(DLL_Handle dll) {
+  FreeLibrary((HMODULE)dll);
+}
+
+inline DLL_Proc gb_dll_proc_address(DLL_Handle dll, const char *proc_name) {
+  return (DLL_Proc)GetProcAddress((HMODULE)dll, proc_name);
+}
+
+#else // POSIX
+
+#include <dlfcn.h>
+
+DLL_Handle gb_dll_load(const char *filepath) {
+  // TODO(bill): Should this be RTLD_LOCAL?
+  return (DLL_Handle)dlopen(filepath, RTLD_LAZY|RTLD_GLOBAL);
+}
+
+inline void dll_unload(DLL_Handle dll) {
+  dlclose(dll);
+}
+
+inline DLL_Proc gb_dll_proc_address(DLL_Handle dll, const char *proc_name) {
+  return (DLL_Proc)dlsym(dll, proc_name);
+}
+
+#endif
 
 //
 // Allocator
