@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include <assert.h>
+#include <intrin.h>
 
 extern "C" int stbsp_vsnprintf( char * buf, int count, char const * fmt, va_list va );
 void stb_print(const char *format, ...);
@@ -175,9 +175,8 @@ static bool AssetHashesAreEqual(Asset_Hash a, Asset_Hash b) {
 }
 
 String EscapeSingleQuotes(String str) {
-  Arena *arena = thread_get_temporary_arena();
-  auto parts = string_list_split(arena, str, S("'"));
-  return string_list_join(arena, &parts, S("\\'"));
+  auto parts = string_split(str, S("'"));
+  return string_join(parts, S("\\'"));
 }
 
 static void fprint_bytes(FILE *handle, char *bytes, int length)
@@ -259,7 +258,7 @@ String PushStringCopy(String src) {
 
 Style *PushStyleRule(String rule) {
   char *cn = ShortClassName(styles.count);
-  String selector = string_join(S("."), string_from_cstr(cn));
+  String selector = string_concat(S("."), string_from_cstr(cn));
 
   auto style = PushStyle();
   style->selector = selector;
@@ -386,14 +385,21 @@ Image find_image_asset(Build_State *state, String asset_name) {
   return image;
 }
 
-int stbir_resize_uint8_pixel_perfect(     const unsigned char *input_pixels , int input_w , int input_h , int input_stride_in_bytes,
-                                           unsigned char *output_pixels, int output_w, int output_h, int output_stride_in_bytes,
-                                     int num_channels)
+int stbir_resize_uint8_pixel_perfect(
+  const unsigned char *input_pixels, int input_w, int input_h, int input_stride_in_bytes,
+  unsigned char *output_pixels, int output_w, int output_h, int output_stride_in_bytes, int num_channels
+)
 {
-    return stbir__resize_arbitrary(NULL, input_pixels, input_w, input_h, input_stride_in_bytes,
+    return stbir__resize_arbitrary(
+      NULL, input_pixels, input_w, input_h, input_stride_in_bytes,
         output_pixels, output_w, output_h, output_stride_in_bytes,
         0,0,1,1,NULL,num_channels,-1,0, STBIR_TYPE_UINT8, STBIR_FILTER_BOX, STBIR_FILTER_BOX,
         STBIR_EDGE_CLAMP, STBIR_EDGE_CLAMP, STBIR_COLORSPACE_LINEAR);
+}
+
+String minify_css(String content) {
+  String result = string_temp(content);
+  return result;
 }
 
 String write_image_size_variant(Build_State *state, String asset_name, Image image, u32 width, u32 height, bool want_pixel_perfect) {
@@ -421,7 +427,7 @@ String write_image_size_variant(Build_State *state, String asset_name, Image ima
   u8 *bytes = (u8 *)&hash.value;
 
   auto postfix = sprint("_%02x%02x%02x%02x%02x%02x%02x%02x", bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7]);
-  auto variant_name = string_join(name, postfix, ext);
+  auto variant_name = string_concat(name, postfix, ext);
 
   auto relative_path = path_join(S("r"), variant_name);
 
@@ -484,8 +490,15 @@ bool WriteHtmlPage(Build_State *state, String page_name, Html_Site &site, Html_M
   
   // styles
   fprintf(file, "<style type='text/css'>\n");
+
+  auto content = os_read_entire_file(path_join(state->asset_dir, S("style.css")));
+  content = minify_css(content);
+  fprintf(file, string_to_cstr(content));
+
+  /*
   fprintf(file, "html{margin:0;background:#fff;font-family:Consolas,Menlo-Regular,monospace;font-size:16px;min-height:100vh}");
   fprintf(file, "body{margin:0;padding:0;display:flex;flex-direction:column;min-height:100vh}");
+  */
 
   Style *it = styles.first;
   while (it != NULL) {
@@ -509,6 +522,8 @@ bool WriteHtmlPage(Build_State *state, String page_name, Html_Site &site, Html_M
 int main(int argc, char **argv)
 {
   os_init();
+
+  f64 start_time = os_time_in_miliseconds();
 
   #if 0
   unsigned char buf[16] = {0};
@@ -563,12 +578,6 @@ int main(int argc, char **argv)
   write_image(path_join(resource_dir, S("logo2.png")), image);
   #endif
 
-  u8 *memory_test = (u8 *)os_memory_reserve(gigabytes(8));
-  os_memory_commit(memory_test, megabytes(32));
-  memory_test[0] = 10;
-  os_memory_decommit(memory_test, megabytes(32));
-  //memory_test[0] = 123;
-
   WriteHtmlPage(&state, S("index.html"), site, meta, S("Hello, Sailor!"));
 
   auto content = os_read_entire_file(path_join(asset_dir, S("blog/post_0001.txt")));
@@ -581,7 +590,7 @@ int main(int argc, char **argv)
   auto post_dir = path_join(asset_dir, S("blog"));
 
   File_Info it = {};
-  auto iter = os_file_list_begin(thread_get_temporary_arena(), post_dir);
+  auto iter = os_file_list_begin(temp_arena(), post_dir);
 
   while (os_file_list_next(&iter, &it)) {
     auto path = path_join(post_dir, it.name);
@@ -589,8 +598,8 @@ int main(int argc, char **argv)
     print("%S\n", path);
     print("  name:         %S\n", it.name);
     print("  size:         %llu\n", it.size);
-    print("  date:         %llu\n", it.date);
-    print("  is_directory: %d\n", it.is_directory);
+    print("  date:         %llu\n", it.updated_at);
+    print("  is_directory: %d\n", file_is_directory(it));
   }
 
   os_file_list_end(&iter);
@@ -611,6 +620,8 @@ int main(int argc, char **argv)
   #endif
 
   //stbir_resize_uint8(pixels);
+  f64 end_time = os_time_in_miliseconds();
+  print("Done! Took: %.2fms\n", (f32)end_time - start_time);
 
   return 0;
 }
