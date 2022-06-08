@@ -255,7 +255,7 @@ Style *PushStyle(String rule) {
   auto cn = string_from_cstr(ShortClassName(styles.count));
 
   auto style = PushStyle();
-  style->cn = cn;
+  style->cn = string_copy(temp_arena(), cn);
   style->selector = string_concat(S("."), cn);
   style->rule = string_copy(temp_arena(), rule);
   return style;
@@ -406,6 +406,49 @@ int stbir_resize_uint8_pixel_perfect(
         STBIR_EDGE_CLAMP, STBIR_EDGE_CLAMP, STBIR_COLORSPACE_LINEAR);
 }
 
+String write_image_asset(Build_State *state, String asset_name, Image image) {
+  auto name = path_strip_extension(asset_name);
+  auto ext = path_get_extension(asset_name);
+
+  auto hash = ComputeAssetHash(image.pixels, image.width * image.height * sizeof(u32), DefaultSeed);
+  u8 *bytes = (u8 *)&hash.value;
+
+  auto postfix = sprint("_%02x%02x%02x%02x%02x%02x%02x%02x", bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7]);
+  auto variant_name = string_concat(name, postfix, ext);
+
+  auto relative_path = path_join(S("r"), variant_name);
+
+  auto out_path = path_join(state->output_dir, relative_path);
+  write_image(out_path, image);
+
+  return relative_path;
+}
+
+String write_image_size_variant(Build_State *state, String asset_name, Image image, u32 width, u32 height, bool want_pixel_perfect) {
+  Image resized_image = {};
+
+  if (image.width == width && image.height == height)
+  {
+    resized_image = image;
+  }
+  else
+  {
+    u8 *output_pixels = (u8 *)malloc(width * height * sizeof(u32));
+
+    if (want_pixel_perfect) {
+      stbir_resize_uint8_pixel_perfect(image.pixels, image.width, image.height, 0, output_pixels, width, height, 0, 4);
+    } else {
+      stbir_resize_uint8(image.pixels, image.width, image.height, 0, output_pixels, width, height, 0, 4);
+    }
+
+    resized_image.width = width;
+    resized_image.height = height;
+    resized_image.pixels = output_pixels;
+  }
+
+  return write_image_asset(state, asset_name, resized_image);
+}
+
 String minify_css(String content) {
   u8 *data = cast (u8 *)allocator_alloc(temp_allocator(), content.count);
   u8 *at = data;
@@ -510,7 +553,7 @@ String minify_css(String content) {
   return make_string(data, at - data);
 }
 
-String arr(
+String children(
   String s0,
   String s1 = {},
   String s2 = {},
@@ -561,50 +604,50 @@ String div(char *style, String text)
   return sprint("<div>%S</div>", text);
 }
 
-#if 0
-String div(String style, String children)
+String div(String style, String text)
 {
-  return sprint("<div style=\"%S\">%S</div>", style, children);
-}
-#endif
-
-String write_image_size_variant(Build_State *state, String asset_name, Image image, u32 width, u32 height, bool want_pixel_perfect) {
-  auto name = path_strip_extension(asset_name);
-  auto ext = path_get_extension(asset_name);
-
-  Image resized_image = {};
-  if (image.width == width && image.height == height) {
-    resized_image = image;
-  } else {
-    u8 *output_pixels = (u8 *)malloc(width * height * sizeof(u32));
-
-    if (want_pixel_perfect) {
-      stbir_resize_uint8_pixel_perfect(image.pixels, image.width, image.height, 0, output_pixels, width, height, 0, 4);
-    } else {
-      stbir_resize_uint8(image.pixels, image.width, image.height, 0, output_pixels, width, height, 0, 4);
-    }
-
-    resized_image.width = width;
-    resized_image.height = height;
-    resized_image.pixels = output_pixels;
+  if (style.count > 0)
+  {
+    auto rule = FindOrPushRule(style);
+    return sprint("<div style=\"%S\">%S</div>", rule->cn, children);
   }
 
-  auto hash = ComputeAssetHash(resized_image.pixels, resized_image.width * resized_image.height * sizeof(u32), DefaultSeed);
-  u8 *bytes = (u8 *)&hash.value;
-
-  auto postfix = sprint("_%02x%02x%02x%02x%02x%02x%02x%02x", bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7]);
-  auto variant_name = string_concat(name, postfix, ext);
-
-  auto relative_path = path_join(S("r"), variant_name);
-
-  auto out_path = path_join(state->output_dir, relative_path);
-  write_image(out_path, resized_image);
-
-  return relative_path;
+  return sprint("<div>%S</div>", text);
 }
 
-bool WriteHtmlPage(Build_State *state, String page_name, Html_Site &site, Html_Meta &meta, String body) {
-  String path = path_join(state->output_dir, page_name);
+static Build_State *g_build_state = NULL;
+
+String img_src(String name) {
+  auto image = find_image_asset(g_build_state, name);
+  return write_image_asset(g_build_state, name, image);
+}
+
+String img(String name) {
+  String src = img_src(name);
+  return sprint("<img src=\"%S\">", src);
+}
+
+String img_container(String name) {
+  auto src = img_src(name);
+
+  auto style = cprint("width:100%;background:url(%S) no-repeat;background-size:cover", src);
+  return div(style, S(""));
+}
+
+String content(String text) {
+  return div("width:100%;max-width:60rem;margin:0 auto", text);
+}
+
+String build_page(String body) {
+  String header = div("background:#000;padding:1rem 0", content(children(div("font-size:1.5rem", "Nick Aversano"), div("font-size: 1rem;", "Human Being")) ));
+  auto image = img(S("logo.png"));
+  String footer = div("display:flex;width:100\%;height:10rem", children(div("color:red", "Whats up"), div("color:blue", "Cool cool cool")));
+
+  return children(header, image, body, footer);
+}
+
+bool WriteHtmlPage(Build_State *state, String file_name, Html_Site &site, Html_Meta &meta, String body) {
+  String path = path_join(state->output_dir, file_name);
 
   FILE *file;
   file = fopen(string_to_cstr(path), "w+");
@@ -644,8 +687,9 @@ bool WriteHtmlPage(Build_State *state, String page_name, Html_Site &site, Html_M
   fprintf(file, "<meta name='msapplication-TileColor' content='%.*s' />\n", LIT(site.theme_color));
 
   // icons
-  #if 0
-  i32 image_sizes[] = {1050, 525, 263, 132, 16, 32, 48, 64, 57, 60, 72, 76, 96, 114, 120, 128, 144, 152, 160, 167, 180, 196, 228};
+  #if 1
+  //i32 image_sizes[] = {1050, 525, 263, 132, 16, 32, 48, 64, 57, 60, 72, 76, 96, 114, 120, 128, 144, 152, 160, 167, 180, 196, 228};
+  i32 image_sizes[] = {16};
   Image logo = find_image_asset(state, S("logo.png"));
   for (int i = 0; i < count_of(image_sizes); i ++) {
     i32 size = image_sizes[i];
@@ -668,7 +712,7 @@ bool WriteHtmlPage(Build_State *state, String page_name, Html_Site &site, Html_M
   fprintf(file, "body{margin:0;padding:0;display:flex;flex-direction:column;min-height:100vh}");
   */
 
-  String tree = div("display:flex;", arr(div("color:red", "Whats up"), div("color:blue", "Cool cool cool")));
+  auto page = build_page(body);
 
   Style *it = styles.first;
   while (it != NULL) {
@@ -681,11 +725,7 @@ bool WriteHtmlPage(Build_State *state, String page_name, Html_Site &site, Html_M
 
   // body
   fprintf(file, "</head>\n<body>\n");
-
-  fprintf(file, "%.*s", LIT(tree));
-
-  fprintf(file, "%.*s\n", LIT(body)),
-
+  fprintf(file, "%.*s\n", LIT(page)),
   fprintf(file, "</body>\n</html>");
 
   return fclose(file) == 0;
@@ -731,6 +771,7 @@ int main(int argc, char **argv)
   meta.og_type = S("site");
 
   Build_State state = {};
+  g_build_state = &state;
   state.asset_dir = asset_dir;
   state.output_dir = output_dir;
 
