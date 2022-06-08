@@ -25,6 +25,8 @@ VERSION HISTORY
 // Basic
 //
 
+#include <stdarg.h>
+
 #ifndef NULL
   #define NULL 0
 #endif
@@ -1511,7 +1513,15 @@ void string_strip_nulls(String *str) {
   }
 }
 
-#include <stdarg.h>
+void string_eat_until(String *str, String match) {
+  while (str->count > 0 && !string_starts_with(*str, match)) {
+    string_advance(str, 1);
+  }
+
+  if (str->count > 0) {
+    string_advance(str, match.count);
+  }
+}
 
 String string_printv(Arena *arena, const char *format, va_list args) {
   // in case we need to try a second time

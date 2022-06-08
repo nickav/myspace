@@ -398,8 +398,50 @@ int stbir_resize_uint8_pixel_perfect(
 }
 
 String minify_css(String content) {
-  String result = string_temp(content);
-  return result;
+  u8 *data = cast (u8 *)allocator_alloc(temp_allocator(), content.count);
+  u8 *at = data;
+
+  bool last_emitted_semi = false;
+
+  while (content.count > 0)
+  {
+    char it = content.data[0];
+    print("it: %c\n", it);
+
+    if (char_is_whitespace(it)) {
+      string_advance(&content, 1);
+      continue;
+    }
+
+    if (string_starts_with(content, S("//"))) {
+      string_eat_until(&content, S("\n"));
+      continue;
+    }
+
+    if (string_starts_with(content, S("/*"))) {
+      string_eat_until(&content, S("*/"));
+      continue;
+    }
+
+    // @Incomplete: media queries
+    // @Incomplete: proper quote handling
+    // @Incomplete: .a .b {} rules
+    // @Space: remove last ';}" -> "}"
+    // @Incomplete: padding: 10px 5px; <-- can't remove spaces here!
+
+
+    if (last_emitted_semi && it == '}')
+    {
+      at --;
+    }
+
+    *at++ = it;
+    last_emitted_semi = it == ';';
+
+    string_advance(&content, 1);
+  }
+
+  return make_string(data, at - data);
 }
 
 String write_image_size_variant(Build_State *state, String asset_name, Image image, u32 width, u32 height, bool want_pixel_perfect) {
@@ -604,22 +646,6 @@ int main(int argc, char **argv)
 
   os_file_list_end(&iter);
 
-  #if 0
-  auto result = os_scan_directory(thread_get_temporary_arena(), post_dir);
-
-  for (int i = 0; i < result.count; i ++) {
-    auto it = result.files[i];
-    auto path = path_join(post_dir, it.name);
-
-    print("%S\n", path);
-    print("  name:         %S\n", it.name);
-    print("  size:         %d\n", it.size);
-    print("  date:         %d\n", it.date);
-    print("  is_directory: %d\n", it.is_directory);
-  }
-  #endif
-
-  //stbir_resize_uint8(pixels);
   f64 end_time = os_time_in_miliseconds();
   print("Done! Took: %.2fms\n", (f32)end_time - start_time);
 
