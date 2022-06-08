@@ -211,6 +211,7 @@ static char *ShortClassName(i32 i) {
 }
 
 struct Style {
+  String cn;
   String selector;
   String rule;
 
@@ -250,20 +251,28 @@ Style *PushStyle() {
   return it;
 }
 
-String PushStringCopy(String src) {
-  u8 *data = (u8 *)talloc(src.count);
-  memory_copy(src.data, data, src.count);
-  return make_string(data, src.count);
-}
-
-Style *PushStyleRule(String rule) {
-  char *cn = ShortClassName(styles.count);
-  String selector = string_concat(S("."), string_from_cstr(cn));
+Style *PushStyle(String rule) {
+  auto cn = string_from_cstr(ShortClassName(styles.count));
 
   auto style = PushStyle();
-  style->selector = selector;
-  style->rule = PushStringCopy(rule);
+  style->cn = cn;
+  style->selector = string_concat(S("."), cn);
+  style->rule = string_copy(temp_arena(), rule);
   return style;
+}
+
+Style *FindOrPushRule(String rule)
+{
+  Style *it = styles.first;
+  while (it != NULL) {
+    if (string_equals(it->rule, rule)) {
+      return it;
+    }
+
+    it = it->next;
+  }
+
+  return PushStyle(rule);
 }
 
 struct Post {
@@ -423,6 +432,63 @@ String minify_css(String content) {
       continue;
     }
 
+    if (it == '"') {
+      *at++ = it;
+      string_advance(&content, 1);
+
+      while (content.count > 0) {
+        it = content.data[0];
+
+        *at++ = it;
+        string_advance(&content, 1);
+
+        if (it == '"') break;
+      }
+
+      continue;
+    }
+
+    if (it == '\'') {
+      *at++ = it;
+      string_advance(&content, 1);
+
+      while (content.count > 0) {
+        it = content.data[0];
+
+        *at++ = it;
+        string_advance(&content, 1);
+
+        if (it == '\'') break;
+      }
+
+      continue;
+    }
+
+    if (it == ':') {
+      *at++ = it;
+      string_advance(&content, 1);
+
+      string_eat_whitespace(&content);
+
+      bool last_emitted_space = false;
+
+      while (content.count > 0) {
+        it = content.data[0];
+        if (it == ';') break;
+
+        if (last_emitted_space && it == ' ')
+        {
+          at --;
+        }
+
+        *at++ = it;
+        last_emitted_space = it == ' ';
+        string_advance(&content, 1);
+      }
+
+      continue;
+    }
+
     // @Incomplete: media queries
     // @Incomplete: proper quote handling
     // @Incomplete: .a .b {} rules
@@ -443,6 +509,64 @@ String minify_css(String content) {
 
   return make_string(data, at - data);
 }
+
+String arr(
+  String s0,
+  String s1 = {},
+  String s2 = {},
+  String s3 = {},
+  String s4 = {},
+  String s5 = {},
+  String s6 = {},
+  String s7 = {},
+  String s8 = {},
+  String s9 = {}
+)
+{
+  Array<String> list;
+  array_init_from_allocator(&list, temp_allocator(), 16);
+  array_push(&list, s0);
+  array_push(&list, s1);
+  array_push(&list, s2);
+  array_push(&list, s3);
+  array_push(&list, s4);
+  array_push(&list, s5);
+  array_push(&list, s6);
+  array_push(&list, s7);
+  array_push(&list, s8);
+  array_push(&list, s9);
+
+  return string_join(list, S(""));
+}
+
+String div(char *style, char *text)
+{
+  if (style != NULL)
+  {
+    auto rule = FindOrPushRule(string_from_cstr(style));
+    return sprint("<div class=\"%S\">%s</div>", rule->cn, text);
+  }
+
+  return sprint("<div>%s</div>", text);
+}
+
+String div(char *style, String text)
+{
+  if (style != NULL)
+  {
+    auto rule = FindOrPushRule(string_from_cstr(style));
+    return sprint("<div class=\"%S\">%S</div>", rule->cn, text);
+  }
+
+  return sprint("<div>%S</div>", text);
+}
+
+#if 0
+String div(String style, String children)
+{
+  return sprint("<div style=\"%S\">%S</div>", style, children);
+}
+#endif
 
 String write_image_size_variant(Build_State *state, String asset_name, Image image, u32 width, u32 height, bool want_pixel_perfect) {
   auto name = path_strip_extension(asset_name);
@@ -520,6 +644,7 @@ bool WriteHtmlPage(Build_State *state, String page_name, Html_Site &site, Html_M
   fprintf(file, "<meta name='msapplication-TileColor' content='%.*s' />\n", LIT(site.theme_color));
 
   // icons
+  #if 0
   i32 image_sizes[] = {1050, 525, 263, 132, 16, 32, 48, 64, 57, 60, 72, 76, 96, 114, 120, 128, 144, 152, 160, 167, 180, 196, 228};
   Image logo = find_image_asset(state, S("logo.png"));
   for (int i = 0; i < count_of(image_sizes); i ++) {
@@ -529,6 +654,7 @@ bool WriteHtmlPage(Build_State *state, String page_name, Html_Site &site, Html_M
     fprintf(file, "<link rel='icon' type='image/png' href='%.*s' sizes='%dx%d' />\n", LIT(asset_path), size, size);
     fprintf(file, "<link rel='apple-touch-icon' sizes='%dx%d' href='%.*s' />\n", size, size, LIT(asset_path));
   }
+  #endif
   
   // styles
   fprintf(file, "<style type='text/css'>\n");
@@ -542,6 +668,8 @@ bool WriteHtmlPage(Build_State *state, String page_name, Html_Site &site, Html_M
   fprintf(file, "body{margin:0;padding:0;display:flex;flex-direction:column;min-height:100vh}");
   */
 
+  String tree = div("display:flex;", arr(div("color:red", "Whats up"), div("color:blue", "Cool cool cool")));
+
   Style *it = styles.first;
   while (it != NULL) {
     fprintf(file, "%.*s{%.*s}", LIT(it->selector), LIT(it->rule));
@@ -553,6 +681,8 @@ bool WriteHtmlPage(Build_State *state, String page_name, Html_Site &site, Html_M
 
   // body
   fprintf(file, "</head>\n<body>\n");
+
+  fprintf(file, "%.*s", LIT(tree));
 
   fprintf(file, "%.*s\n", LIT(body)),
 
@@ -576,8 +706,6 @@ int main(int argc, char **argv)
     print("%s\n", cn(i));
   }
   #endif
-
-  //PushStyleRule(S("font-size:14px"));
 
   auto build_dir = os_get_executable_directory();
   auto project_root = path_dirname(build_dir);
