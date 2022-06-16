@@ -1,5 +1,5 @@
 ---
-title: Back to the future 2
+title: 
 description:  An amazing blog post
 date:  2021-11-19
 ---

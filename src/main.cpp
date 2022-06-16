@@ -275,6 +275,8 @@ Style *FindOrPushRule(String rule)
   return PushStyle(rule);
 }
 
+Style *FindOrPushRule(char *rule) { return FindOrPushRule(string_from_cstr(rule)); }
+
 struct Post {
   String title;
   String description;
@@ -458,7 +460,6 @@ String minify_css(String content) {
   while (content.count > 0)
   {
     char it = content.data[0];
-    print("it: %c\n", it);
 
     if (char_is_whitespace(it)) {
       string_advance(&content, 1);
@@ -553,7 +554,9 @@ String minify_css(String content) {
   return make_string(data, at - data);
 }
 
-String children(
+String div(
+  Style *style,
+
   String s0,
   String s1 = {},
   String s2 = {},
@@ -579,71 +582,21 @@ String children(
   array_push(&list, s8);
   array_push(&list, s9);
 
-  return string_join(list, S(""));
+  auto children = string_join(list, S(""));
+
+  return sprint("<div class=\"%S\">%S</div>", style->cn, children);
 }
 
-String div(char *style, char *text)
-{
-  if (style != NULL)
-  {
-    auto rule = FindOrPushRule(string_from_cstr(style));
-    return sprint("<div class=\"%S\">%s</div>", rule->cn, text);
-  }
-
-  return sprint("<div>%s</div>", text);
-}
-
-String div(char *style, String text)
-{
-  if (style != NULL)
-  {
-    auto rule = FindOrPushRule(string_from_cstr(style));
-    return sprint("<div class=\"%S\">%S</div>", rule->cn, text);
-  }
-
-  return sprint("<div>%S</div>", text);
-}
-
-String div(String style, String text)
-{
-  if (style.count > 0)
-  {
-    auto rule = FindOrPushRule(style);
-    return sprint("<div style=\"%S\">%S</div>", rule->cn, children);
-  }
-
-  return sprint("<div>%S</div>", text);
-}
-
-static Build_State *g_build_state = NULL;
-
-String img_src(String name) {
-  auto image = find_image_asset(g_build_state, name);
-  return write_image_asset(g_build_state, name, image);
-}
-
-String img(String name) {
-  String src = img_src(name);
-  return sprint("<img src=\"%S\">", src);
-}
-
-String img_container(String name) {
-  auto src = img_src(name);
-
-  auto style = cprint("width:100%;background:url(%S) no-repeat;background-size:cover", src);
-  return div(style, S(""));
-}
-
-String content(String text) {
-  return div("width:100%;max-width:60rem;margin:0 auto", text);
-}
+#define content(...) div(FindOrPushRule("width:100%;max-width:60rem;margin:0 auto"), __VA_ARGS__)
 
 String build_page(String body) {
-  String header = div("background:#000;padding:1rem 0", content(children(div("font-size:1.5rem", "Nick Aversano"), div("font-size: 1rem;", "Human Being")) ));
-  auto image = img(S("logo.png"));
-  String footer = div("display:flex;width:100\%;height:10rem", children(div("color:red", "Whats up"), div("color:blue", "Cool cool cool")));
+  String header = div(
+    FindOrPushRule("background:#000;padding:1rem 0"),
+    div(FindOrPushRule("font-size:1.5rem"), S("Nick Aversano")),
+    div(FindOrPushRule("font-size: 1rem;"), S("Human Being"))
+  );
 
-  return children(header, image, body, footer);
+  return content(header);
 }
 
 bool WriteHtmlPage(Build_State *state, String file_name, Html_Site &site, Html_Meta &meta, String body) {
@@ -771,7 +724,6 @@ int main(int argc, char **argv)
   meta.og_type = S("site");
 
   Build_State state = {};
-  g_build_state = &state;
   state.asset_dir = asset_dir;
   state.output_dir = output_dir;
 
@@ -800,17 +752,17 @@ int main(int argc, char **argv)
 
   auto post_dir = path_join(asset_dir, S("blog"));
 
-  File_Info it = {};
+  File_Info info = {};
   auto iter = os_file_list_begin(temp_arena(), post_dir);
 
-  while (os_file_list_next(&iter, &it)) {
-    auto path = path_join(post_dir, it.name);
+  while (os_file_list_next(&iter, &info)) {
+    auto path = path_join(post_dir, info.name);
 
     print("%S\n", path);
-    print("  name:         %S\n", it.name);
-    print("  size:         %llu\n", it.size);
-    print("  date:         %llu\n", it.updated_at);
-    print("  is_directory: %d\n", file_is_directory(it));
+    print("  name:         %S\n", info.name);
+    print("  size:         %llu\n", info.size);
+    print("  date:         %llu\n", info.updated_at);
+    print("  is_directory: %d\n", file_is_directory(info));
   }
 
   os_file_list_end(&iter);
