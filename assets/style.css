@@ -5,7 +5,7 @@ font-family: Menlo, Consolas, Monaco, Liberation Mono, Lucida Console, monospace
 
 html {
   margin: 0;
-  background: #000;
+  background: #121111;
   font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen-Sans,Ubuntu,Cantarell,"Helvetica Neue",sans-serif;
   font-weight: 500;
   font-size: 16px;
@@ -19,4 +19,15 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+}
+
+img {
+  max-width: 100%;
+}
+
+header {
+  width: 100%;
+  height:  80px;
+  display: flex;
+  align-items: center;
 }

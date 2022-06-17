@@ -1,10 +1,4 @@
 bin
-*.pack
-*.zip
-*.res
+build
 
-Makefile
-
-!build
-build/*
-!build/data
+*.sublime-*
