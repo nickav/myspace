@@ -1412,6 +1412,16 @@ i64 string_index(String str, String search, i64 start_index = 0) {
   return -1;
 }
 
+i64 string_index(String str, char search, i64 start_index = 0) {
+  for (i64 i = start_index; i < str.count; i += 1) {
+    if (str.data[i] == search) {
+      return i;
+    }
+  }
+
+  return -1;
+}
+
 i64 string_last_index(String str, String search) {
   i64 start_index = str.count - 1;
   for (i64 i = start_index; i >= 0; i -= 1) {
@@ -1546,17 +1556,21 @@ void string_advance(String *str, i64 amount) {
   str->data  += amount;
 }
 
+void string_trim_whitespace(String *str) {
+  while (str->count > 0 && char_is_whitespace(str->data[0])) {
+    str->data ++;
+    str->count --;
+  }
+
+  while (str->count > 0 && char_is_whitespace(str->data[str->count - 1])) {
+    str->count --;
+  }
+}
+
 String string_trim_whitespace(String str) {
-  while (str.count > 0 && char_is_whitespace(str.data[0])) {
-    str.data ++;
-    str.count --;
-  }
-
-  while (str.count > 0 && char_is_whitespace(str.data[str.count - 1])) {
-    str.count --;
-  }
-
-  return str;
+  String copy = str;
+  string_trim_whitespace(&copy);
+  return copy;
 }
 
 bool string_eat_whitespace(String *str) {
@@ -1659,24 +1673,27 @@ i64 string_to_i64(String str, int base = 10) {
   i64 result = 0;
   i64 fact = 1;
 
-  if (str.data[0] == '-') {
-    string_advance(&str, 1);
-    fact = -1;
-  }
-
-  for (u64 i = 0; i < str.count; i++) {
-    char it = str.data[i];
-
-    int d = it - '0';
-    if (d >= 0 && d <= 9 && d <= base - 1) {
-      result = result * base + d;
-      continue;
+  if (str.count > 0)
+  {
+    if (str.data[0] == '-') {
+      string_advance(&str, 1);
+      fact = -1;
     }
 
-    int a = char_to_upper(it) - 'A';
-    if (a >= 0 && a <= 25 && a + 10 <= base - 1) {
-      result = result * base + a + 10;
-      continue;
+    for (u64 i = 0; i < str.count; i++) {
+      char it = str.data[i];
+
+      int d = it - '0';
+      if (d >= 0 && d <= 9 && d <= base - 1) {
+        result = result * base + d;
+        continue;
+      }
+
+      int a = char_to_upper(it) - 'A';
+      if (a >= 0 && a <= 25 && a + 10 <= base - 1) {
+        result = result * base + a + 10;
+        continue;
+      }
     }
   }
 

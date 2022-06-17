@@ -1,7 +1,7 @@
 ---
 title: 
 description:  An amazing blog post
-date:  2021-11-19
+date:  2021-11-19 10:13:03
 ---
 
 This is my amazing post content.

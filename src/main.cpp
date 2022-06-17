@@ -216,12 +216,83 @@ String MinifyCSS(String str)
     return make_string(data, at - data);
 }
 
+Date_Time parse_post_date(String str)
+{
+    Date_Time result = {};
+
+    string_trim_whitespace(&str);
+
+    String part0 = str;
+    String part1 = {};
+
+    i64 space_index = string_index(str, S(" "));
+    if (space_index >= 0)
+    {
+        part0 = string_slice(str, 0, space_index);
+        part1 = string_trim_whitespace(string_slice(str, space_index));
+    }
+
+    if (part0.count > 0)
+    {
+        // @Robustness: handle spaces between date separators
+
+        if (part0.count == 10 && part0[4] == '-' && part0[7] == '-')
+        {
+            // NOTE(nick): SQL date format
+            auto yyyy = string_slice(part0, 0, 4);
+            auto mm = string_slice(part0, 5, 7);
+            auto dd = string_slice(part0, 8, 10);
+
+            result.year = string_to_i64(yyyy);
+            result.mon = string_to_i64(mm);
+            result.day = string_to_i64(dd);
+        }
+        else if (part0.count == 10 && !char_is_digit(part0[2]) && !char_is_digit(part0[5]))
+        {
+            // NOTE(nick): american date format
+            auto mm = string_slice(part0, 0, 2);
+            auto dd = string_slice(part0, 3, 5);
+            auto yyyy = string_slice(part0, 6, 10);
+
+            result.year = string_to_i64(yyyy);
+            result.mon = string_to_i64(mm);
+            result.day = string_to_i64(dd);
+        }
+    }
+
+    if (part1.count > 0)
+    {
+        i64 i0 = string_index(part1, ':');
+        if (i0 > 0)
+        {
+            auto hh = string_slice(part1, 0, i0);
+            auto mm = String{};
+            auto ss = String{};
+
+            i64 i1 = string_index(part1, ':', i0 + 1);
+            if (i1 > 0)
+            {
+                mm = string_slice(part1, i0 + 1, i1);
+                ss = string_slice(part1, i1 + 1);
+            }
+            else
+            {
+                mm = string_slice(part1, i0);
+            }
+
+            result.hour = string_to_i64(hh);
+            result.min = string_to_i64(mm);
+            result.sec = string_to_i64(ss);
+        }
+    }
+
+    return result;
+}
+
 String to_rss_date_string(Date_Time it)
 {
-    auto dow = string_slice(string_from_day_of_week(cast(DayOfWeek)DayOfWeek_Tuesday), 0, 3);
     auto mon = string_slice(string_from_month(cast(Month)it.mon), 0, 3);
-
-    return sprint("%S, %02d %S %d %02d:%02d:%02d +0000", dow, it.day, mon, it.year, it.hour, it.min, it.sec);
+    return sprint("%02d %S %d %02d:%02d:%02d +0000", it.day, mon, it.year, it.hour, it.min, it.sec);
 }
 
 struct RSS_Entry {
@@ -343,7 +414,14 @@ int main() {
         print("  description: %S\n", post.description);
         print("  date: %S\n", post.date);
         print("  body: %S\n", post.body);
+
+        dump(to_rss_date_string(parse_post_date(post.date)));
     }
+
+
+    dump(parse_post_date(S("2021-11-19 10:13:03")));
+    dump(parse_post_date(S("11/19/2021    10:13:03")));
+    dump(parse_post_date(S("11.19.2021    10:13")));
 
     auto end_time = os_time_in_miliseconds();
 
