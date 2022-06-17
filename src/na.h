@@ -1647,13 +1647,41 @@ char *cstr_print(Arena *arena, const char *format, ...) {
   return (char *)result.data;
 }
 
+#define sprint(...) string_print(temp_arena(), __VA_ARGS__)
+#define cprint(...) cstr_print(temp_arena(), __VA_ARGS__)
+
+
 String arena_to_string(Arena *arena) {
   return make_string(arena->data, arena->offset);
 }
 
+i64 string_to_i64(String str, int base = 10) {
+  i64 result = 0;
+  i64 fact = 1;
 
-#define sprint(...) string_print(temp_arena(), __VA_ARGS__)
-#define cprint(...) cstr_print(temp_arena(), __VA_ARGS__)
+  if (str.data[0] == '-') {
+    string_advance(&str, 1);
+    fact = -1;
+  }
+
+  for (u64 i = 0; i < str.count; i++) {
+    char it = str.data[i];
+
+    int d = it - '0';
+    if (d >= 0 && d <= 9 && d <= base - 1) {
+      result = result * base + d;
+      continue;
+    }
+
+    int a = char_to_upper(it) - 'A';
+    if (a >= 0 && a <= 25 && a + 10 <= base - 1) {
+      result = result * base + a + 10;
+      continue;
+    }
+  }
+
+  return result * fact;
+}
 
 
 
@@ -2420,6 +2448,42 @@ struct File_Lister {
   WIN32_FIND_DATAW data;
 };
 
+nja_internal Date_Time win32_date_time_from_system_time(SYSTEMTIME *in) {
+  Date_Time result = {};
+
+  result.year = in->wYear;
+  result.mon  = cast(u8)in->wMonth;
+  result.day  = in->wDay;
+  result.hour = in->wHour;
+  result.min  = in->wMinute;
+  result.sec  = in->wSecond;
+  result.msec = in->wMilliseconds;
+
+  return result;
+}
+
+nja_internal SYSTEMTIME win32_system_time_from_date_time(Date_Time *in) {
+  SYSTEMTIME result = {};
+
+  result.wYear = in->year;
+  result.wMonth = in->mon;
+  result.wDay = in->day;
+  result.wHour = in->hour;
+  result.wMinute = in->min;
+  result.wSecond = in->sec;
+  result.wMilliseconds = in->msec;
+
+  return result;
+}
+
+nja_internal Dense_Time win32_dense_time_from_file_time(FILETIME *file_time) {
+  SYSTEMTIME system_time = {};
+  FileTimeToSystemTime(file_time, &system_time);
+  Date_Time date_time = win32_date_time_from_system_time(&system_time);
+  Dense_Time result = dense_time_from_date_time(&date_time);
+  return result;
+}
+
 bool os_init() {
   win32_thread_context_index = TlsAlloc();
   thread_context_init(megabytes(32));
@@ -2428,7 +2492,6 @@ bool os_init() {
 }
 
 void os_thread_set_context(void *ptr) {
-
   TlsSetValue(win32_thread_context_index, ptr);
 }
 
@@ -2463,6 +2526,18 @@ f64 os_time_in_miliseconds() {
   }
 
   return result;
+}
+
+Date_Time os_get_current_time_in_utc() {
+  SYSTEMTIME st;
+  GetSystemTime(&st);
+  return win32_date_time_from_system_time(&st);
+}
+
+Date_Time os_get_local_time() {
+  SYSTEMTIME st;
+  GetLocalTime(&st);
+  return win32_date_time_from_system_time(&st);
 }
 
 void os_sleep(f64 miliseconds) {
@@ -2696,41 +2771,6 @@ String string_from_wstr(Arena *arena, WCHAR *wstr) {
   return string_from_string16(arena, str16);
 }
 
-nja_internal Date_Time win32_date_time_from_system_time(SYSTEMTIME *in) {
-  Date_Time result = {};
-
-  result.year = in->wYear;
-  result.mon  = cast(u8)in->wMonth;
-  result.day  = in->wDay;
-  result.hour = in->wHour;
-  result.min  = in->wMinute;
-  result.sec  = in->wSecond;
-  result.msec = in->wMilliseconds;
-
-  return result;
-}
-
-nja_internal SYSTEMTIME win32_system_time_from_date_time(Date_Time *in) {
-  SYSTEMTIME result = {};
-
-  result.wYear = in->year;
-  result.wMonth = in->mon;
-  result.wDay = in->day;
-  result.wHour = in->hour;
-  result.wMinute = in->min;
-  result.wSecond = in->sec;
-  result.wMilliseconds = in->msec;
-
-  return result;
-}
-
-nja_internal Dense_Time win32_dense_time_from_file_time(FILETIME *file_time) {
-  SYSTEMTIME system_time = {};
-  FileTimeToSystemTime(file_time, &system_time);
-  Date_Time date_time = win32_date_time_from_system_time(&system_time);
-  Dense_Time result = dense_time_from_date_time(&date_time);
-  return result;
-}
 
 nja_internal u32 win32_flags_from_attributes(DWORD attributes) {
   u32 result = 0;
@@ -4159,6 +4199,18 @@ void array_sort(Array<T> *it, i32 (*compare)(T *a, T *b)) {
   nja_sort(it->data, it->count, sizeof(T), cast(Compare_Proc *)compare);
 }
 
+template <typename T>
+String to_string(Array<T> it) {
+  Array<String> list = {};
+  list.allocator = temp_allocator();
+
+  For (it) {
+    array_push(&list, to_string(it));
+  }
+
+  return sprint("[%S]", string_join(temp_allocator(), list, S(", ")));
+}
+
 String string_from_array(Array<u8> chars) {
   return make_string(chars.data, chars.count);
 }
@@ -4607,6 +4659,19 @@ V table_find(Hash_Table<K, V> *it, K key) {
 template <typename K, typename V>
 bool table_contains(Hash_Table<K, V> *it, K key) {
   return table_find_pointer(it, key) != NULL;
+}
+
+template <typename K, typename V>
+String to_string(Hash_Table<K, V> table) {
+  // @Speed @Memory: make this not copy so much memory
+  Array<String> list = {};
+  list.allocator = temp_allocator();
+
+  For_Table (table) {
+    array_push(&list, sprint("%S: %S", to_string(it->key), to_string(it->value)));
+  }
+
+  return sprint("{%S}", string_join(temp_allocator(), list, S(", ")));
 }
 
 //

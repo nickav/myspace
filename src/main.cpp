@@ -4,19 +4,22 @@
 #include "deps/stb_sprintf.h"
 #include "na.h"
 
-#if 0
-#define STB_IMAGE_RESIZE_IMPLEMENTATION
-#include "deps/stb_image_resize.h"
-
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "deps/stb_image_write.h"
-#endif
-
 #include "assets.cpp"
 
 struct Build_Config {
     String asset_dir;
     String output_dir;
+};
+
+struct Html_Meta {
+    String site_name;
+    String twitter_handle;
+
+    String title;
+    String description;
+    String image;
+    String og_type;
+    String url;
 };
 
 static Build_Config config = {};
@@ -48,45 +51,6 @@ bool arena_write(Arena *arena, String buffer) {
   return arena_write(arena, cast(u8 *)buffer.data, buffer.count);
 }
 
-String GenerateSiteHTMLFromTemplate(String html_template, String *replacement_pairs, u64 replacement_pairs_count)
-{
-    Arena arena;
-    arena_init_from_backing_memory(&arena, os_virtual_memory(), megabytes(1));
-
-    String at = html_template;
-
-    while (at.count > 2)
-    {
-        String token = {};
-
-        // NOTE(nick): we don't need to do the whole "string starts with" thing every time
-        // though, I do wonder _why_ that particular call is so slow...
-        if (at.data[0] == '{' && at.data[1] == '{')
-        {
-            for (u64 i = 0; i < replacement_pairs_count; i += 2)
-            {
-                auto rfrom = replacement_pairs[i + 0];
-                auto rto = replacement_pairs[i + 1];
-
-                if (string_starts_with(at, rfrom))
-                {
-                    arena_write(&arena, rto);
-                    string_advance(&at, rfrom.count);
-                    continue;
-                }
-            }
-        }
-
-        arena_write(&arena, at.data, 1);
-        string_advance(&at, 1);
-    }
-
-    arena_write(&arena, at.data, at.count);
-    string_advance(&at, at.count);
-
-    return arena_to_string(&arena);
-}
-
 bool OS_WriteEntireFile(String path, String buffer)
 {
     bool result = false;
@@ -110,6 +74,205 @@ bool OS_WriteEntireFile(String path, String buffer)
     return result;
 }
 
+void Write(Arena *arena, char *format, ...)
+{
+    va_list args;
+    va_start(args, format);
+    string_printv(arena, format, args);
+    string_print(arena, "\n");
+    va_end(args);
+}
+
+void BeginHtmlPage(Arena *arena, Html_Meta meta, String style = {}, String head = {})
+{
+    Write(arena, "<!doctype html>");
+    Write(arena, "<html lang='en'>");
+    Write(arena, "<head>");
+    Write(arena, "<meta charset='utf-8' />");
+    Write(arena, "<meta name='viewport' content='width=device-width, initial-scale=1' />");
+
+    Write(arena, "<title>%S</title>", meta.title);
+    Write(arena, "<meta name='description' content='%S' />", meta.description);
+
+    Write(arena, "<meta itemprop='name' content='%S'>", meta.title);
+    Write(arena, "<meta itemprop='description' content='%S'>", meta.description);
+    Write(arena, "<meta itemprop='image' content='%S'>", meta.image);
+
+    Write(arena, "<meta property='og:title' content='%S' />", meta.title);
+    Write(arena, "<meta property='og:description' content='%S' />", meta.description);
+    Write(arena, "<meta property='og:type' content='%S' />", meta.og_type);
+    Write(arena, "<meta property='og:url' content='%S' />", meta.url);
+    Write(arena, "<meta property='og:site_name' content='%S' />", meta.site_name);
+    Write(arena, "<meta property='og:locale' content='en_us' />");
+
+    Write(arena, "<meta name='twitter:card' content='summary' />");
+    Write(arena, "<meta name='twitter:title' content='%S' />", meta.title);
+    Write(arena, "<meta name='twitter:description' content='%S' />", meta.description);
+    Write(arena, "<meta name='twitter:image' content='%S' />", meta.image);
+    Write(arena, "<meta name='twitter:site' content='%S' /> ", meta.twitter_handle);
+
+    if (style.count) Write(arena, "<style type='text/css'>%S</style>", style);
+
+    if (head.count) Write(arena, "%S", head);
+
+    Write(arena, "</head>");
+    Write(arena, "<body>");
+}
+
+void EndHtmlPage(Arena *arena)
+{
+    Write(arena, "</body>");
+    Write(arena, "</html>");
+}
+
+String MinifyCSS(String str)
+{
+    u8 *data = push_array(temp_arena(), u8, str.count);
+    u8 *at = data;
+    u8 *end = data + str.count;
+
+    bool did_write_char = false;
+    while (str.count)
+    {
+        char it = str[0];
+
+        // NOTE(nick): eat comments
+        if (it == '/' && str[1] == '*')
+        {
+            string_advance(&str, 2);
+            while (str.count && !string_starts_with(str, S("*/")))
+            {
+                string_advance(&str, 1);
+            }
+            string_advance(&str, 2);
+            continue;
+        }
+
+        // NOTE(nick): eat whitespace
+        if (it == '\r' || it == '\n')
+        {
+            string_eat_whitespace(&str);
+            continue;
+        }
+
+        // NOTE(nick): handle strings
+        if (it == '"' || it == '\'')
+        {
+            char closing_char = it;
+
+            *at++ = it;
+            string_advance(&str, 1);
+
+            while (str.count > 0 && str.data[0] != closing_char)
+            {
+                *at++ = str.data[0];
+                string_advance(&str, 1);
+            }
+
+            assert(str.count > 0); // @Robustness
+
+            *at++ = str.data[0];
+            string_advance(&str, 1);
+            continue;
+        }
+
+        char last_written_char = did_write_char ? at[-1] : '\0';
+
+        // NOTE(nick): only emit max 1 consecutive space
+        if (it == ' ' && last_written_char == ' ')
+        {
+            string_advance(&str, 1);
+            continue;
+        }
+
+        if (it == ' ' && last_written_char == ':')
+        {
+            string_advance(&str, 1);
+            continue;
+        }
+
+        if (it == '{' && last_written_char == ' ')
+        {
+            at --;
+        }
+
+        if (it == ' ' && last_written_char == ';')
+        {
+            string_advance(&str, 1);
+            continue;
+        }
+
+        if (it == '}' && last_written_char == ';')
+        {
+            at --;
+        }
+
+        string_advance(&str, 1);
+        *at++ = it;
+        did_write_char = true;
+    }
+
+
+    return make_string(data, at - data);
+}
+
+String to_rss_date_string(Date_Time it)
+{
+    auto dow = string_slice(string_from_day_of_week(cast(DayOfWeek)DayOfWeek_Tuesday), 0, 3);
+    auto mon = string_slice(string_from_month(cast(Month)it.mon), 0, 3);
+
+    return sprint("%S, %02d %S %d %02d:%02d:%02d +0000", dow, it.day, mon, it.year, it.hour, it.min, it.sec);
+}
+
+struct RSS_Entry {
+    String title;
+    String description;
+    Date_Time pub_date;
+    String link;
+    String category;
+};
+
+// <link rel="alternate" type="application/rss+xml" title="Nick Aversano" href="http://nickav.co/feed.xml" />
+String GenerateRSSFeed(Html_Meta meta, Array<RSS_Entry> items)
+{
+    auto arena = arena_make_from_backing_memory(os_virtual_memory(), megabytes(1));
+
+    auto pub_date = to_rss_date_string(os_get_current_time_in_utc());
+
+    Write(&arena, "<?xml version='1.0' encoding='UTF-8'?>");
+
+    Write(&arena, "<rss version='2.0' xmlns:atom='http://www.w3.org/2005/Atom'>");
+    Write(&arena, "<channel>");
+    Write(&arena, "\n");
+
+    Write(&arena, "<title>%S</title>", meta.title);
+    Write(&arena, "<link>%S</link>", meta.url);
+    Write(&arena, "<description>%S</description>", meta.description);
+    Write(&arena, "<pubDate>%S</pubDate>", pub_date);
+    Write(&arena, "<lastBuildDate>%S</lastBuildDate>", pub_date);
+    Write(&arena, "<language>en-us</language>");
+    Write(&arena, "<image><url>%S</url></image>", meta.image);
+    Write(&arena, "\n");
+
+    For (items)
+    {
+        Write(&arena, "<item>");
+        Write(&arena, "<title>%S</title>", it.title);
+        Write(&arena, "<description>%S</description>", it.description);
+        Write(&arena, "<pubDate>%S</pubDate>", to_rss_date_string(it.pub_date));
+        Write(&arena, "<link>%S</link>", it.link);
+        Write(&arena, "<guid isPermaLink='true'>%S</guid>", it.link);
+        Write(&arena, "<category>%S</category>", it.category);
+        Write(&arena, "</item>");
+        Write(&arena, "\n");
+    }
+
+    Write(&arena, "</channel>");
+    Write(&arena, "</rss>");
+
+    return arena_to_string(&arena);
+}
+
 int main() {
     os_init();
     auto start_time = os_time_in_miliseconds();
@@ -117,101 +280,70 @@ int main() {
     auto build_dir = os_get_executable_directory();
     auto project_root = path_dirname(build_dir);
 
+    // Config
+    config = {};
     config.asset_dir  = path_join(project_root, S("assets"));
     config.output_dir = path_join(build_dir, S("bin"));
 
-    auto style = os_read_entire_file(path_join(config.asset_dir, S("style.css")));
-    auto t1 = os_time_in_miliseconds();
+    // Site
+    Html_Meta meta = {};
+    meta.site_name = S("Nick Aversano");
+    meta.twitter_handle = S("@nickaversano");
 
-    Arena arena;
-    arena_init_from_backing_memory(&arena, os_virtual_memory(), megabytes(1));
+    meta.title = S("Nick Aversano");
+    meta.description = S("Nicks cool home page");
+    meta.image = S(" ");
+    meta.og_type = S("article");
+    meta.url = S("/");
 
-    #define W(str, ...) string_print(&arena, str "\n", __VA_ARGS__)
+    Array<RSS_Entry> items = {};
+    RSS_Entry item0 = {};
+    item0.title = S("hello test");
+    item0.description = S("some cool description");
+    item0.pub_date = os_get_current_time_in_utc();
+    item0.link = S("/foo/bar");
+    item0.category = S("article");
+    array_push(&items, item0);
 
-    W("<!doctype html>");
-    W("<html lang='en'>");
-    W("<head>");
-    W("<meta charset='utf-8' />");
-    W("<meta name='viewport' content='width=device-width, initial-scale=1' />");
+    auto rss = GenerateRSSFeed(meta, items);
+    dump(rss);
 
-    W("<title>%S</title>", S("Nick Aversano"));
-    W("<meta name='description' content='%S' />", S("This is my new website"));
-    
-    W("<meta itemprop='name' content='{{title}}'>");
-    W("<meta itemprop='description' content='{{description}}'>");
-    W("<meta itemprop='image' content='{{image}}'>");
+    LoadAssetsFromDisk(config.asset_dir);
 
-    W("<meta property='og:title' content='{{title}}' />");
-    W("<meta property='og:description' content='{{description}}' />");
-    W("<meta property='og:type' content='{{og_type}' />");
-    W("<meta property='og:url' content='{{url}}' />");
-    W("<meta property='og:site_name' content='{{site_name}}' />");
-    W("<meta property='og:locale' content='en_us' />");
+    auto style = FindAssetByName(S("style.css"));
+    assert(style);
 
-    W("<meta name='twitter:card' content='summary' />");
-    W("<meta name='twitter:title' content='{{title}}' />");
-    W("<meta name='twitter:description' content='{{description}}' />");
-    W("<meta name='twitter:image' content='{{image}}' />");
-    W("<meta name='twitter:site' content='{{twitter_handle}}' /> ");
+    auto arena = arena_make_from_backing_memory(os_virtual_memory(), megabytes(1));
 
-    W("<style type='text/css'>%S</style>", style);
-    W("</head>");
-    W("<body>");
-    W("<header>Nick Aversano</header>");
-    W("<div>Hello, Sailor!</div>");
-    W("</body>");
-    W("</html>");
+    BeginHtmlPage(&arena, meta, MinifyCSS(style->data));
 
-    #undef W
+    auto svg = FindAssetByName(S("twitch.svg"));
+    if (svg) {
+        Write(&arena, "<img width='32' height='32' src='data:image/svg+xml,%S' />", svg->data);
+    }
+    Write(&arena, "<header>Nick Aversano</header>");
+    Write(&arena, "<div>Hello, Sailor!</div>");
+
+    EndHtmlPage(&arena);
 
     auto result = arena_to_string(&arena);
 
-    //print("%S\n", result);
-
-    auto t2 = os_time_in_miliseconds();
-    print("Style 1 Took %.2fms\n", t2 - t1);
-
     os_write_entire_file(path_join(config.output_dir, S("index.html")), result);
 
-    //OS_WriteEntireFile(path_join(config.output_dir, S("index.html")), result);
+    arena_reset(&arena);
 
+    auto posts = GetAllPosts();
+    For (posts) {
+        auto id   = ParsePostID(it->name);
+        auto post = ParsePost(it->data);
 
-    auto html = os_read_entire_file(path_join(config.asset_dir, S("index.html")));
-    auto t3 = os_time_in_miliseconds();
-
-    String replacement_pairs[] = {
-        S("{{title}}"), S("Nick Aversano"),
-        S("{{description}}"), S("A place to do things"),
-        S("{{image}}"), S(""),
-        S("{{os_type}}"), S("article"),
-        S("{{site_name}}"), S("Nick Aversano"),
-        S("{{twitter_handle}}"), S("@nickaversano"),
-
-
-        S("{{head}}"), sprint("<style type='text/css'>%S</style>", style),
-        S("{{body}}"), S("Hey!"),
-    };
-
-    html = GenerateSiteHTMLFromTemplate(html, replacement_pairs, count_of(replacement_pairs));
-
-    auto t4 = os_time_in_miliseconds();
-    print("Style 2 Took %.2fms\n", t4 - t3);
-    os_write_entire_file(path_join(config.output_dir, S("index2.html")), html);
-
-    #if 0
-    auto content = os_read_entire_file(path_join(config.asset_dir, S("blog/post_0001.txt")));
-    auto post = ParsePost(content);
-    print("title: %S\n", post.title);
-    print("description: %S\n", post.description);
-    print("date: %S\n", post.date);
-    print("body: %S\n", post.body);
-
-    auto files = os_scan_directory(os_allocator(), path_join(config.asset_dir, S("blog")));
-
-    For (files) {
-        print("%S\n", it.name);
+        print("Post %S\n", it->name);
+        print("  id: %lld\n", id);
+        print("  title: %S\n", post.title);
+        print("  description: %S\n", post.description);
+        print("  date: %S\n", post.date);
+        print("  body: %S\n", post.body);
     }
-    #endif
 
     auto end_time = os_time_in_miliseconds();
 
