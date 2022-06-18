@@ -22,56 +22,17 @@ struct Html_Meta {
     String url;
 };
 
+struct Social_Icon {
+    String name;
+    String icon_name;
+    String link_url;
+};
+
 static Build_Config config = {};
-
-#if 0
-nja_internal WCHAR * win32_UTF16FromUTF8(Arena *arena, char *buffer)
-{
-  int count = MultiByteToWideChar(CP_UTF8, 0, buffer, -1, NULL, 0);
-  if (!count)
-  {
-    return NULL;
-  }
-
-  arena_set_alignment(arena, sizeof(WCHAR));
-  WCHAR *result = cast(WCHAR *)arena_push(arena, count * sizeof(WCHAR));
-
-  if (!MultiByteToWideChar(CP_UTF8, 0, buffer, -1, result, count))
-  {
-    arena_pop(arena, count * sizeof(WCHAR));
-    return NULL;
-  }
-
-  return result;
-}
-#endif
 
 
 bool arena_write(Arena *arena, String buffer) {
   return arena_write(arena, cast(u8 *)buffer.data, buffer.count);
-}
-
-bool OS_WriteEntireFile(String path, String buffer)
-{
-    bool result = false;
-    auto scratch = begin_scratch_memory();
-
-    String16 path_w = string16_from_string(scratch.arena, path);
-    HANDLE handle = CreateFileW(cast(WCHAR *)path_w.data, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_ALWAYS, 0, 0);
-
-    // :Win32_64BitFileIO
-    assert(buffer.count <= U32_MAX);
-    u32 size32 = cast(u32)buffer.count;
-
-    DWORD bytes_written;
-    if (WriteFile(handle, buffer.data, size32, &bytes_written, NULL) && (size32 == bytes_written)) {
-        result = true;
-    } else {
-        print("[OS] Faile to write entire file!\n");
-    }
-
-    end_scratch_memory(scratch);
-    return result;
 }
 
 void Write(Arena *arena, char *format, ...)
@@ -109,7 +70,7 @@ void BeginHtmlPage(Arena *arena, Html_Meta meta, String style = {}, String head 
     Write(arena, "<meta name='twitter:title' content='%S' />", meta.title);
     Write(arena, "<meta name='twitter:description' content='%S' />", meta.description);
     Write(arena, "<meta name='twitter:image' content='%S' />", meta.image);
-    Write(arena, "<meta name='twitter:site' content='%S' /> ", meta.twitter_handle);
+    Write(arena, "<meta name='twitter:site' content='%S' />", meta.twitter_handle);
 
     if (style.count) Write(arena, "<style type='text/css'>%S</style>", style);
 
@@ -178,28 +139,57 @@ String MinifyCSS(String str)
 
         char last_written_char = did_write_char ? at[-1] : '\0';
 
-        // NOTE(nick): only emit max 1 consecutive space
-        if (it == ' ' && last_written_char == ' ')
+        if (it == ' ')
         {
-            string_advance(&str, 1);
-            continue;
+            // NOTE(nick): only emit max 1 consecutive space
+            if (last_written_char == ' ')
+            {
+                string_advance(&str, 1);
+                continue;
+            }
+
+            if (last_written_char == ':')
+            {
+                string_advance(&str, 1);
+                continue;
+            }
+
+            if (last_written_char == ';')
+            {
+                string_advance(&str, 1);
+                continue;
+            }
+
+            if (last_written_char == ',')
+            {
+                string_advance(&str, 1);
+                continue;
+            }
+
+            if (last_written_char == '>')
+            {
+                string_advance(&str, 1);
+                continue;
+            }
+
+            if (last_written_char == '{')
+            {
+                string_advance(&str, 1);
+                continue;
+            }
         }
 
-        if (it == ' ' && last_written_char == ':')
+        if (last_written_char == ' ')
         {
-            string_advance(&str, 1);
-            continue;
-        }
+            if (it == '{')
+            {
+                at --;
+            }
 
-        if (it == '{' && last_written_char == ' ')
-        {
-            at --;
-        }
-
-        if (it == ' ' && last_written_char == ';')
-        {
-            string_advance(&str, 1);
-            continue;
+            if (it == '>')
+            {
+                at --;
+            }
         }
 
         if (it == '}' && last_written_char == ';')
@@ -344,6 +334,81 @@ String GenerateRSSFeed(Html_Meta meta, Array<RSS_Entry> items)
     return arena_to_string(&arena);
 }
 
+// @Robustnes: should we add __FILE__ to this too?
+#define local_label(name) __FUNCTION__ ## name
+
+String GenerateStringFromTemplate(String html_template, Slice<String> replacement_pairs)
+{
+    Arena arena = arena_make_from_backing_memory(os_virtual_memory(), megabytes(1));
+
+    String at = html_template;
+
+    while (true)
+    {
+        local_label(loop):
+        if (!(at.count > 2)) break;
+
+        if (at.data[0] == '{' && at.data[1] == '{')
+        {
+            for (i64 i = 0; i < replacement_pairs.count; i += 2)
+            {
+                auto rfrom = replacement_pairs.data[i + 0];
+                auto rto = replacement_pairs.data[i + 1];
+
+                if (string_starts_with(at, rfrom))
+                {
+                    arena_write(&arena, rto);
+                    string_advance(&at, rfrom.count);
+                    goto local_label(loop);
+                }
+            }
+        }
+
+        arena_write(&arena, at.data, 1);
+        string_advance(&at, 1);
+    }
+
+    arena_write(&arena, at.data, at.count);
+    string_advance(&at, at.count);
+
+    return arena_to_string(&arena);
+}
+
+void WriteSocialIcons(Arena *arena, Slice<Social_Icon> icons)
+{
+    Write(arena, "<div class='flex-row csx-16'>");
+
+    for (int i = 0; i < icons.count; i++)
+    {
+        auto it = icons[i];
+        auto svg = FindAssetByName(it.icon_name);
+
+        if (!svg) {
+            print("[warning] Could not find social icon: %S\n", it.icon_name);
+            continue;
+        }
+
+        Write(arena, "<a href='%S' title='%S' target='_blank'>", it.link_url, it.name);
+        Write(arena, "<div style='width: 24px; height: 24px;'>%S</div>", svg->data);
+        Write(arena, "</a>");
+    }
+
+    Write(arena, "</div>");
+}
+
+void WriteHeader(Arena *arena, String site_name, Slice<Social_Icon> icons)
+{
+    Write(arena, "<header class='flex-row h-64 center padx-16' style='background: #333;'>");
+
+    Write(arena, "<div class='flex-row center-y w-1280'>");
+    Write(arena, "<div class='flex-full'><h1>%S</h1></div>", site_name);
+    WriteSocialIcons(arena, icons);
+    Write(arena, "</div>");
+
+    Write(arena, "</header>");
+}
+
+
 int main() {
     os_init();
     auto start_time = os_time_in_miliseconds();
@@ -376,8 +441,36 @@ int main() {
     item0.category = S("article");
     array_push(&items, item0);
 
-    auto rss = GenerateRSSFeed(meta, items);
-    dump(rss);
+
+    Social_Icon twitch_icon = {
+        S("Twitch"),
+        S("twitch.svg"),
+        S("https://twitch.tv/naversano")
+    };
+
+    Social_Icon twitter_icon = {
+        S("Twitter"),
+        S("twitter.svg"),
+        S("https://www.twitter.com/nickaversano")
+    };
+
+    Social_Icon github_icon = {
+        S("Github"),
+        S("github.svg"),
+        S("https://www.github.com/nickav")
+    };
+
+    Social_Icon social_icons[] = {
+        twitch_icon,
+        twitter_icon,
+        github_icon,
+    };
+
+    //auto rss = GenerateRSSFeed(meta, items);
+    //dump(rss);
+
+    String replacement_pairs[] = {S("{{rep}}"), S("BOOM!")};
+    GenerateStringFromTemplate(S("{{rep}}"), slice_of(replacement_pairs));
 
     LoadAssetsFromDisk(config.asset_dir);
 
@@ -388,12 +481,13 @@ int main() {
 
     BeginHtmlPage(&arena, meta, MinifyCSS(style->data));
 
-    auto svg = FindAssetByName(S("twitch.svg"));
-    if (svg) {
-        Write(&arena, "<img width='32' height='32' src='data:image/svg+xml,%S' />", svg->data);
-    }
-    Write(&arena, "<header>Nick Aversano</header>");
-    Write(&arena, "<div>Hello, Sailor!</div>");
+
+    WriteHeader(&arena, meta.site_name, slice_of(social_icons));
+    Write(&arena, "<main class='flex-col center-x'>");
+    Write(&arena, "<div class='center-x pad-16 w-800' style='background: #fff; color: black'>");
+    Write(&arena, "<p>Hello, Sailor!</p>");
+    Write(&arena, "</div>");
+    Write(&arena, "</main>");
 
     EndHtmlPage(&arena);
 

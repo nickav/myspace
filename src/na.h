@@ -1612,15 +1612,21 @@ String string_printv(Arena *arena, const char *format, va_list args) {
 
   if (buffer != NULL)
   {
+    // NOTE(nick): print_to_buffer returns size excluding the null terminator
     i64 actual_size = print_to_buffer((char *)buffer, buffer_size, format, args);
 
-    if (actual_size > 0) {
-      if (actual_size < buffer_size) {
+    if (actual_size > 0)
+    {
+      if (actual_size < buffer_size)
+      {
+        // NOTE(nick): happy path
         arena_pop(arena, buffer_size - actual_size);
         result = make_string(buffer, actual_size);
-      } else {
-        arena_pop(arena, buffer_size + 1);
-        u8 *fixed_buffer = push_array(arena, u8, actual_size + 1);
+      }
+      else
+      {
+        arena_pop(arena, buffer_size);
+        u8 *fixed_buffer = push_array(arena, u8, actual_size);
 
         if (fixed_buffer != NULL)
         {
@@ -4253,6 +4259,8 @@ struct Slice {
   T *begin() { return data ? &data[0] : NULL; }
   T *end()   { return data ? &data[count] : NULL; }
 };
+
+#define slice_of(it) {count_of(it), it}
 
 template <typename T>
 Slice<T> make_slice(T *data, i64 count) {

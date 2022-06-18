@@ -1,6 +1,6 @@
 ---
 title: hello world
-description:    a blog post to rule them all
+description:    one blog post to rule them all
 date:  2022-01-09
 ---
 

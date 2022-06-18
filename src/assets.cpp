@@ -212,10 +212,10 @@ Array<Asset *> GetAllPosts() {
 }
 
 
-Post ParsePost(String contents) {
+Post ParsePost(String at) {
     Post result = {};
 
-    String at = contents;
+    string_eat_whitespace(&at);
 
     if (string_starts_with(at, S("---"))) {
         at.data  += 3;
