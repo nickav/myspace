@@ -1577,11 +1577,24 @@ bool string_eat_whitespace(String *str) {
   u64 start_count = str->count;
 
   while (str->count > 0 && char_is_whitespace((*str)[0])) {
-    str->data ++;
-    str->count --;
+    string_advance(str, 1);
   }
 
   return start_count != str->count;
+}
+
+String string_eat_until(String *str, String token) {
+  String start = *str;
+
+  while (str->count > 0) {
+    if (string_starts_with(*str, token)) {
+      break;
+    }
+
+    string_advance(str, 1);
+  }
+
+  return make_string(start.data, start.count - str->count);
 }
 
 void string_strip_nulls(String *str) {

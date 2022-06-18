@@ -5,6 +5,7 @@
 #include "na.h"
 
 #include "assets.cpp"
+#include "parser.cpp"
 
 struct Build_Config {
     String asset_dir;
@@ -297,6 +298,7 @@ String GenerateStringFromTemplate(String html_template, Slice<String> replacemen
     return arena_to_string(&arena);
 }
 
+
 void WriteSocialIcons(Arena *arena, Slice<Social_Icon> icons)
 {
     Write(arena, "<div class='flex-row csx-16'>");
@@ -330,6 +332,73 @@ void WriteHeader(Arena *arena, String site_name, Slice<Social_Icon> icons)
 
     Write(arena, "</header>");
 }
+
+String HighlightCode(String at)
+{
+    Arena arena = arena_make_from_backing_memory(os_virtual_memory(), megabytes(1));
+
+    auto tokens = tokenize(at);
+    dump(tokens.count);
+    For (tokens) {
+        print("Token { type=%d, text=%S }\n", it.type, it.value);
+    }
+
+    return arena_to_string(&arena);
+}
+
+void WriteCodeBlock(Arena *arena, String code)
+{
+    Write(arena, "<pre class='pad-8' style='background: #222; color: #fff; overflow-x: auto'><code>%S</code></pre>", HighlightCode(code));
+}
+
+static String base64_encoder_src = S(R"STR(
+// Groups of 6 bits (6 bits have a maximum of 26 = 64 different binary values)
+/*
+    Hey this is a multiline comment
+    and stuff
+*/
+String base64_encode(String buffer)
+{
+    static char encode_table[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '/'};
+    u8 *data = push_array(temp_arena(), u8, 4 * ((buffer.count + 2) / 3));
+
+    int i = 0;
+    for (; i < buffer.count - 2; i += 3)
+    {
+        u8 b0 = buffer.data[i + 0];
+        u8 b1 = buffer.data[i + 1];
+        u8 b2 = buffer.data[i + 2];
+
+        *at++ = encode_table[(b0 >> 2)];
+        *at++ = encode_table[((b0 & 0x3) << 4) | (b1 >> 4)];
+        *at++ = encode_table[((b1 & 0xf) << 2) | (b2 >> 6)];
+        *at++ = encode_table[(b2 & 0x3f)];
+    }
+
+    // Remainder
+    if (i < buffer.count)
+    {
+        u8 b0 = buffer.data[i + 0];
+        *at++ = encode_table[(b0 >> 2)];
+
+        if (i == buffer.count - 2)
+        {
+            u8 b1 = buffer.data[i + 1];
+            *at++ = encode_table[((b0 & 0x3) << 4) | (b1 >> 4)];
+            *at++ = encode_table[((b1 & 0xf) << 2)];
+        }
+        else
+        {
+            *at++ = encode_table[((b0 & 0x3) << 4)];
+            *at++ = '=';
+        }
+
+        *at++ = '=';
+    }
+
+    return make_string(data, at - data);
+}
+)STR");
 
 
 int main() {
@@ -408,6 +477,8 @@ int main() {
         Write(&arena, "<main class='flex-col center-x'>");
         Write(&arena, "<div class='center-x pad-16 w-800' style='background: #fff; color: black'>");
         Write(&arena, "<p>Hello, Sailor!</p>");
+
+        WriteCodeBlock(&arena, base64_encoder_src);
         Write(&arena, "</div>");
         Write(&arena, "</main>");
     }

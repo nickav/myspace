@@ -120,3 +120,9 @@ a {
 .csy-16 > *:not(:last-child) { margin-bottom: 1rem; }
 .csy-32 > *:not(:last-child) { margin-bottom: 2rem; }
 .csy-64 > *:not(:last-child) { margin-bottom: 4rem; }
+
+.tok-keyword { color: #f92472; font-weight: 700; }
+.tok-literal { color: red; font-weight: 700; }
+.tok-comment { color: #444; }
+.tok-type { color: limegreen; }
+.tok-number { color: blue; }
