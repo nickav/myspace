@@ -25,9 +25,12 @@ struct Image {
 };
 
 struct Post {
+    u64 id;
+    String name;
+    Date_Time date;
+
     String title;
     String description;
-    String date;
     String image;
 
     String body;
@@ -47,10 +50,6 @@ struct Assets {
 };
 
 static Assets global_assets = {};
-
-
-// NOTE(nick): order should match Post fields
-static String post_keywords[] = {S("title:"), S("description:"), S("date:"), S("image:")};
 
 
 static char unsigned OverhangMask[32] =
@@ -195,78 +194,6 @@ Asset *FindAssetByName(String name)
     return null;
 }
 
-Array<Asset *> GetAllPosts() {
-    auto assets = &global_assets;
-
-    Array<Asset *> results = {};
-    results.allocator = temp_allocator();
-
-    Forp (assets->assets)
-    {
-        if (string_starts_with(it->name, S("post_")) && string_ends_with(it->name, S(".txt")))
-        {
-            array_push(&results, it);
-        }
-    }
-    return results;
-}
-
-
-Post ParsePost(String at) {
-    Post result = {};
-
-    string_eat_whitespace(&at);
-
-    if (string_starts_with(at, S("---"))) {
-        at.data  += 3;
-        at.count -= 3;
-
-        while (at.count > 0) {
-            if (char_is_whitespace(at.data[0])) {
-                at.count -= 1;
-                at.data += 1;
-                continue;
-            }
-
-            if (string_starts_with(at, S("---"))) {
-                at.count -= 3;
-                at.data += 3;
-
-                while (at.count > 0 && char_is_whitespace(at.data[0])) {
-                    at.count -= 1;
-                    at.data += 1;
-                }
-
-                break;
-            }
-
-            for (int i = 0; i < count_of(post_keywords); i ++) {
-                auto keyword = post_keywords[i];
-
-                if (string_starts_with(at, keyword)) {
-                    i64 index = string_index(at, S("\n"));
-                    if (index >= 0) {
-                        String it = string_trim_whitespace(string_slice(at, keyword.count, index));
-
-                        assert(i < offset_of(Post, body) / sizeof(String));
-                        ((String *)&result)[i] = it;
-                    }
-
-                    at.data += index;
-                    at.count -= index;
-                    continue;
-                }
-            }
-
-            at.count -= 1;
-            at.data += 1;
-        }
-    }
-
-    result.body = at;
-
-    return result;
-}
 
 u64 ParsePostID(String name) {
     i64 i0 = string_index(name, S("_"));
@@ -281,6 +208,148 @@ u64 ParsePostID(String name) {
     }
 
     return 0;
+}
+
+Date_Time parse_post_date(String str)
+{
+    Date_Time result = {};
+
+    string_trim_whitespace(&str);
+
+    String part0 = str;
+    String part1 = {};
+
+    i64 space_index = string_index(str, S(" "));
+    if (space_index >= 0)
+    {
+        part0 = string_slice(str, 0, space_index);
+        part1 = string_trim_whitespace(string_slice(str, space_index));
+    }
+
+    if (part0.count > 0)
+    {
+        // @Robustness: handle spaces between date separators
+
+        if (part0.count == 10 && part0[4] == '-' && part0[7] == '-')
+        {
+            // NOTE(nick): SQL date format
+            auto yyyy = string_slice(part0, 0, 4);
+            auto mm = string_slice(part0, 5, 7);
+            auto dd = string_slice(part0, 8, 10);
+
+            result.year = string_to_i64(yyyy);
+            result.mon = string_to_i64(mm);
+            result.day = string_to_i64(dd);
+        }
+        else if (part0.count == 10 && !char_is_digit(part0[2]) && !char_is_digit(part0[5]))
+        {
+            // NOTE(nick): american date format
+            auto mm = string_slice(part0, 0, 2);
+            auto dd = string_slice(part0, 3, 5);
+            auto yyyy = string_slice(part0, 6, 10);
+
+            result.year = string_to_i64(yyyy);
+            result.mon = string_to_i64(mm);
+            result.day = string_to_i64(dd);
+        }
+    }
+
+    if (part1.count > 0)
+    {
+        i64 i0 = string_index(part1, ':');
+        if (i0 > 0)
+        {
+            auto hh = string_slice(part1, 0, i0);
+            auto mm = String{};
+            auto ss = String{};
+
+            i64 i1 = string_index(part1, ':', i0 + 1);
+            if (i1 > 0)
+            {
+                mm = string_slice(part1, i0 + 1, i1);
+                ss = string_slice(part1, i1 + 1);
+            }
+            else
+            {
+                mm = string_slice(part1, i0);
+            }
+
+            result.hour = string_to_i64(hh);
+            result.min = string_to_i64(mm);
+            result.sec = string_to_i64(ss);
+        }
+    }
+
+    return result;
+}
+
+
+Post ParsePost(String name, String at) {
+    Post result = {};
+    result.id = ParsePostID(name);
+    result.name = name;
+
+    string_eat_whitespace(&at);
+
+    if (string_starts_with(at, S("---"))) {
+        string_advance(&at, 3);
+
+        while (at.count > 0) {
+            string_eat_whitespace(&at);
+
+            // NOTE(nick): look for a way out!
+            if (string_starts_with(at, S("---"))) {
+                string_advance(&at, 3);
+                string_eat_whitespace(&at);
+                break;
+            }
+
+            i64 index = string_index(at, ':');
+            if (index >= 0)
+            {
+                i64 newline = string_index(at, '\n', index + 1);
+                if (newline >= 0)
+                {
+                    auto key   = string_trim_whitespace(string_slice(at, 0, index));
+                    auto value = string_trim_whitespace(string_slice(at, index + 1, newline));
+
+                    print("%S: %S\n", key, value);
+
+                    if (false) {}
+                    else if (string_equals(key, S("title"))) { result.title = value; }
+                    else if (string_equals(key, S("description"))) { result.description = value; }
+                    else if (string_equals(key, S("image"))) { result.image = value; }
+                    else if (string_equals(key, S("date"))) { result.date = parse_post_date(value); }
+
+                    string_advance(&at, newline);
+                    continue;
+                }
+            }
+
+            string_advance(&at, 1);
+        }
+    }
+
+    result.body = string_trim_whitespace(at);
+
+    return result;
+}
+
+
+Array<Post> GetAllPosts() {
+    auto assets = &global_assets;
+
+    Array<Post> results = {};
+    results.allocator = temp_allocator();
+
+    Forp (assets->assets)
+    {
+        if (string_starts_with(it->name, S("post_")) && string_ends_with(it->name, S(".txt")))
+        {
+            array_push(&results, ParsePost(it->name, it->data));
+        }
+    }
+    return results;
 }
 
 Image ParseImage(String image) {

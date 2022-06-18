@@ -31,10 +31,6 @@ struct Social_Icon {
 static Build_Config config = {};
 
 
-bool arena_write(Arena *arena, String buffer) {
-  return arena_write(arena, cast(u8 *)buffer.data, buffer.count);
-}
-
 void Write(Arena *arena, char *format, ...)
 {
     va_list args;
@@ -206,79 +202,6 @@ String MinifyCSS(String str)
     return make_string(data, at - data);
 }
 
-Date_Time parse_post_date(String str)
-{
-    Date_Time result = {};
-
-    string_trim_whitespace(&str);
-
-    String part0 = str;
-    String part1 = {};
-
-    i64 space_index = string_index(str, S(" "));
-    if (space_index >= 0)
-    {
-        part0 = string_slice(str, 0, space_index);
-        part1 = string_trim_whitespace(string_slice(str, space_index));
-    }
-
-    if (part0.count > 0)
-    {
-        // @Robustness: handle spaces between date separators
-
-        if (part0.count == 10 && part0[4] == '-' && part0[7] == '-')
-        {
-            // NOTE(nick): SQL date format
-            auto yyyy = string_slice(part0, 0, 4);
-            auto mm = string_slice(part0, 5, 7);
-            auto dd = string_slice(part0, 8, 10);
-
-            result.year = string_to_i64(yyyy);
-            result.mon = string_to_i64(mm);
-            result.day = string_to_i64(dd);
-        }
-        else if (part0.count == 10 && !char_is_digit(part0[2]) && !char_is_digit(part0[5]))
-        {
-            // NOTE(nick): american date format
-            auto mm = string_slice(part0, 0, 2);
-            auto dd = string_slice(part0, 3, 5);
-            auto yyyy = string_slice(part0, 6, 10);
-
-            result.year = string_to_i64(yyyy);
-            result.mon = string_to_i64(mm);
-            result.day = string_to_i64(dd);
-        }
-    }
-
-    if (part1.count > 0)
-    {
-        i64 i0 = string_index(part1, ':');
-        if (i0 > 0)
-        {
-            auto hh = string_slice(part1, 0, i0);
-            auto mm = String{};
-            auto ss = String{};
-
-            i64 i1 = string_index(part1, ':', i0 + 1);
-            if (i1 > 0)
-            {
-                mm = string_slice(part1, i0 + 1, i1);
-                ss = string_slice(part1, i1 + 1);
-            }
-            else
-            {
-                mm = string_slice(part1, i0);
-            }
-
-            result.hour = string_to_i64(hh);
-            result.min = string_to_i64(mm);
-            result.sec = string_to_i64(ss);
-        }
-    }
-
-    return result;
-}
-
 String to_rss_date_string(Date_Time it)
 {
     auto mon = string_slice(string_from_month(cast(Month)it.mon), 0, 3);
@@ -357,7 +280,7 @@ String GenerateStringFromTemplate(String html_template, Slice<String> replacemen
 
                 if (string_starts_with(at, rfrom))
                 {
-                    arena_write(&arena, rto);
+                    arena_write(&arena, rto.data, rto.count);
                     string_advance(&at, rfrom.count);
                     goto local_label(loop);
                 }
@@ -480,15 +403,14 @@ int main() {
     auto arena = arena_make_from_backing_memory(os_virtual_memory(), megabytes(1));
 
     BeginHtmlPage(&arena, meta, MinifyCSS(style->data));
-
-
-    WriteHeader(&arena, meta.site_name, slice_of(social_icons));
-    Write(&arena, "<main class='flex-col center-x'>");
-    Write(&arena, "<div class='center-x pad-16 w-800' style='background: #fff; color: black'>");
-    Write(&arena, "<p>Hello, Sailor!</p>");
-    Write(&arena, "</div>");
-    Write(&arena, "</main>");
-
+    {
+        WriteHeader(&arena, meta.site_name, slice_of(social_icons));
+        Write(&arena, "<main class='flex-col center-x'>");
+        Write(&arena, "<div class='center-x pad-16 w-800' style='background: #fff; color: black'>");
+        Write(&arena, "<p>Hello, Sailor!</p>");
+        Write(&arena, "</div>");
+        Write(&arena, "</main>");
+    }
     EndHtmlPage(&arena);
 
     auto result = arena_to_string(&arena);
@@ -499,23 +421,20 @@ int main() {
 
     auto posts = GetAllPosts();
     For (posts) {
-        auto id   = ParsePostID(it->name);
-        auto post = ParsePost(it->data);
-
-        print("Post %S\n", it->name);
-        print("  id: %lld\n", id);
-        print("  title: %S\n", post.title);
-        print("  description: %S\n", post.description);
-        print("  date: %S\n", post.date);
-        print("  body: %S\n", post.body);
-
-        dump(to_rss_date_string(parse_post_date(post.date)));
+        print("Post %S\n", it.name);
+        print("  id: %lld\n", it.id);
+        print("  title: %S\n", it.title);
+        print("  description: %S\n", it.description);
+        print("  date: %S\n", to_rss_date_string(it.date));
+        print("  body: %S\n", it.body);
     }
 
 
+    #if 0
     dump(parse_post_date(S("2021-11-19 10:13:03")));
     dump(parse_post_date(S("11/19/2021    10:13:03")));
     dump(parse_post_date(S("11.19.2021    10:13")));
+    #endif
 
     auto end_time = os_time_in_miliseconds();
 
