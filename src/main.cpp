@@ -41,6 +41,10 @@ void Write(Arena *arena, char *format, ...)
     va_end(args);
 }
 
+void arena_write(Arena *arena, String it) {
+    arena_write(arena, it.data, it.count);
+}
+
 void BeginHtmlPage(Arena *arena, Html_Meta meta, String style = {}, String head = {})
 {
     Write(arena, "<!doctype html>");
@@ -337,10 +341,26 @@ String HighlightCode(String at)
 {
     Arena arena = arena_make_from_backing_memory(os_virtual_memory(), megabytes(1));
 
+    string_trim_whitespace(&at);
+
     auto tokens = tokenize(at);
-    dump(tokens.count);
-    For (tokens) {
-        print("Token { type=%d, text=%S }\n", it.type, it.value);
+
+    For_Index (tokens) {
+        auto it = tokens[index];
+        auto prev = index > 0 ? &tokens[index - 1] : null;
+
+        convert_token_c_like(&it, prev);
+
+        auto whitespace = whitespace_before_token(&it, at);
+        if (whitespace.count)
+        {
+            auto tok = sprint("<span class='tok-Whitespace'>%S</span>", whitespace);
+            arena_write(&arena, tok);
+        }
+
+        auto type = token_type_to_string(it.type);
+        auto tok = sprint("<span class='tok-%S'>%S</span>", type, it.value);
+        arena_write(&arena, tok);
     }
 
     return arena_to_string(&arena);
@@ -348,58 +368,8 @@ String HighlightCode(String at)
 
 void WriteCodeBlock(Arena *arena, String code)
 {
-    Write(arena, "<pre class='pad-8' style='background: #222; color: #fff; overflow-x: auto'><code>%S</code></pre>", HighlightCode(code));
+    Write(arena, "<pre class='code'><code>%S</code></pre>", HighlightCode(code));
 }
-
-static String base64_encoder_src = S(R"STR(
-// Groups of 6 bits (6 bits have a maximum of 26 = 64 different binary values)
-/*
-    Hey this is a multiline comment
-    and stuff
-*/
-String base64_encode(String buffer)
-{
-    static char encode_table[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '/'};
-    u8 *data = push_array(temp_arena(), u8, 4 * ((buffer.count + 2) / 3));
-
-    int i = 0;
-    for (; i < buffer.count - 2; i += 3)
-    {
-        u8 b0 = buffer.data[i + 0];
-        u8 b1 = buffer.data[i + 1];
-        u8 b2 = buffer.data[i + 2];
-
-        *at++ = encode_table[(b0 >> 2)];
-        *at++ = encode_table[((b0 & 0x3) << 4) | (b1 >> 4)];
-        *at++ = encode_table[((b1 & 0xf) << 2) | (b2 >> 6)];
-        *at++ = encode_table[(b2 & 0x3f)];
-    }
-
-    // Remainder
-    if (i < buffer.count)
-    {
-        u8 b0 = buffer.data[i + 0];
-        *at++ = encode_table[(b0 >> 2)];
-
-        if (i == buffer.count - 2)
-        {
-            u8 b1 = buffer.data[i + 1];
-            *at++ = encode_table[((b0 & 0x3) << 4) | (b1 >> 4)];
-            *at++ = encode_table[((b1 & 0xf) << 2)];
-        }
-        else
-        {
-            *at++ = encode_table[((b0 & 0x3) << 4)];
-            *at++ = '=';
-        }
-
-        *at++ = '=';
-    }
-
-    return make_string(data, at - data);
-}
-)STR");
-
 
 int main() {
     os_init();
@@ -478,7 +448,13 @@ int main() {
         Write(&arena, "<div class='center-x pad-16 w-800' style='background: #fff; color: black'>");
         Write(&arena, "<p>Hello, Sailor!</p>");
 
-        WriteCodeBlock(&arena, base64_encoder_src);
+        auto code = os_read_entire_file(path_join(project_root, S("src/parser.cpp")));
+        if (code.count)
+        {
+            Write(&arena, "This is a thing <code class='code'>replacements</code> that were talking about");
+            WriteCodeBlock(&arena, code);
+        }
+
         Write(&arena, "</div>");
         Write(&arena, "</main>");
     }

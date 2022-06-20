@@ -1295,10 +1295,6 @@ nja_inline bool char_is_digit(char ch) {
   return ch >= '0' && ch <= '9';
 }
 
-nja_inline bool char_is_numeric(char ch) {
-  return char_is_digit(ch) || ch == '.' || ch == '-';
-}
-
 nja_inline bool char_is_whitespace(char ch) {
   return ch == ' ' || ch == '\n' || ch == '\t' || ch == '\r';
 }
@@ -1381,6 +1377,10 @@ bool string_equals(String a, String b) {
 
 bool string_starts_with(String str, String prefix) {
   return str.count >= prefix.count && memory_equals(str.data, prefix.data, prefix.count);
+}
+
+bool string_match(String str, i64 index, String prefix) {
+  return str.count - index >= prefix.count && memory_equals(str.data + index, prefix.data, prefix.count);
 }
 
 bool string_ends_with(String str, String postfix) {
