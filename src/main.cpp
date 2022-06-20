@@ -305,7 +305,7 @@ String GenerateStringFromTemplate(String html_template, Slice<String> replacemen
 
 void WriteSocialIcons(Arena *arena, Slice<Social_Icon> icons)
 {
-    Write(arena, "<div class='flex-row csx-16'>");
+    Write(arena, "<div class='flex-row csx-8'>");
 
     for (int i = 0; i < icons.count; i++)
     {
@@ -317,17 +317,30 @@ void WriteSocialIcons(Arena *arena, Slice<Social_Icon> icons)
             continue;
         }
 
-        Write(arena, "<a href='%S' title='%S' target='_blank'>", it.link_url, it.name);
-        Write(arena, "<div style='width: 24px; height: 24px;'>%S</div>", svg->data);
+        Write(arena, "<a class='pad-8' href='%S' title='%S' target='_blank'>", it.link_url, it.name);
+        Write(arena, "<div class='size-24'>%S</div>", svg->data);
         Write(arena, "</a>");
     }
 
     Write(arena, "</div>");
 }
 
+String EscapeHTMLTags(String text)
+{
+    // NOTE(nick): crazy inefficient!
+    if (string_contains(text, S("<")) || string_contains(text, S(">")))
+    {
+        auto parts = string_split(text, S("<"));
+        text = string_join(parts, S("&lt;"));
+        parts = string_split(text, S(">"));
+        text = string_join(parts, S("&gt;"));
+    }
+    return text;
+}
+
 void WriteHeader(Arena *arena, String site_name, Slice<Social_Icon> icons)
 {
-    Write(arena, "<header class='flex-row h-64 center padx-16' style='background: #333;'>");
+    Write(arena, "<header class='flex-row h-64 center padx-16 bg_black'>");
 
     Write(arena, "<div class='flex-row center-y w-1280'>");
     Write(arena, "<div class='flex-full'><h1>%S</h1></div>", site_name);
@@ -361,7 +374,7 @@ String HighlightCode(String at)
             it.type == TokenType_Semicolon ||
             it.type == TokenType_Paren)
         {
-            arena_write(&arena, it.value);
+            arena_write(&arena, EscapeHTMLTags(it.value));
         }
         else
         {
@@ -376,7 +389,7 @@ String HighlightCode(String at)
 
 void WriteCodeBlock(Arena *arena, String code)
 {
-    Write(arena, "<pre class='code'><code>%S</code></pre>", HighlightCode(code));
+    Write(arena, "<pre class='code'>%S</pre>", HighlightCode(code));
 }
 
 int main() {
@@ -452,7 +465,7 @@ int main() {
     BeginHtmlPage(&arena, meta, MinifyCSS(style->data));
     {
         WriteHeader(&arena, meta.site_name, slice_of(social_icons));
-        Write(&arena, "<main class='flex-col center-x content'>");
+        Write(&arena, "<main class='flex-col center-x c_black bg_white'>");
         Write(&arena, "<div class='center-x pad-16 w-800'");
         Write(&arena, "<p>Hello, Sailor!</p>");
 
