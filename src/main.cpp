@@ -346,21 +346,29 @@ String HighlightCode(String at)
     auto tokens = tokenize(at);
 
     For_Index (tokens) {
-        auto it = tokens[index];
+        auto it = &tokens[index];
         auto prev = index > 0 ? &tokens[index - 1] : null;
+        convert_token_c_like(it, prev);
+    }
 
-        convert_token_c_like(&it, prev);
-
+    For (tokens) {
         auto whitespace = whitespace_before_token(&it, at);
-        if (whitespace.count)
+        arena_write(&arena, whitespace);
+
+        if (
+            it.type == TokenType_Identifier ||
+            it.type == TokenType_Operator ||
+            it.type == TokenType_Semicolon ||
+            it.type == TokenType_Paren)
         {
-            auto tok = sprint("<span class='tok-Whitespace'>%S</span>", whitespace);
+            arena_write(&arena, it.value);
+        }
+        else
+        {
+            auto type = token_type_to_string(it.type);
+            auto tok = sprint("<span class='tok-%S'>%S</span>", type, it.value);
             arena_write(&arena, tok);
         }
-
-        auto type = token_type_to_string(it.type);
-        auto tok = sprint("<span class='tok-%S'>%S</span>", type, it.value);
-        arena_write(&arena, tok);
     }
 
     return arena_to_string(&arena);
@@ -444,14 +452,14 @@ int main() {
     BeginHtmlPage(&arena, meta, MinifyCSS(style->data));
     {
         WriteHeader(&arena, meta.site_name, slice_of(social_icons));
-        Write(&arena, "<main class='flex-col center-x'>");
-        Write(&arena, "<div class='center-x pad-16 w-800' style='background: #fff; color: black'>");
+        Write(&arena, "<main class='flex-col center-x content'>");
+        Write(&arena, "<div class='center-x pad-16 w-800'");
         Write(&arena, "<p>Hello, Sailor!</p>");
 
         auto code = os_read_entire_file(path_join(project_root, S("src/parser.cpp")));
         if (code.count)
         {
-            Write(&arena, "This is a thing <code class='code'>replacements</code> that were talking about");
+            Write(&arena, "<p>This is an inline code block thing <code class='inline_code'>replacements</code> that were talking about. Let's see how many characters per line this is for legibility!</p>");
             WriteCodeBlock(&arena, code);
         }
 

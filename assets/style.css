@@ -36,7 +36,7 @@ svg {
 body {
   background: var(--black);
 
-  font-weight: 500;
+  font-weight: 400;
   font-size: 16px;
   font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen-Sans,Ubuntu,Cantarell,"Helvetica Neue",sans-serif;
   line-height: 1.5;
@@ -52,6 +52,10 @@ body.invert
 
 a {
   color: var(--white);
+}
+
+p {
+  margin: 1rem 0;
 }
 
 .flex-row {
@@ -121,38 +125,47 @@ a {
 .csy-32 > *:not(:last-child) { margin-bottom: 2rem; }
 .csy-64 > *:not(:last-child) { margin-bottom: 4rem; }
 
+.content {
+  background: var(--white);
+  color: var(--black);
+}
+
 /*
-Background  #272822
-Foreground  #F8F8F2
-Comment #75715E
-Red #F92672
-Orange  #FD971F
-Light Orange  #E69F66
-Yellow  #E6DB74
-Green #A6E22E
-Blue  #66D9EF
-Purple  #AE81FF
+  Monokai Theme Colors
+  ---
+  Background  #272822
+  Foreground  #F8F8F2
+  Comment #75715E
+  Red #F92672
+  Orange  #FD971F
+  Light Orange  #E69F66
+  Yellow  #E6DB74
+  Green #A6E22E
+  Blue  #66D9EF
+  Purple  #AE81FF
 */
-.code {
+.code, .inline_code {
+  border-radius: 2px;
   background: #272822;
   color: #F8F8F2;
   font-weight: 500;
   font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
-code.code {
-  display: inline-block;
+.inline_code {
+  display: inline;
   padding: 0.2rem 0.4rem;
-  border-radius: 2px;
 }
 
-pre.code {
+.code {
   overflow-x: auto;
   padding: 1rem;
+  margin: 1rem 0;
 }
-.tok-Keyword, .tok-Macro { color: #F92672; }
+.tok-Keyword, .tok-Macro, .tok-Constant { color: #F92672; }
 .tok-Literal { color: red; }
 .tok-Type { color: #66D9EF; }
-.tok-Comment { color: #666; }
+.tok-Comment { color: #75715E; }
 .tok-Number, .tok-Literal { color: #AE81FF; }
 .tok-String { color: #E6DB74 }
+.tok-Function { color: #A6E22E; }

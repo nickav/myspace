@@ -27,8 +27,13 @@ enum {
     TokenType_Comment,
     TokenType_Whitespace,
 
-    TokenType_Type,
     TokenType_Macro,
+
+    // I dont' really know what to do with these... they're kind of really parser types
+    // more so than tokenizer types
+    TokenType_Type,
+    TokenType_Function,
+    TokenType_Constant,
 
     TokenType_COUNT,
 };
@@ -49,10 +54,13 @@ String token_type_lt[] = {
     S("Equals"),
     S("Comment"),
     S("Whitespace"),
-    S("Type"),
     S("Macro"),
-    S("")
+    S("Type"),
+    S("Function"),
+    S("Constant"),
 };
+
+STATIC_ASSERT(count_of(token_type_lt) == TokenType_COUNT);
 
 struct Token {
     Token_Type type;
@@ -99,7 +107,7 @@ Array<Token> tokenize(String text)
 
                 auto token = array_push(&tokens);
                 token->type = TokenType_Comment;
-                token->value = string_slice(text, start, i);
+                token->value = string_slice(text, start, i - 1); // ignore the newline
                 continue;
             }
 
@@ -264,6 +272,15 @@ Array<Token> tokenize(String text)
             continue;
         }
 
+        if (it == '(' || it == ')')
+        {
+            auto token = array_push(&tokens);
+            token->type = TokenType_Paren;
+            token->value = string_slice(text, i, i + 1);
+            i += 1;
+            continue;
+        }
+
         if (
             it == '+' ||
             it == '-' ||
@@ -341,6 +358,15 @@ String whitespace_before_token(Token *it, String code)
         return string_slice(code, loc + 1, start + 1);
     }
     return S("");
+}
+
+bool string_is_upper(String str) {
+    for (i64 i = 0; i < str.count; i += 1) {
+        if (!char_is_upper(str[i])) {
+            return false;
+        }
+    }
+    return true;
 }
 
 void convert_token_c_like(Token *it, Token *prev)
@@ -448,8 +474,17 @@ void convert_token_c_like(Token *it, Token *prev)
         }
     }
 
-    if (prev && prev->type == TokenType_Identifier && it->type == TokenType_Identifier)
+    // NOTE(nick): some really basic parsing
+    if (prev)
     {
-        prev->type = TokenType_Type;
+        if (it->type == TokenType_Identifier && prev->type == TokenType_Identifier)
+        {
+            prev->type = TokenType_Type;
+        }
+
+        if (it->type == TokenType_Paren && it->value.data[0] == '(' && prev->type == TokenType_Identifier)
+        {
+            prev->type = TokenType_Function;
+        }
     }
 }
