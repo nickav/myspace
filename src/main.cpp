@@ -14,6 +14,7 @@ struct Build_Config {
 
 struct Html_Meta {
     String site_name;
+    String site_url;
     String twitter_handle;
 
     String title;
@@ -27,6 +28,14 @@ struct Social_Icon {
     String name;
     String icon_name;
     String link_url;
+};
+
+struct RSS_Entry {
+    String title;
+    String description;
+    Date_Time pub_date;
+    String link;
+    String category;
 };
 
 static Build_Config config = {};
@@ -213,15 +222,6 @@ String to_rss_date_string(Date_Time it)
     return sprint("%02d %S %d %02d:%02d:%02d +0000", it.day, mon, it.year, it.hour, it.min, it.sec);
 }
 
-struct RSS_Entry {
-    String title;
-    String description;
-    Date_Time pub_date;
-    String link;
-    String category;
-};
-
-// <link rel="alternate" type="application/rss+xml" title="Nick Aversano" href="http://nickav.co/feed.xml" />
 String GenerateRSSFeed(Html_Meta meta, Array<RSS_Entry> items)
 {
     auto arena = arena_make_from_backing_memory(os_virtual_memory(), megabytes(1));
@@ -407,6 +407,7 @@ int main() {
     // Site
     Html_Meta meta = {};
     meta.site_name = S("Nick Aversano");
+    meta.site_url = S("http://nickav.co");
     meta.twitter_handle = S("@nickaversano");
 
     meta.title = S("Nick Aversano");
@@ -449,9 +450,6 @@ int main() {
         github_icon,
     };
 
-    //auto rss = GenerateRSSFeed(meta, items);
-    //dump(rss);
-
     String replacement_pairs[] = {S("{{rep}}"), S("BOOM!")};
     GenerateStringFromTemplate(S("{{rep}}"), slice_of(replacement_pairs));
 
@@ -462,7 +460,42 @@ int main() {
 
     auto arena = arena_make_from_backing_memory(os_virtual_memory(), megabytes(1));
 
-    BeginHtmlPage(&arena, meta, MinifyCSS(style->data));
+
+    String head = {};
+    {
+        auto posts = GetAllPosts();
+
+        Array<RSS_Entry> items = {};
+        items.allocator = temp_allocator();
+
+        For (posts) {
+            print("Post %S\n", it.name);
+            print("  id: %lld\n", it.id);
+            print("  title: %S\n", it.title);
+            print("  description: %S\n", it.description);
+            print("  date: %S\n", to_rss_date_string(it.date));
+            print("  body: %S\n", it.body);
+
+            RSS_Entry item = {};
+            item.title = it.title;
+            item.description = it.description;
+            item.pub_date = it.date;
+            item.link = sprint("/blog/%S", path_strip_extension(it.name));
+            item.category = S("article");
+            array_push(&items, item);
+        }
+
+        auto rss = GenerateRSSFeed(meta, items);
+        os_write_entire_file(path_join(config.output_dir, S("feed.xml")), rss);
+
+        head = sprint(
+            "<link rel='alternate' type='application/rss+xml' title='%S' href='%S/feed.xml' />",
+            meta.site_name,
+            meta.site_url
+        );
+    }
+
+    BeginHtmlPage(&arena, meta, MinifyCSS(style->data), head);
     {
         WriteHeader(&arena, meta.site_name, slice_of(social_icons));
         Write(&arena, "<main class='flex-col center-x c_black bg_white'>");
@@ -486,16 +519,6 @@ int main() {
     os_write_entire_file(path_join(config.output_dir, S("index.html")), result);
 
     arena_reset(&arena);
-
-    auto posts = GetAllPosts();
-    For (posts) {
-        print("Post %S\n", it.name);
-        print("  id: %lld\n", it.id);
-        print("  title: %S\n", it.title);
-        print("  description: %S\n", it.description);
-        print("  date: %S\n", to_rss_date_string(it.date));
-        print("  body: %S\n", it.body);
-    }
 
 
     #if 0

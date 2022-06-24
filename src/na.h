@@ -5024,6 +5024,11 @@ Array<String> string_split(String str, String split) {
 }
 
 String string_join(Allocator allocator, Array<String> list, String join) {
+  if (list.count <= 1)
+  {
+    return list.count == 0 ? S("") : list[0];
+  }
+
   u64 size = join.count * (list.count - 1);
   For (list) size += it.count;
 
