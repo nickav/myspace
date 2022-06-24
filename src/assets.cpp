@@ -352,16 +352,27 @@ Array<Post> GetAllPosts() {
     return results;
 }
 
-Image ParseImage(String image) {
+Image ParseImage(String buffer) {
     Image result = {};
 
     int width = 0;
     int height = 0;
     int channels = 0;
-    result.pixels = (u32 *)stbi_load_from_memory(image.data, image.count, &width, &height, &channels, 4);
+    result.pixels = (u32 *)stbi_load_from_memory(buffer.data, buffer.count, &width, &height, &channels, 4);
 
     result.width = (u32) width;
     result.height = (u32) height;
+
+    return result;
+}
+
+Image GetImage(String name) {
+    Image result = {};
+
+    auto it = FindAssetByName(name);
+    if (it) {
+        result = ParseImage(it->data);
+    }
 
     return result;
 }

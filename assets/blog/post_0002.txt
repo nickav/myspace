@@ -2,5 +2,6 @@
 title: hello world
 description:    one blog post to rule them all
 date:  2022-01-09
+image: godrays_04.png
 ---
 

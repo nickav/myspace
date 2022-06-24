@@ -51,7 +51,8 @@ body {
 }
 
 a {
-  color: var(--white);
+  color: inherit;
+  text-decoration: none;
 }
 
 a:hover {
@@ -59,7 +60,7 @@ a:hover {
 }
 
 p {
-  margin: 1rem 0;
+  margin: 0.5rem 0;
 }
 
 .flex-row {
@@ -139,6 +140,11 @@ p {
 .content {
   background: var(--white);
   color: var(--black);
+}
+
+.site_name {
+  font-size: 1.5rem;
+  display: inline-block;
 }
 
 .code, .inline_code {

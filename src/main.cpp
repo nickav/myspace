@@ -222,6 +222,13 @@ String to_rss_date_string(Date_Time it)
     return sprint("%02d %S %d %02d:%02d:%02d +0000", it.day, mon, it.year, it.hour, it.min, it.sec);
 }
 
+String pretty_date(Date_Time it)
+{
+    auto mon = string_from_month(cast(Month)it.mon);
+    // 02 January, 2021
+    return sprint("%02d %S, %d", it.day, mon, it.year);
+}
+
 String GenerateRSSFeed(Html_Meta meta, Array<RSS_Entry> items)
 {
     auto arena = arena_make_from_backing_memory(os_virtual_memory(), megabytes(1));
@@ -302,29 +309,6 @@ String GenerateStringFromTemplate(String html_template, Slice<String> replacemen
     return arena_to_string(&arena);
 }
 
-
-void WriteSocialIcons(Arena *arena, Slice<Social_Icon> icons)
-{
-    Write(arena, "<div class='flex-row csx-8'>");
-
-    for (int i = 0; i < icons.count; i++)
-    {
-        auto it = icons[i];
-        auto svg = FindAssetByName(it.icon_name);
-
-        if (!svg) {
-            print("[warning] Could not find social icon: %S\n", it.icon_name);
-            continue;
-        }
-
-        Write(arena, "<a class='pad-8' href='%S' title='%S' target='_blank'>", it.link_url, it.name);
-        Write(arena, "<div class='size-24'>%S</div>", svg->data);
-        Write(arena, "</a>");
-    }
-
-    Write(arena, "</div>");
-}
-
 String EscapeHTMLTags(String text)
 {
     // NOTE(nick): crazy inefficient!
@@ -338,16 +322,44 @@ String EscapeHTMLTags(String text)
     return text;
 }
 
-void WriteHeader(Arena *arena, String site_name, Slice<Social_Icon> icons)
+void WriteHeader(Arena *arena, Html_Meta meta, Slice<Social_Icon> icons)
 {
-    Write(arena, "<header class='flex-row h-64 center padx-16 bg_black'>");
+    Write(arena, "<header class='flex-row h-64 center padx-32 bg_black c_white'>");
 
     Write(arena, "<div class='flex-row center-y w-1280'>");
-    Write(arena, "<div class='flex-full'><h1>%S</h1></div>", site_name);
-    WriteSocialIcons(arena, icons);
+    Write(arena, "<div class='flex-full'><a href='index.html'><h1 class='site_name'>%S</h1></a></div>", meta.site_name);
+
+    {
+        Write(arena, "<div class='flex-row csx-8'>");
+
+        for (int i = 0; i < icons.count; i++)
+        {
+            auto it = icons[i];
+            auto svg = FindAssetByName(it.icon_name);
+
+            if (!svg) {
+                print("[warning] Could not find social icon: %S\n", it.icon_name);
+                continue;
+            }
+
+            Write(arena, "<a class='pad-8' href='%S' title='%S' target='_blank'>", it.link_url, it.name);
+            Write(arena, "<div class='size-24'>%S</div>", svg->data);
+            Write(arena, "</a>");
+        }
+
+        Write(arena, "</div>");
+    }
+
     Write(arena, "</div>");
 
     Write(arena, "</header>");
+}
+
+void WriteFooter(Arena *arena, Html_Meta meta)
+{
+    Write(arena, "<footer class='flex-row h-64 center padx-32 bg_black c_white'>");
+    Write(arena, "This is a footer");
+    Write(arena, "</footer>");
 }
 
 String HighlightCode(String at)
@@ -391,6 +403,108 @@ void WriteCodeBlock(Arena *arena, String code)
 {
     Write(arena, "<pre class='code'>%S</pre>", HighlightCode(code));
 }
+
+void WriteBlogListItem(Arena *arena, Post *post, String post_link)
+{
+    auto image_path = String{};
+    auto image = FindAssetByName(post->image);
+    if (image) {
+        image_path = sprint("./r/%S", image->name);
+        os_write_entire_file(path_join(config.output_dir, image_path), image->data);
+    }
+
+    // @Incomplete: implement this!
+    // GetImageURLForSize(post->image, 256, 256);
+
+    Write(arena, "<a href='%S'><div><img src='%S' />%S</div></a>", post_link, image_path, post->title);
+}
+
+String GeneratePostPage(Html_Meta meta, String style, String head, Post *post) {
+    Arena arena = arena_make_from_backing_memory(os_virtual_memory(), megabytes(1));
+
+    BeginHtmlPage(&arena, meta, style, head);
+    {
+
+        // @Copypaste
+        Social_Icon twitch_icon = {
+            S("Twitch"),
+            S("twitch.svg"),
+            S("https://twitch.tv/naversano")
+        };
+
+        Social_Icon twitter_icon = {
+            S("Twitter"),
+            S("twitter.svg"),
+            S("https://www.twitter.com/nickaversano")
+        };
+
+        Social_Icon github_icon = {
+            S("Github"),
+            S("github.svg"),
+            S("https://www.github.com/nickav")
+        };
+
+        Social_Icon social_icons[] = {
+            twitch_icon,
+            twitter_icon,
+            github_icon,
+        };
+
+        WriteHeader(&arena, meta, slice_of(social_icons));
+        Write(&arena, "<main>");
+
+        Write(&arena, "<div class='flex-col center-x c_black bg_white'>");
+        Write(&arena, "<div class='center-x pad-16 w-800'>");
+        {
+            Write(&arena, "<h1>%S</h1>", post->title);
+            Write(&arena, "<h3>%S</h3>", post->description);
+            Write(&arena, "<h3>%S</h3>", pretty_date(post->date));
+        }
+        Write(&arena, "</div>");
+        Write(&arena, "</div>");
+
+
+        Write(&arena, "<div class='flex-col center-x c_black bg_white'>");
+        Write(&arena, "<div class='center-x pad-16 w-800'>");
+        {
+            auto lines = string_split(post->body, S("\n"));
+
+            bool was_blank = false;
+
+            For (lines) {
+                string_trim_whitespace(&it);
+                if (it.count)
+                {
+                    Write(&arena, "<p>%S</p>", it);
+                }
+                else
+                {
+                    was_blank = true;
+                }
+            }
+        }
+        Write(&arena, "</div>");
+        Write(&arena, "</div>");
+
+        Write(&arena, "</div>");
+        Write(&arena, "</main>");
+
+        WriteFooter(&arena, meta);
+    }
+    EndHtmlPage(&arena);
+
+    auto name = path_strip_extension(post->name);
+    auto page_name = sprint("%S.html", name);
+    auto result = arena_to_string(&arena);
+    os_write_entire_file(path_join(config.output_dir, page_name), result);
+    arena_reset(&arena);
+
+    // @MemoryLeak: arena
+
+    return page_name;
+}
+
+i32 post_date_desc(Post *a, Post *b) { return date_time_compare(b->date, a->date); }
 
 int main() {
     os_init();
@@ -458,6 +572,8 @@ int main() {
     auto style = FindAssetByName(S("style.css"));
     assert(style);
 
+    auto style_min = MinifyCSS(style->data);
+
     auto arena = arena_make_from_backing_memory(os_virtual_memory(), megabytes(1));
 
 
@@ -495,11 +611,13 @@ int main() {
         );
     }
 
-    BeginHtmlPage(&arena, meta, MinifyCSS(style->data), head);
+    BeginHtmlPage(&arena, meta, style_min, head);
     {
-        WriteHeader(&arena, meta.site_name, slice_of(social_icons));
+        WriteHeader(&arena, meta, slice_of(social_icons));
         Write(&arena, "<main class='flex-col center-x c_black bg_white'>");
-        Write(&arena, "<div class='center-x pad-16 w-800'");
+        Write(&arena, "<div class='center-x pad-16 w-800'>");
+
+        #if 0
         Write(&arena, "<p>Hello, Sailor!</p>");
 
         auto code = os_read_entire_file(path_join(project_root, S("src/parser.cpp")));
@@ -508,16 +626,25 @@ int main() {
             Write(&arena, "<p>This is an inline code block thing <code class='inline_code'>replacements</code> that were talking about. Let's see how many characters per line this is for legibility!</p>");
             WriteCodeBlock(&arena, code);
         }
+        #endif
+
+        auto posts = GetAllPosts();
+        array_sort(&posts, post_date_desc);
+        Write(&arena, "<h2>Posts</h2>");
+        Forp (posts) {
+            auto post_link = GeneratePostPage(meta, style_min, head, it);
+            WriteBlogListItem(&arena, it, post_link);
+        }
 
         Write(&arena, "</div>");
         Write(&arena, "</main>");
+        
+        WriteFooter(&arena, meta);
     }
     EndHtmlPage(&arena);
 
     auto result = arena_to_string(&arena);
-
     os_write_entire_file(path_join(config.output_dir, S("index.html")), result);
-
     arena_reset(&arena);
 
 

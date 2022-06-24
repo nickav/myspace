@@ -2231,6 +2231,11 @@ Date_Time date_time_from_dense_time(Dense_Time in) {
   return result;
 }
 
+i64 date_time_compare(Date_Time a, Date_Time b) {
+  // @Incomplete @Robustness: this might not always work for values > 2^(64-1)
+  return (i64)dense_time_from_date_time(&a) - (i64)dense_time_from_date_time(&b);
+}
+
 String string_from_month(Month month) {
   String result = S("(null)");
 
