@@ -13,10 +13,6 @@ struct Build_Config {
 };
 
 struct Html_Meta {
-    String site_name;
-    String site_url;
-    String twitter_handle;
-
     String title;
     String description;
     String image;
@@ -28,6 +24,14 @@ struct Social_Icon {
     String name;
     String icon_name;
     String link_url;
+};
+
+struct Html_Site {
+    String site_name;
+    String site_url;
+    String twitter_handle;
+
+    Slice<Social_Icon> social_icons;
 };
 
 struct RSS_Entry {
@@ -54,7 +58,7 @@ void arena_write(Arena *arena, String it) {
     arena_write(arena, it.data, it.count);
 }
 
-void BeginHtmlPage(Arena *arena, Html_Meta meta, String style = {}, String head = {})
+void BeginHtmlPage(Arena *arena, Html_Site site, Html_Meta meta, String style = {}, String head = {})
 {
     Write(arena, "<!doctype html>");
     Write(arena, "<html lang='en'>");
@@ -73,14 +77,14 @@ void BeginHtmlPage(Arena *arena, Html_Meta meta, String style = {}, String head 
     Write(arena, "<meta property='og:description' content='%S' />", meta.description);
     Write(arena, "<meta property='og:type' content='%S' />", meta.og_type);
     Write(arena, "<meta property='og:url' content='%S' />", meta.url);
-    Write(arena, "<meta property='og:site_name' content='%S' />", meta.site_name);
+    Write(arena, "<meta property='og:site_name' content='%S' />", site.site_name);
     Write(arena, "<meta property='og:locale' content='en_us' />");
 
     Write(arena, "<meta name='twitter:card' content='summary' />");
     Write(arena, "<meta name='twitter:title' content='%S' />", meta.title);
     Write(arena, "<meta name='twitter:description' content='%S' />", meta.description);
     Write(arena, "<meta name='twitter:image' content='%S' />", meta.image);
-    Write(arena, "<meta name='twitter:site' content='%S' />", meta.twitter_handle);
+    Write(arena, "<meta name='twitter:site' content='%S' />", site.twitter_handle);
 
     if (style.count) Write(arena, "<style type='text/css'>%S</style>", style);
 
@@ -322,19 +326,19 @@ String EscapeHTMLTags(String text)
     return text;
 }
 
-void WriteHeader(Arena *arena, Html_Meta meta, Slice<Social_Icon> icons)
+void WriteHeader(Arena *arena, Html_Site site)
 {
     Write(arena, "<header class='flex-row h-64 center padx-32 bg_black c_white'>");
 
     Write(arena, "<div class='flex-row center-y w-1280'>");
-    Write(arena, "<div class='flex-full'><a href='index.html'><h1 class='site_name'>%S</h1></a></div>", meta.site_name);
+    Write(arena, "<div class='flex-full'><a href='index.html'><h1 class='site_name'>%S</h1></a></div>", site.site_name);
 
     {
         Write(arena, "<div class='flex-row csx-8'>");
 
-        for (int i = 0; i < icons.count; i++)
+        for (int i = 0; i < site.social_icons.count; i++)
         {
-            auto it = icons[i];
+            auto it = site.social_icons[i];
             auto svg = FindAssetByName(it.icon_name);
 
             if (!svg) {
@@ -419,38 +423,19 @@ void WriteBlogListItem(Arena *arena, Post *post, String post_link)
     Write(arena, "<a href='%S'><div><img src='%S' />%S</div></a>", post_link, image_path, post->title);
 }
 
-String GeneratePostPage(Html_Meta meta, String style, String head, Post *post) {
+String GeneratePostPage(Html_Site site, String style, String head, Post *post) {
     Arena arena = arena_make_from_backing_memory(os_virtual_memory(), megabytes(1));
 
-    BeginHtmlPage(&arena, meta, style, head);
+    Html_Meta meta = {};
+    meta.title = post->title;
+    meta.description = post->description;
+    meta.image = post->image; // @Incomplete
+    meta.og_type = S("article");
+    meta.url = S("/"); // @Incomplete
+
+    BeginHtmlPage(&arena, site, meta, style, head);
     {
-
-        // @Copypaste
-        Social_Icon twitch_icon = {
-            S("Twitch"),
-            S("twitch.svg"),
-            S("https://twitch.tv/naversano")
-        };
-
-        Social_Icon twitter_icon = {
-            S("Twitter"),
-            S("twitter.svg"),
-            S("https://www.twitter.com/nickaversano")
-        };
-
-        Social_Icon github_icon = {
-            S("Github"),
-            S("github.svg"),
-            S("https://www.github.com/nickav")
-        };
-
-        Social_Icon social_icons[] = {
-            twitch_icon,
-            twitter_icon,
-            github_icon,
-        };
-
-        WriteHeader(&arena, meta, slice_of(social_icons));
+        WriteHeader(&arena, site);
         Write(&arena, "<main>");
 
         Write(&arena, "<div class='flex-col center-x c_black bg_white'>");
@@ -519,50 +504,24 @@ int main() {
     config.output_dir = path_join(build_dir, S("bin"));
 
     // Site
-    Html_Meta meta = {};
-    meta.site_name = S("Nick Aversano");
-    meta.site_url = S("http://nickav.co");
-    meta.twitter_handle = S("@nickaversano");
+    Html_Site site = {};
+    site.site_name = S("Nick Aversano");
+    site.site_url = S("http://nickav.co");
+    site.twitter_handle = S("@nickaversano");
+    Social_Icon icons[] = {
+        {S("Twitch"), S("twitch.svg"), S("https://twitch.tv/naversano")},
+        {S("Twitter"), S("twitter.svg"), S("https://www.twitter.com/nickaversano")},
+        {S("Github"), S("github.svg"), S("https://www.github.com/nickav")}
+    };
+    site.social_icons = slice_of(icons);
 
+    // Meta
+    Html_Meta meta = {};
     meta.title = S("Nick Aversano");
     meta.description = S("Nicks cool home page");
     meta.image = S(" ");
     meta.og_type = S("article");
     meta.url = S("/");
-
-    Array<RSS_Entry> items = {};
-    RSS_Entry item0 = {};
-    item0.title = S("hello test");
-    item0.description = S("some cool description");
-    item0.pub_date = os_get_current_time_in_utc();
-    item0.link = S("/foo/bar");
-    item0.category = S("article");
-    array_push(&items, item0);
-
-
-    Social_Icon twitch_icon = {
-        S("Twitch"),
-        S("twitch.svg"),
-        S("https://twitch.tv/naversano")
-    };
-
-    Social_Icon twitter_icon = {
-        S("Twitter"),
-        S("twitter.svg"),
-        S("https://www.twitter.com/nickaversano")
-    };
-
-    Social_Icon github_icon = {
-        S("Github"),
-        S("github.svg"),
-        S("https://www.github.com/nickav")
-    };
-
-    Social_Icon social_icons[] = {
-        twitch_icon,
-        twitter_icon,
-        github_icon,
-    };
 
     String replacement_pairs[] = {S("{{rep}}"), S("BOOM!")};
     GenerateStringFromTemplate(S("{{rep}}"), slice_of(replacement_pairs));
@@ -606,14 +565,14 @@ int main() {
 
         head = sprint(
             "<link rel='alternate' type='application/rss+xml' title='%S' href='%S/feed.xml' />",
-            meta.site_name,
-            meta.site_url
+            site.site_name,
+            site.site_url
         );
     }
 
-    BeginHtmlPage(&arena, meta, style_min, head);
+    BeginHtmlPage(&arena, site, meta, style_min, head);
     {
-        WriteHeader(&arena, meta, slice_of(social_icons));
+        WriteHeader(&arena, site);
         Write(&arena, "<main class='flex-col center-x c_black bg_white'>");
         Write(&arena, "<div class='center-x pad-16 w-800'>");
 
@@ -632,13 +591,13 @@ int main() {
         array_sort(&posts, post_date_desc);
         Write(&arena, "<h2>Posts</h2>");
         Forp (posts) {
-            auto post_link = GeneratePostPage(meta, style_min, head, it);
+            auto post_link = GeneratePostPage(site, style_min, head, it);
             WriteBlogListItem(&arena, it, post_link);
         }
 
         Write(&arena, "</div>");
         Write(&arena, "</main>");
-        
+
         WriteFooter(&arena, meta);
     }
     EndHtmlPage(&arena);
