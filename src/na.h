@@ -876,11 +876,9 @@ bool arena_contains_pointer(Arena *arena, void *ptr) {
     return ptr >= arena->data && ptr < arena->data + arena->size;
 }
 
-#define push_struct(arena, Struct)  \
-    (Struct *)arena_push(arena, sizeof(Struct))
+#define push_struct(arena, Struct) (Struct *)arena_push(arena, sizeof(Struct))
 
-#define push_array(arena, Struct, count)  \
-    (Struct *)arena_push(arena, (count) * sizeof(Struct))
+#define push_array(arena, Struct, count) (Struct *)arena_push(arena, (count) * sizeof(Struct))
 
 Arena_Mark arena_get_position(Arena *arena) {
     Arena_Mark result = {};
@@ -996,14 +994,6 @@ isize na_binary_search(void *base, isize count, isize size, void *key, Compare_P
 // Threading Primitives
 //
 
-struct Thread_Context {
-    Arena temporary_storage;
-    // Arena scratch_memory; // @Incomplete @MemoryCleanup
-};
-
-void *os_thread_get_context();
-void os_thread_set_context(void *ptr);
-
 void *os_alloc(u64 size);
 void os_free(void *ptr);
 
@@ -1085,29 +1075,18 @@ inline u64 atomic_add_u64(u64 volatile *value, u64 Addend) {
 }
 #endif // COMPILER_MSVC
 
+static thread_local Arena thread_temporary_storage = {};
+
 void thread_context_init(u64 temporary_storage_size) {
-    Thread_Context *ctx = cast(Thread_Context *)os_alloc(sizeof(Thread_Context));
-
-    arena_init_from_memory(&ctx->temporary_storage, temporary_storage_size);
-
-    os_thread_set_context(ctx);
+    arena_init_from_memory(&thread_temporary_storage, temporary_storage_size);
 }
 
 void thread_context_free() {
-    Thread_Context *ctx = cast(Thread_Context *)os_thread_get_context();
-
-    if (ctx)
-    {
-        os_free(&ctx->temporary_storage.data);
-        os_free(ctx);
-    }
+    arena_free(&thread_temporary_storage);
 }
 
 Arena *temp_arena() {
-    Thread_Context *ctx = cast(Thread_Context *)os_thread_get_context();
-    assert(ctx);
-
-    return &ctx->temporary_storage;
+    return &thread_temporary_storage;
 }
 
 void *talloc(u64 size) {
@@ -2307,9 +2286,6 @@ bool os_commit(void *ptr, u64 size);
 bool os_decommit(void *ptr, u64 size);
 bool os_release(void *ptr, u64 size);
 
-void os_thread_set_context(void *ptr);
-void *os_thread_get_context();
-
 f64 os_time_in_miliseconds();
 f64 os_time_utc_now();
 void os_sleep(f64 miliseconds);
@@ -2407,19 +2383,9 @@ na_internal Dense_Time win32_dense_time_from_file_time(FILETIME *file_time) {
 }
 
 bool os_init() {
-    win32_thread_context_index = TlsAlloc();
-    thread_context_init(megabytes(32));
+    thread_context_init(gigabytes(1));
 
     return true;
-}
-
-void os_thread_set_context(void *ptr) {
-    TlsSetValue(win32_thread_context_index, ptr);
-}
-
-void *os_thread_get_context() {
-    void *result = TlsGetValue(win32_thread_context_index);
-    return result;
 }
 
 f64 os_time_in_miliseconds() {
@@ -3112,16 +3078,6 @@ bool os_init() {
     thread_context_init(megabytes(32));
 
     return true;
-}
-
-void os_thread_set_context(void *ptr) {
-    int result = pthread_setspecific(macos_thread_local_key, ptr);
-    assert(result == 0);
-}
-
-void *os_thread_get_context() {
-    void *result = pthread_getspecific(macos_thread_local_key);
-    return result;
 }
 
 f64 os_time_in_miliseconds() {
