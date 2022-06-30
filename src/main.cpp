@@ -540,6 +540,10 @@ int main() {
     {
         auto posts = GetAllPosts();
 
+        for (Array_Each(post, posts)) {
+            print("post name: %S\n", post->name);
+        }
+
         Array<RSS_Entry> items = {};
         items.allocator = temp_allocator();
 

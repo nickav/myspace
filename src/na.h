@@ -274,8 +274,13 @@ VERSION HISTORY
 #ifndef nja_global
 #define nja_global        static // Global variables
 #define nja_internal      static // Internal linkage
-#define nja_local         static // Local Persisting variables
 #define nja_local_persist static // Local Persisting variables
+#endif
+
+#ifndef global
+#define global        static // Global variables
+#define internal      static // Internal linkage
+#define local_persist static // Local Persisting variables
 #endif
 
 #ifndef FOUR_CC
@@ -1819,7 +1824,7 @@ String path_get_extension(String path) {
   return {};
 }
 
-String to_string(bool x)   { if (x) return S("true"); return S("false"); }
+String to_string(bool x)   { return x ? S("true") : S("false"); }
 String to_string(char x)   { return sprint("%c", x); }
 String to_string(char *x)  { return string_from_cstr(x); }
 String to_string(i8 x)     { return sprint("%d", x); }
@@ -2421,10 +2426,10 @@ bool os_init();
 
 void *os_alloc(u64 size);
 void os_free(void *ptr);
-void *os_memory_reserve(u64 size);
-bool os_memory_commit(void *ptr, u64 size);
-bool os_memory_decommit(void *ptr, u64 size);
-bool os_memory_release(void *ptr);
+void *os_reserve(u64 size);
+bool os_commit(void *ptr, u64 size);
+bool os_decommit(void *ptr, u64 size);
+bool os_release(void *ptr);
 
 void os_thread_set_context(void *ptr);
 void *os_thread_get_context();
@@ -2620,19 +2625,19 @@ void os_set_high_process_priority(bool enable) {
   }
 }
 
-void *os_memory_reserve(u64 size) {
+void *os_reserve(u64 size) {
   return VirtualAlloc(0, size, MEM_RESERVE, PAGE_READWRITE);
 }
 
-bool os_memory_commit(void *ptr, u64 size) {
+bool os_commit(void *ptr, u64 size) {
   return VirtualAlloc(ptr, size, MEM_COMMIT, PAGE_READWRITE) != NULL;
 }
 
-bool os_memory_decommit(void *ptr, u64 size) {
+bool os_decommit(void *ptr, u64 size) {
   return VirtualFree(ptr, size, MEM_DECOMMIT) != NULL;
 }
 
-bool os_memory_release(void *ptr, u64 size) {
+bool os_release(void *ptr, u64 size) {
   // According to the docs, the size should be 0 when using MEM_RELEASE
   return VirtualFree(ptr, 0, MEM_RELEASE) != NULL;
 }
@@ -3409,7 +3414,7 @@ void os_free(void *memory) {
 
 #include <sys/mman.h>
 
-void *os_memory_reserve(u64 size) {
+void *os_reserve(u64 size) {
   void *result = 0;
 
   result = mmap(NULL, size, PROT_NONE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
@@ -3418,7 +3423,7 @@ void *os_memory_reserve(u64 size) {
   return result;
 }
 
-bool os_memory_commit(void *ptr, u64 size) {
+bool os_commit(void *ptr, u64 size) {
   int page_size = sysconf(_SC_PAGE_SIZE);
 
   isize p = (isize)ptr;
@@ -3440,7 +3445,7 @@ bool os_memory_commit(void *ptr, u64 size) {
   return result == 0;
 }
 
-bool os_memory_decommit(void *ptr, u64 size) {
+bool os_decommit(void *ptr, u64 size) {
   int page_size = sysconf(_SC_PAGE_SIZE);
 
   isize p = (isize)ptr;
@@ -3462,7 +3467,7 @@ bool os_memory_decommit(void *ptr, u64 size) {
   return result == 0;
 }
 
-bool os_memory_release(void *ptr, u64 size) {
+bool os_release(void *ptr, u64 size) {
   return munmap(ptr, size) == 0; // @Incomplete: can size be 0 like on windows?
 }
 
@@ -4067,6 +4072,12 @@ Allocator temp_allocator() {
 
 #define For_Index_Reverse(array) \
   for (i64 index = cast(i64)(array).count - 1; index >= 0; index--)
+
+#define For2(array) \
+    for (i64 index = 0; index < cast(i64)(array).count; index++) \
+      if (auto it = &(array).data[index])
+
+#define Array_Each(it, array) auto it = (array).begin(); it < (array).end(); it ++
 
 template <typename T>
 struct Array {
@@ -4772,10 +4783,10 @@ void os_file_append(File *file, String str) {
 Memory os_virtual_memory() {
   Memory result = {};
 
-  result.reserve  = &os_memory_reserve;
-  result.commit   = &os_memory_commit;
-  result.decommit = &os_memory_decommit;
-  result.release  = &os_memory_release;
+  result.reserve  = &os_reserve;
+  result.commit   = &os_commit;
+  result.decommit = &os_decommit;
+  result.release  = &os_release;
 
   return result;
 }
