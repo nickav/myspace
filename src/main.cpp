@@ -235,7 +235,7 @@ String pretty_date(Date_Time it)
 
 String GenerateRSSFeed(Html_Meta meta, Array<RSS_Entry> items)
 {
-    auto arena = arena_make_from_backing_memory(os_virtual_memory(), megabytes(1));
+    auto arena = arena_make_from_memory(megabytes(1));
 
     auto pub_date = to_rss_date_string(os_get_current_time_in_utc());
 
@@ -278,7 +278,7 @@ String GenerateRSSFeed(Html_Meta meta, Array<RSS_Entry> items)
 
 String GenerateStringFromTemplate(String html_template, Slice<String> replacement_pairs)
 {
-    Arena arena = arena_make_from_backing_memory(os_virtual_memory(), megabytes(1));
+    Arena arena = arena_make_from_memory(megabytes(1));
 
     String at = html_template;
 
@@ -368,7 +368,7 @@ void WriteFooter(Arena *arena, Html_Meta meta)
 
 String HighlightCode(String at)
 {
-    Arena arena = arena_make_from_backing_memory(os_virtual_memory(), megabytes(1));
+    Arena arena = arena_make_from_memory(megabytes(1));
 
     string_trim_whitespace(&at);
 
@@ -424,7 +424,7 @@ void WriteBlogListItem(Arena *arena, Post *post, String post_link)
 }
 
 String GeneratePostPage(Html_Site site, String style, String head, Post *post) {
-    Arena arena = arena_make_from_backing_memory(os_virtual_memory(), megabytes(1));
+    Arena arena = arena_make_from_memory(megabytes(1));
 
     Html_Meta meta = {};
     meta.title = post->title;
@@ -533,7 +533,7 @@ int main() {
 
     auto style_min = MinifyCSS(style->data);
 
-    auto arena = arena_make_from_backing_memory(os_virtual_memory(), megabytes(1));
+    auto arena = arena_make_from_memory(megabytes(1));
 
 
     String head = {};

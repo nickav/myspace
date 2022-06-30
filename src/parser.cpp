@@ -60,7 +60,7 @@ String token_type_lt[] = {
     S("Constant"),
 };
 
-STATIC_ASSERT(count_of(token_type_lt) == TokenType_COUNT);
+StaticAssert(count_of(token_type_lt) == TokenType_COUNT);
 
 struct Token {
     Token_Type type;
