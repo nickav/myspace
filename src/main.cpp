@@ -1,625 +1,482 @@
 #include <stdio.h>
 
 #define STB_SPRINTF_IMPLEMENTATION
-#include "deps/stb_sprintf.h"
+#include "third_party/stb_sprintf.h"
 #include "na.h"
 
-#include "assets.cpp"
-#include "parser.cpp"
+typedef u32 Token_Type;
+enum {
+    TokenType_Nil = 0,
 
-struct Build_Config {
-    String asset_dir;
-    String output_dir;
+    TokenType_Number,
+    TokenType_String,
+    TokenType_Identifier,
+    TokenType_Symbol,
+
+    TokenType_Whitespace,
+    TokenType_Comment,
+
+    TokenType_COUNT,
 };
 
-struct Html_Meta {
-    String title;
-    String description;
-    String image;
-    String og_type;
-    String url;
+String token_type_name_lookup[] = {
+    S("Nil"),
+
+    S("Number"),
+    S("String"),
+    S("Identifier"),
+    S("Symbol"),
+
+    S("Whitespace"),
+    S("Comment"),
+
+    S("COUNT"),
 };
 
-struct Social_Icon {
-    String name;
-    String icon_name;
-    String link_url;
-};
-
-struct Html_Site {
-    String site_name;
-    String site_url;
-    String twitter_handle;
-
-    Slice<Social_Icon> social_icons;
-};
-
-struct RSS_Entry {
-    String title;
-    String description;
-    Date_Time pub_date;
-    String link;
-    String category;
-};
-
-static Build_Config config = {};
-
-
-void Write(Arena *arena, char *format, ...)
+struct Token
 {
-    va_list args;
-    va_start(args, format);
-    string_printv(arena, format, args);
-    string_print(arena, "\n");
-    va_end(args);
-}
+    Token_Type type;
+    String value;
+};
 
-void arena_write(Arena *arena, String it) {
-    arena_write(arena, it.data, it.count);
-}
+typedef u32 Node_Type;
+enum {
+    NodeType_Nil = 0,
 
-void BeginHtmlPage(Arena *arena, Html_Site site, Html_Meta meta, String style = {}, String head = {})
+    NodeType_Number,
+    NodeType_String,
+    NodeType_Identifier,
+    NodeType_Tag,
+
+    NodeType_COUNT,
+};
+
+struct Node
 {
-    Write(arena, "<!doctype html>");
-    Write(arena, "<html lang='en'>");
-    Write(arena, "<head>");
-    Write(arena, "<meta charset='utf-8' />");
-    Write(arena, "<meta name='viewport' content='width=device-width, initial-scale=1' />");
+    Node *next;
+    Node *prev;
+    Node *parent;
 
-    Write(arena, "<title>%S</title>", meta.title);
-    Write(arena, "<meta name='description' content='%S' />", meta.description);
+    Node *first_child;
+    Node *last_child;
 
-    Write(arena, "<meta itemprop='name' content='%S'>", meta.title);
-    Write(arena, "<meta itemprop='description' content='%S'>", meta.description);
-    Write(arena, "<meta itemprop='image' content='%S'>", meta.image);
+    Node *first_tag;
+    Node *last_tag;
 
-    Write(arena, "<meta property='og:title' content='%S' />", meta.title);
-    Write(arena, "<meta property='og:description' content='%S' />", meta.description);
-    Write(arena, "<meta property='og:type' content='%S' />", meta.og_type);
-    Write(arena, "<meta property='og:url' content='%S' />", meta.url);
-    Write(arena, "<meta property='og:site_name' content='%S' />", site.site_name);
-    Write(arena, "<meta property='og:locale' content='en_us' />");
+    Node_Type type;
+    String    string;
+    String    raw_string;
+};
 
-    Write(arena, "<meta name='twitter:card' content='summary' />");
-    Write(arena, "<meta name='twitter:title' content='%S' />", meta.title);
-    Write(arena, "<meta name='twitter:description' content='%S' />", meta.description);
-    Write(arena, "<meta name='twitter:image' content='%S' />", meta.image);
-    Write(arena, "<meta name='twitter:site' content='%S' />", site.twitter_handle);
-
-    if (style.count) Write(arena, "<style type='text/css'>%S</style>", style);
-
-    if (head.count) Write(arena, "%S", head);
-
-    Write(arena, "</head>");
-    Write(arena, "<body>");
-}
-
-void EndHtmlPage(Arena *arena)
+struct Parser
 {
-    Write(arena, "</body>");
-    Write(arena, "</html>");
-}
+    Array<Token> tokens;
+    i64 index;
 
-String MinifyCSS(String str)
+    Arena *arena;
+};
+
+Array<Token> tokenize(String text)
 {
-    u8 *data = push_array(temp_arena(), u8, str.count);
-    u8 *at = data;
-    u8 *end = data + str.count;
+    Array<Token> tokens = {};
+    array_init_from_allocator(&tokens, temp_allocator(), 256);
 
-    bool did_write_char = false;
-    while (str.count)
+    i64 i = 0;
+    while (i < text.count)
     {
-        char it = str[0];
+        char it = text[i];
 
-        // NOTE(nick): eat comments
-        if (it == '/' && str[1] == '*')
+        // Whitespace
+        if (char_is_whitespace(it))
         {
-            string_advance(&str, 2);
-            while (str.count && !string_starts_with(str, S("*/")))
+            i64 start = i;
+            while (i < text.count && char_is_whitespace(text.data[i]))
             {
-                string_advance(&str, 1);
+                i += 1;
             }
-            string_advance(&str, 2);
+
+            /*
+            auto token = array_push(&tokens);
+            token->type = TokenType_Whitespace;
+            token->value = string_slice(text, start, i);
+            */
             continue;
         }
 
-        // NOTE(nick): eat whitespace
-        if (it == '\r' || it == '\n')
+        // Comments
+        if (it == '/' && (i + 1) < text.count)
         {
-            string_eat_whitespace(&str);
-            continue;
-        }
-
-        // NOTE(nick): handle strings
-        if (it == '"' || it == '\'')
-        {
-            char closing_char = it;
-
-            *at++ = it;
-            string_advance(&str, 1);
-
-            while (str.count > 0 && str.data[0] != closing_char)
+            // Single-line comment
+            if (text.data[i + 1] == '/')
             {
-                *at++ = str.data[0];
-                string_advance(&str, 1);
-            }
+                i64 start = i;
 
-            assert(str.count > 0); // @Robustness
-
-            *at++ = str.data[0];
-            string_advance(&str, 1);
-            continue;
-        }
-
-        char last_written_char = did_write_char ? at[-1] : '\0';
-
-        if (it == ' ')
-        {
-            // NOTE(nick): only emit max 1 consecutive space
-            if (last_written_char == ' ')
-            {
-                string_advance(&str, 1);
-                continue;
-            }
-
-            if (last_written_char == ':')
-            {
-                string_advance(&str, 1);
-                continue;
-            }
-
-            if (last_written_char == ';')
-            {
-                string_advance(&str, 1);
-                continue;
-            }
-
-            if (last_written_char == ',')
-            {
-                string_advance(&str, 1);
-                continue;
-            }
-
-            if (last_written_char == '>')
-            {
-                string_advance(&str, 1);
-                continue;
-            }
-
-            if (last_written_char == '{')
-            {
-                string_advance(&str, 1);
-                continue;
-            }
-        }
-
-        if (last_written_char == ' ')
-        {
-            if (it == '{')
-            {
-                at --;
-            }
-
-            if (it == '>')
-            {
-                at --;
-            }
-        }
-
-        if (it == '}' && last_written_char == ';')
-        {
-            at --;
-        }
-
-        string_advance(&str, 1);
-        *at++ = it;
-        did_write_char = true;
-    }
-
-
-    return make_string(data, at - data);
-}
-
-String to_rss_date_string(Date_Time it)
-{
-    auto mon = string_slice(string_from_month(cast(Month)it.mon), 0, 3);
-    return sprint("%02d %S %d %02d:%02d:%02d +0000", it.day, mon, it.year, it.hour, it.min, it.sec);
-}
-
-String pretty_date(Date_Time it)
-{
-    auto mon = string_from_month(cast(Month)it.mon);
-    // 02 January, 2021
-    return sprint("%02d %S, %d", it.day, mon, it.year);
-}
-
-String GenerateRSSFeed(Html_Meta meta, Array<RSS_Entry> items)
-{
-    auto arena = arena_make_from_memory(megabytes(1));
-
-    auto pub_date = to_rss_date_string(os_get_current_time_in_utc());
-
-    Write(&arena, "<?xml version='1.0' encoding='UTF-8'?>");
-
-    Write(&arena, "<rss version='2.0' xmlns:atom='http://www.w3.org/2005/Atom'>");
-    Write(&arena, "<channel>");
-    Write(&arena, "\n");
-
-    Write(&arena, "<title>%S</title>", meta.title);
-    Write(&arena, "<link>%S</link>", meta.url);
-    Write(&arena, "<description>%S</description>", meta.description);
-    Write(&arena, "<pubDate>%S</pubDate>", pub_date);
-    Write(&arena, "<lastBuildDate>%S</lastBuildDate>", pub_date);
-    Write(&arena, "<language>en-us</language>");
-    Write(&arena, "<image><url>%S</url></image>", meta.image);
-    Write(&arena, "\n");
-
-    For (items)
-    {
-        Write(&arena, "<item>");
-        Write(&arena, "<title>%S</title>", it.title);
-        Write(&arena, "<description>%S</description>", it.description);
-        Write(&arena, "<pubDate>%S</pubDate>", to_rss_date_string(it.pub_date));
-        Write(&arena, "<link>%S</link>", it.link);
-        Write(&arena, "<guid isPermaLink='true'>%S</guid>", it.link);
-        Write(&arena, "<category>%S</category>", it.category);
-        Write(&arena, "</item>");
-        Write(&arena, "\n");
-    }
-
-    Write(&arena, "</channel>");
-    Write(&arena, "</rss>");
-
-    return arena_to_string(&arena);
-}
-
-// @Robustnes: should we add __FILE__ to this too?
-#define local_label(name) __FUNCTION__ ## name
-
-String GenerateStringFromTemplate(String html_template, Slice<String> replacement_pairs)
-{
-    Arena arena = arena_make_from_memory(megabytes(1));
-
-    String at = html_template;
-
-    while (true)
-    {
-        local_label(loop):
-        if (!(at.count > 2)) break;
-
-        if (at.data[0] == '{' && at.data[1] == '{')
-        {
-            for (i64 i = 0; i < replacement_pairs.count; i += 2)
-            {
-                auto rfrom = replacement_pairs.data[i + 0];
-                auto rto = replacement_pairs.data[i + 1];
-
-                if (string_starts_with(at, rfrom))
+                i += 2; // skip the //
+                while (i < text.count && text[i] != '\n')
                 {
-                    arena_write(&arena, rto.data, rto.count);
-                    string_advance(&at, rfrom.count);
-                    goto local_label(loop);
+                    i += 1;
                 }
-            }
-        }
 
-        arena_write(&arena, at.data, 1);
-        string_advance(&at, 1);
-    }
-
-    arena_write(&arena, at.data, at.count);
-    string_advance(&at, at.count);
-
-    return arena_to_string(&arena);
-}
-
-String EscapeHTMLTags(String text)
-{
-    // NOTE(nick): crazy inefficient!
-    if (string_contains(text, S("<")) || string_contains(text, S(">")))
-    {
-        auto parts = string_split(text, S("<"));
-        text = string_join(parts, S("&lt;"));
-        parts = string_split(text, S(">"));
-        text = string_join(parts, S("&gt;"));
-    }
-    return text;
-}
-
-void WriteHeader(Arena *arena, Html_Site site)
-{
-    Write(arena, "<header class='flex-row h-64 center padx-32 bg_black c_white'>");
-
-    Write(arena, "<div class='flex-row center-y w-1280'>");
-    Write(arena, "<div class='flex-full'><a href='index.html'><h1 class='site_name'>%S</h1></a></div>", site.site_name);
-
-    {
-        Write(arena, "<div class='flex-row csx-8'>");
-
-        for (int i = 0; i < site.social_icons.count; i++)
-        {
-            auto it = site.social_icons[i];
-            auto svg = FindAssetByName(it.icon_name);
-
-            if (!svg) {
-                print("[warning] Could not find social icon: %S\n", it.icon_name);
+                /*
+                auto token = array_push(&tokens);
+                token->type = TokenType_Comment;
+                token->value = string_slice(text, start, i - 1); // ignore the newline
+                */
                 continue;
             }
 
-            Write(arena, "<a class='pad-8' href='%S' title='%S' target='_blank'>", it.link_url, it.name);
-            Write(arena, "<div class='size-24'>%S</div>", svg->data);
-            Write(arena, "</a>");
-        }
-
-        Write(arena, "</div>");
-    }
-
-    Write(arena, "</div>");
-
-    Write(arena, "</header>");
-}
-
-void WriteFooter(Arena *arena, Html_Meta meta)
-{
-    Write(arena, "<footer class='flex-row h-64 center padx-32 bg_black c_white'>");
-    Write(arena, "This is a footer");
-    Write(arena, "</footer>");
-}
-
-String HighlightCode(String at)
-{
-    Arena arena = arena_make_from_memory(megabytes(1));
-
-    string_trim_whitespace(&at);
-
-    auto tokens = tokenize(at);
-
-    For_Index (tokens) {
-        auto it = &tokens[index];
-        auto prev = index > 0 ? &tokens[index - 1] : null;
-        convert_token_c_like(it, prev);
-    }
-
-    For (tokens) {
-        auto whitespace = whitespace_before_token(&it, at);
-        arena_write(&arena, whitespace);
-
-        if (
-            it.type == TokenType_Identifier ||
-            it.type == TokenType_Operator ||
-            it.type == TokenType_Semicolon ||
-            it.type == TokenType_Paren)
-        {
-            arena_write(&arena, EscapeHTMLTags(it.value));
-        }
-        else
-        {
-            auto type = token_type_to_string(it.type);
-            auto tok = sprint("<span class='tok-%S'>%S</span>", type, it.value);
-            arena_write(&arena, tok);
-        }
-    }
-
-    return arena_to_string(&arena);
-}
-
-void WriteCodeBlock(Arena *arena, String code)
-{
-    Write(arena, "<pre class='code'>%S</pre>", HighlightCode(code));
-}
-
-void WriteBlogListItem(Arena *arena, Post *post, String post_link)
-{
-    auto image_path = String{};
-    auto image = FindAssetByName(post->image);
-    if (image) {
-        image_path = sprint("./r/%S", image->name);
-        os_write_entire_file(path_join(config.output_dir, image_path), image->data);
-    }
-
-    // @Incomplete: implement this!
-    // GetImageURLForSize(post->image, 256, 256);
-
-    Write(arena, "<a href='%S'><div><img src='%S' />%S</div></a>", post_link, image_path, post->title);
-}
-
-String GeneratePostPage(Html_Site site, String style, String head, Post *post) {
-    Arena arena = arena_make_from_memory(megabytes(1));
-
-    Html_Meta meta = {};
-    meta.title = post->title;
-    meta.description = post->description;
-    meta.image = post->image; // @Incomplete
-    meta.og_type = S("article");
-    meta.url = S("/"); // @Incomplete
-
-    BeginHtmlPage(&arena, site, meta, style, head);
-    {
-        WriteHeader(&arena, site);
-        Write(&arena, "<main>");
-
-        Write(&arena, "<div class='flex-col center-x c_black bg_white'>");
-        Write(&arena, "<div class='center-x pad-16 w-800'>");
-        {
-            Write(&arena, "<h1>%S</h1>", post->title);
-            Write(&arena, "<h3>%S</h3>", post->description);
-            Write(&arena, "<h3>%S</h3>", pretty_date(post->date));
-        }
-        Write(&arena, "</div>");
-        Write(&arena, "</div>");
-
-
-        Write(&arena, "<div class='flex-col center-x c_black bg_white'>");
-        Write(&arena, "<div class='center-x pad-16 w-800'>");
-        {
-            auto lines = string_split(post->body, S("\n"));
-
-            bool was_blank = false;
-
-            For (lines) {
-                string_trim_whitespace(&it);
-                if (it.count)
+            if (text.data[i + 1] == '*')
+            {
+                i64 start = i;
+                auto at = string_slice(text, i + 2);
+                i64 scope_depth = 1;
+                while (at.count > 0 && scope_depth > 0)
                 {
-                    Write(&arena, "<p>%S</p>", it);
+                    if (string_starts_with(at, S("/*"))) {
+                        scope_depth ++;
+
+                        string_advance(&at, 2);
+                        i += 2;
+                        continue;
+                    }
+
+                    if (string_starts_with(at, S("*/"))) {
+                        scope_depth --;
+
+                        string_advance(&at, 2);
+                        i += 2;
+                        continue;
+                    }
+
+                    string_advance(&at, 1);
+                    i += 1;
+                }
+
+                auto value = string_slice(text, start, i + 2);
+
+                /*
+                auto token = array_push(&tokens);
+                token->type = TokenType_Comment;
+                token->value = value;
+                */
+                i += 2;
+                continue;
+            }
+        }
+
+        if (it == '"' || it == '\'' || it == '`')
+        {
+            // @Idea: support "triple" sequences (``` or """ or ''')
+            char closing_char = it;
+            i64 start = i;
+            bool escape = false;
+
+            i += 1;
+            while (i < text.count)
+            {
+                if (text[i] == closing_char && !escape)
+                {
+                    break;
+                }
+
+                if (escape && text[i] == '\\')
+                {
+                    escape = false;
                 }
                 else
                 {
-                    was_blank = true;
+                    escape = text[i] == '\\';
+                }
+
+                i ++;
+            }
+            i += 1;
+
+            auto token = array_push(&tokens);
+            token->type = TokenType_String;
+            token->value = string_slice(text, start, i);
+            continue;
+        }
+
+        bool has_sign = false;
+        if (char_is_digit(it) || (has_sign = it == '-' || it == '+') || (it == '.'))
+        {
+            i64 start = i;
+            i ++;
+
+            while (i < text.count && (
+                char_is_digit(text.data[i]) ||
+                char_is_alpha(text.data[i]) ||
+                text.data[i] == '.' ||
+                text.data[i] == '-' ||
+                text.data[i] == '+' ||
+                text.data[i] == '.' ||
+                text.data[i] == '_'
+            ))
+            {
+                i ++;
+            }
+
+            auto token = array_push(&tokens);
+            token->type = TokenType_Number;
+            token->value = string_slice(text, start, i);
+            continue;
+        }
+
+        if (char_is_alpha(it) || it == '_')
+        {
+            i64 start = i;
+            while (i < text.count &&
+                (char_is_alpha(text[i]) || char_is_digit(text[i]) || text[i] == '_' || text[i] == '$')
+            )
+            {
+                i ++;
+            }
+
+            auto token = array_push(&tokens);
+            token->type = TokenType_Identifier;
+            token->value = string_slice(text, start, i);
+            continue;
+        }
+
+        if (
+            it == ':' || it == '=' || it == ',' || it == ';' ||
+            it == '(' || it == '{' || it == '[' ||
+            it == ')' || it == '}' || it == ']'
+        )
+        {
+            i64 symbol_length = 1;
+            if (i < text.count - 1)
+            {
+                char next = text.data[i + 1] ;
+                if (it == ':' && next == ':')
+                {
+                    symbol_length = 2;
                 }
             }
+
+            auto token = array_push(&tokens);
+            token->type = TokenType_Symbol;
+            token->value = string_slice(text, i, i + symbol_length);
+            i += symbol_length;
+            continue;
         }
-        Write(&arena, "</div>");
-        Write(&arena, "</div>");
 
-        Write(&arena, "</div>");
-        Write(&arena, "</main>");
-
-        WriteFooter(&arena, meta);
+        print("[tokenize] Unhandled token: '%c'\n", it);
+        i ++;
     }
-    EndHtmlPage(&arena);
 
-    auto name = path_strip_extension(post->name);
-    auto page_name = sprint("%S.html", name);
-    auto result = arena_to_string(&arena);
-    os_write_entire_file(path_join(config.output_dir, page_name), result);
-    arena_reset(&arena);
-
-    // @MemoryLeak: arena
-
-    return page_name;
+    return tokens;
 }
 
-i32 post_date_desc(Post *a, Post *b) { return date_time_compare(b->date, a->date); }
+Node *make_node(Parser *state, Node_Type type, String str)
+{
+    Node *node = push_struct(state->arena, Node);
+    *node = {};
+    node->type = type;
+    node->string = str;
+    return node;
+}
 
-int main() {
-    os_init();
-    auto start_time = os_time_in_miliseconds();
+void push_child_node(Node *parent, Node *child)
+{
+    if (!parent->first_child) parent->first_child = child;
 
-    auto build_dir = os_get_executable_directory();
-    auto project_root = path_dirname(build_dir);
-
-    // Config
-    config = {};
-    config.asset_dir  = path_join(project_root, S("assets"));
-    config.output_dir = path_join(build_dir, S("bin"));
-
-    // Site
-    Html_Site site = {};
-    site.site_name = S("Nick Aversano");
-    site.site_url = S("http://nickav.co");
-    site.twitter_handle = S("@nickaversano");
-    Social_Icon icons[] = {
-        {S("Twitch"), S("twitch.svg"), S("https://twitch.tv/naversano")},
-        {S("Twitter"), S("twitter.svg"), S("https://www.twitter.com/nickaversano")},
-        {S("Github"), S("github.svg"), S("https://www.github.com/nickav")}
-    };
-    site.social_icons = slice_of(icons);
-
-    // Meta
-    Html_Meta meta = {};
-    meta.title = S("Nick Aversano");
-    meta.description = S("Nicks cool home page");
-    meta.image = S(" ");
-    meta.og_type = S("article");
-    meta.url = S("/");
-
-    String replacement_pairs[] = {S("{{rep}}"), S("BOOM!")};
-    GenerateStringFromTemplate(S("{{rep}}"), slice_of(replacement_pairs));
-
-    LoadAssetsFromDisk(config.asset_dir);
-
-    auto style = FindAssetByName(S("style.css"));
-    assert(style);
-
-    auto style_min = MinifyCSS(style->data);
-
-    auto arena = arena_make_from_memory(megabytes(1));
-
-
-    String head = {};
+    if (!parent->last_child)
     {
-        auto posts = GetAllPosts();
+        parent->last_child = child;
+    }
+    else
+    {
+        parent->last_child->next = child;
+        parent->last_child = child;
+    }
+}
 
-        for (Array_Each(post, posts)) {
-            print("post name: %S\n", post->name);
-        }
+void push_sibling_node(Node *node, Node *it)
+{
+    print("push_sibling_node: %S -> %S\n", node->string, it->string);
 
-        Array<RSS_Entry> items = {};
-        items.allocator = temp_allocator();
+    Node *at = node;
+    while (at->next != NULL) at = at->next;
 
-        For (posts) {
-            print("Post %S\n", it.name);
-            print("  id: %lld\n", it.id);
-            print("  title: %S\n", it.title);
-            print("  description: %S\n", it.description);
-            print("  date: %S\n", to_rss_date_string(it.date));
-            print("  body: %S\n", it.body);
+    at->next = it;
+}
 
-            RSS_Entry item = {};
-            item.title = it.title;
-            item.description = it.description;
-            item.pub_date = it.date;
-            item.link = sprint("/blog/%S", path_strip_extension(it.name));
-            item.category = S("article");
-            array_push(&items, item);
-        }
-
-        auto rss = GenerateRSSFeed(meta, items);
-        os_write_entire_file(path_join(config.output_dir, S("feed.xml")), rss);
-
-        head = sprint(
-            "<link rel='alternate' type='application/rss+xml' title='%S' href='%S/feed.xml' />",
-            site.site_name,
-            site.site_url
-        );
+Token *peek(Parser *state, i64 offset)
+{
+    if (state->index + offset < state->tokens.count)
+    {
+        return &state->tokens.data[state->index + offset];
     }
 
-    BeginHtmlPage(&arena, site, meta, style_min, head);
+    return null;
+}
+
+void consume(Parser *state, Token *it)
+{
+    assert(&state->tokens[state->index] == it);
+    state->index ++;
+}
+
+bool consume_any(Parser *state, Token_Type type)
+{
+    bool result = false;
+    auto token = peek(state, 0);
+
+    while (token && token->type == type)
     {
-        WriteHeader(&arena, site);
-        Write(&arena, "<main class='flex-col center-x c_black bg_white'>");
-        Write(&arena, "<div class='center-x pad-16 w-800'>");
+        result = true;
+        consume(state, token);
+        token = peek(state, 0);
+    }
 
-        #if 0
-        Write(&arena, "<p>Hello, Sailor!</p>");
+    return result;
+}
 
-        auto code = os_read_entire_file(path_join(project_root, S("src/parser.cpp")));
-        if (code.count)
+Node *parse_expression(Parser *state);
+
+#if 0
+Node *parse_siblings(Parser *state)
+{
+    auto first_expr = parse_expression(state);
+    auto token = peek(state, 0);
+
+    auto expr = first_expr;
+    while (token && token->type != TokenType_Close_Bracket)
+    {
+        consume_any(state, TokenType_Seperator);
+        auto next = parse_expression(state);
+        push_sibling_node(expr, next);
+        expr = next;
+        consume_any(state, TokenType_Seperator);
+
+        token = peek(state, 0);
+    }
+
+    return first_expr;
+}
+#endif
+
+Node *parse_primary_expression(Parser *state)
+{
+    auto it = peek(state, 0);
+
+    if (!it)
+    {
+        assert(!"Expected number, literal or string!");
+        return null;
+    }
+
+    if (it->type == TokenType_Identifier)
+    {
+        consume(state, it);
+        return make_node(state, NodeType_Identifier, it->value);
+    }
+
+    if (it->type == TokenType_Number)
+    {
+        consume(state, it);
+        return make_node(state, NodeType_Number, it->value);
+    }
+
+    if (it->type == TokenType_String)
+    {
+        consume(state, it);
+        return make_node(state, NodeType_String, it->value);
+    }
+
+    /*
+    if (it->type == TokenType_Open_Bracket)
+    {
+        consume(state, it);
+        auto expr = parse_siblings(state);
+        auto next = peek(state, 0);
+
+        if (!next || next->type != TokenType_Close_Bracket)
         {
-            Write(&arena, "<p>This is an inline code block thing <code class='inline_code'>replacements</code> that were talking about. Let's see how many characters per line this is for legibility!</p>");
-            WriteCodeBlock(&arena, code);
-        }
-        #endif
-
-        auto posts = GetAllPosts();
-        array_sort(&posts, post_date_desc);
-        Write(&arena, "<h2>Posts</h2>");
-        Forp (posts) {
-            auto post_link = GeneratePostPage(site, style_min, head, it);
-            WriteBlogListItem(&arena, it, post_link);
+            print("Excpected closing paren, but got '%S' instead!\n", next->value);
+            assert(!"Expected close paren!");
         }
 
-        Write(&arena, "</div>");
-        Write(&arena, "</main>");
+        consume(state, next);
 
-        WriteFooter(&arena, meta);
+        consume_any(state, TokenType_Seperator);
+
+        return expr;
     }
-    EndHtmlPage(&arena);
+    */
 
-    auto result = arena_to_string(&arena);
-    os_write_entire_file(path_join(config.output_dir, S("index.html")), result);
-    arena_reset(&arena);
+    dump(it->value);
+    assert(!"IN a bad state!");
 
+    return null;
+}
 
-    #if 0
-    dump(parse_post_date(S("2021-11-19 10:13:03")));
-    dump(parse_post_date(S("11/19/2021    10:13:03")));
-    dump(parse_post_date(S("11.19.2021    10:13")));
-    #endif
+Node *parse_expression(Parser *state)
+{
+    auto expr = parse_primary_expression(state);
+    auto token = peek(state, 0);
 
-    auto end_time = os_time_in_miliseconds();
+    while (token && (token->type == TokenType_Symbol && (token->value.data[0] == '=' || token->value.data[0] == ':')))
+    {
+        consume(state, token);
+        auto right = parse_primary_expression(state);
+        push_child_node(expr, right);
+        token = peek(state, 0);
+    }
 
-    print("Done! Took %.2fms\n", end_time - start_time);
+    return expr;
+}
 
-    return 0;
+Node *parse(Arena *arena, Array<Token> tokens)
+{
+    Node *root = push_struct(arena, Node);
+
+    Parser state = {};
+    state.tokens = tokens;
+    state.index = 0;
+    state.arena = arena;
+
+    while (state.index < state.tokens.count)
+    {
+        Node *result = parse_expression(&state);
+        if (result)
+        {
+            push_child_node(root, result);
+        }
+    }
+
+    return root;
+}
+
+int main(int argc, char **argv)
+{
+    os_init();
+
+    auto exe_dir = os_get_executable_directory();
+
+    auto text = os_read_entire_file(path_join(exe_dir, S("../src/dummy2.meta")));
+    auto tokens = tokenize(text);
+
+    print("--- Tokenize ---\n");
+
+    For (tokens)
+    {
+        print("%S: %S\n", token_type_name_lookup[it.type], it.value);
+    }
+
+    auto root = parse(temp_arena(), tokens);
+
+    print("--- Parse ---\n");
+
+    for (Node *it = root->first_child; it != NULL; it = it->next)
+    {
+        print("Node: %S\n", it->string);
+
+        for (Node *child = it->first_child; child != NULL; child = child->next)
+        {
+            print("  Child: %S\n", child->string);
+        }
+    }
 }

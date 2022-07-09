@@ -1,5 +1,5 @@
 /*
-    na.h - v0.01 
+    na.h - v0.02
     Nick Aversano's C++ helper library
 
     This is a single header file with a bunch of useful stuff
@@ -15,6 +15,7 @@ CREDITS
     Written by Nick Aversano
 
 VERSION HISTORY
+    0.02  - replace nja with na, arena and thread clean up
     0.01  - Initial version
 */
 
@@ -91,9 +92,9 @@ VERSION HISTORY
 #define LANG_C 0
 #endif
 
-#if !defined(__cplusplus)
-    #define BYTE_ORDER_LITTLE_ENDIAN    (!*(u8*)&(u16){1})
-    #define BYTE_ORDER_BIG_ENDIAN (!BYTE_ORDER_LITTLE_ENDIAN)
+#if LANG_C
+    #define BYTE_ORDER_LITTLE_ENDIAN (!*(u8*)&(u16){1})
+    #define BYTE_ORDER_BIG_ENDIAN    (!BYTE_ORDER_LITTLE_ENDIAN)
 #endif
 
 //
@@ -248,13 +249,13 @@ VERSION HISTORY
 #endif
 #endif
 
-#if !defined(na_thread_local)
+#if !defined(thread_local)
     #if defined(_MSC_VER) && _MSC_VER >= 1300
-        #define na_thread_local __declspec(thread)
+        #define thread_local __declspec(thread)
     #elif defined(__GNUC__)
-        #define na_thread_local __thread
+        #define thread_local __thread
     #else
-        #define na_thread_local thread_local
+        #define thread_local thread_local
     #endif
 #endif
 
@@ -355,9 +356,6 @@ typedef ptrdiff_t isize;
 typedef i8  b8;
 typedef i16 b16;
 typedef i32 b32;
-
-typedef u8 byte;
-typedef i32 rune;
 
 #define enum8(Type)  u8
 #define enum16(Type) u16
@@ -560,9 +558,7 @@ static void __movsb(void* dst, const void* src, size_t size)
 {
         __asm__ __volatile__("rep movsb" : "+D"(dst), "+S"(src), "+c"(size) : : "memory");
 }
-#endif
 
-#if 0
 void CopyMemory(void* dst, const void* src, size_t size)
 {
 #ifdef _MSC_VER
@@ -1241,8 +1237,16 @@ bool string_ends_with(String str, String postfix) {
 }
 
 String string_slice(String str, i64 start_index, i64 end_index) {
-    assert(start_index >= 0 && start_index <= str.count);
-    assert(end_index >= 0 && end_index <= str.count);
+    start_index = Clamp(start_index, 0, str.count);
+    end_index   = Clamp(end_index, 0, str.count);
+
+    if (start_index > end_index)
+    {
+        i64 tmp = start_index;
+        start_index = end_index;
+        end_index = tmp;
+    }
+
     return make_string(str.data + start_index, end_index - start_index);
 }
 
@@ -1250,11 +1254,28 @@ String string_slice(String str, i64 start_index) {
     return string_slice(str, start_index, str.count);
 }
 
+String string_skip(String str, i64 offset) {
+    return string_slice(str, offset, str.count);
+}
+
+String string_chop(String str, i64 offset) {
+    return string_slice(str, 0, str.count - offset);
+}
+
+String string_prefix(String str, i64 count) {
+    return string_slice(str, 0, count);
+}
+
+String string_suffix(String str, i64 count) {
+    return string_slice(str, str.count - count, str.count);
+}
+
 String string_range(u8 *at, u8 *end) {
     assert(end >= at);
     return make_string(at, (end - at));
 }
 
+// @Cleanup @Robustness: make this return str.count if not found
 i64 string_index(String str, String search, i64 start_index = 0) {
     for (i64 i = start_index; i < str.count; i += 1) {
         if (memory_equals(str.data + i, search.data, search.count)) {
@@ -1275,6 +1296,7 @@ i64 string_index(String str, char search, i64 start_index = 0) {
     return -1;
 }
 
+// @Cleanup @Robustness: make this return -1 if not found
 i64 string_last_index(String str, String search) {
     i64 start_index = str.count - 1;
     for (i64 i = start_index; i >= 0; i -= 1) {
@@ -1426,14 +1448,14 @@ String string_trim_whitespace(String str) {
     return copy;
 }
 
-bool string_eat_whitespace(String *str) {
+i64 string_eat_whitespace(String *str) {
     u64 start_count = str->count;
 
     while (str->count > 0 && char_is_whitespace((*str)[0])) {
         string_advance(str, 1);
     }
 
-    return start_count != str->count;
+    return start_count - str->count;
 }
 
 String string_eat_until(String *str, String token) {
@@ -2276,55 +2298,6 @@ struct Thread_Params {
     Thread_Proc *proc;
     void *data;
 };
-
-bool os_init();
-
-void *os_alloc(u64 size);
-void os_free(void *ptr);
-void *os_reserve(u64 size);
-bool os_commit(void *ptr, u64 size);
-bool os_decommit(void *ptr, u64 size);
-bool os_release(void *ptr, u64 size);
-
-f64 os_time_in_miliseconds();
-f64 os_time_utc_now();
-void os_sleep(f64 miliseconds);
-
-void os_set_high_process_priority(bool enable);
-
-String os_read_entire_file(Allocator allocator, String path);
-String os_read_entire_file(String path);
-bool os_write_entire_file(String path, String contents);
-
-bool os_make_directory(String path);
-bool os_delete_file(String path);
-bool os_delete_directory(String path);
-
-File os_file_open(String path, u32 mode_flags);
-void os_file_read(File *file, u64 offset, u64 size, void *dest);
-void os_file_write(File *file, u64 offset, u64 size, void *data);
-u64  os_file_get_size(File *file);
-void os_file_append(File *file, u64 size, void *data);
-void os_file_append(File *file, String str);
-void os_file_close(File *file);
-
-File_Lister os_file_list_begin(Arena *arena, String path);
-bool os_file_list_next(File_Lister *iter, File_Info *info);
-void os_file_list_end(File_Lister *iter);
-
-File_Info os_get_file_info(Arena *arena, String path);
-File_Info os_get_file_info(String path);
-
-Thread os_create_thread(u64 stack_size, Thread_Proc *proc, void *data);
-void os_detatch_thread(Thread thread);
-u32 os_await_thread(Thread thread);
-
-String os_get_executable_path();
-String os_get_current_directory();
-String os_get_executable_directory();
-
-bool os_clipboard_set_text(String text);
-String os_clipboard_get_text();
 
 #if OS_WINDOWS
 
@@ -4706,33 +4679,6 @@ i64 os_count_directory(String path) {
 
     // NOTE(nick): Ignore . and .. "directories"
     return result - 2;
-}
-
-Array<String> os_list_drives(Allocator allocator) {
-    Array<String> results = {};
-    results.allocator = allocator;
-
-    #if OS_WINDOWS
-    // @Incomplete: do we care about enumerating volumes with FindFirstVolume?
-    DWORD result = GetLogicalDrives();
-    for (int i = 0; i < 26; i ++)
-    {
-        char drive_letter = 65 + i;
-        bool drive_exists = result & 1;
-        result >>= 1;
-
-        if (drive_exists)
-        {
-            array_push(&results, sprint("%c:/", drive_letter));
-        }
-    }
-    #endif
-
-    #if OS_MACOS || OS_LINUX
-    array_push(&results, S("/"));
-    #endif
-
-    return results;
 }
 
 Array<File_Info> os_scan_directory(Allocator allocator, Arena *string_memory, String path) {

@@ -24,6 +24,17 @@ struct Image {
     u32 *pixels;
 };
 
+union Vector2u {
+    struct {
+        u32 x;
+        u32 y;
+    };
+    struct {
+        u32 width;
+        u32 height;
+    };
+};
+
 struct Post {
     u64 id;
     String name;
@@ -362,6 +373,23 @@ Image ParseImage(String buffer) {
 
     result.width = (u32) width;
     result.height = (u32) height;
+
+    return result;
+}
+
+Vector2u ParseImageInfo(String buffer)
+{
+    Vector2u result = {};
+
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+
+    if (stbi_info_from_memory(buffer.data, buffer.count, &width, &height, &channels))
+    {
+        result.x = width;
+        result.y = height;
+    }
 
     return result;
 }
