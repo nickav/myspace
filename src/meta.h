@@ -30,14 +30,16 @@ static String __token_type_name_lookup[] = {
 typedef u32 Token_Flag;
 enum
 {
-    TokenFlag_Multiline_String,
-    TokenFlag_OpenBracket,
-    TokenFlag_CloseBracket,
+    TokenFlag_Multiline    = 0x0001,
+    TokenFlag_OpenBracket  = 0x0002,
+    TokenFlag_CloseBracket = 0x0004,
+    TokenFlag_Assign       = 0x0008,
 };
 
 struct Token
 {
     Token_Type type;
+    Token_Flag flags;
     String value;
 };
 
@@ -185,7 +187,6 @@ Array<Token> tokenize(String text)
 
         if (it == '"' || it == '\'' || it == '`')
         {
-            // @Idea: support "triple" sequences (``` or """ or ''')
             bool is_triple = i < text.count - 2 && text.data[i + 1] == it && text.data[i + 2] == it;
 
             char closing_char = it;
@@ -229,6 +230,7 @@ Array<Token> tokenize(String text)
             auto token = array_push(&tokens);
             token->type = TokenType_String;
             token->value = string_slice(text, start, i);
+            token->flags = (is_triple ? TokenFlag_Multiline : 0);
             continue;
         }
 
@@ -283,16 +285,32 @@ Array<Token> tokenize(String text)
             i64 symbol_length = 1;
             if (i < text.count - 1)
             {
-                char next = text.data[i + 1] ;
+                char next = text.data[i + 1];
                 if (it == ':' && next == ':')
                 {
                     symbol_length = 2;
                 }
             }
 
+            Token_Flag flags = 0;
+            if (it == ':')
+            {
+                flags |= TokenFlag_Assign;
+            }
+            else if (it == '[' || it == '{' || it == '(')
+            {
+                flags |= TokenFlag_OpenBracket;
+            }
+            else if (it == ']' || it == '}' || it == ')')
+            {
+                flags |= TokenFlag_CloseBracket;
+            }
+
             auto token = array_push(&tokens);
             token->type = TokenType_Symbol;
             token->value = string_slice(text, i, i + symbol_length);
+            flags = flags;
+
             i += symbol_length;
             continue;
         }
@@ -363,15 +381,37 @@ Node *make_node(Parser *state, Node_Type type, String str, Node *tags = NULL)
     Node *node = push_struct(state->arena, Node);
     *node = {};
 
-    node->type = type;
-    node->string = str;
-
+    // Set up nil children
     node->next = &__meta_nil_node;
     node->prev = &__meta_nil_node;
     node->first_child = &__meta_nil_node;
     node->last_child = &__meta_nil_node;
     node->first_tag = &__meta_nil_node;
     node->last_tag = &__meta_nil_node;
+
+
+    node->type = type;
+    node->string = str;
+
+    if (type != NodeType_Array && type != NodeType_Root)
+    {
+        node->raw_string = str;
+    }
+
+    if (type == NodeType_String)
+    {
+        char quote_char = str.data[0];
+        bool is_triple = str.count >= 3 && str.data[1] == quote_char && str.data[2] == quote_char;
+
+        if (is_triple)
+        {
+            node->string = string_slice(str, 3, str.count - 3);
+        }
+        else
+        {
+            node->string = string_slice(str, 1, str.count - 1);
+        }
+    }
 
     node_set_tags(node, tags);
     return node;
@@ -460,6 +500,11 @@ bool consume_any_separators(Parser *state)
     return result;
 }
 
+bool token_has_flags(Token *it, Token_Flag flags)
+{
+    return (it->flags & flags) == flags;
+}
+
 bool token_is_open_bracket(Token *it)
 {
     char first = it->value.data[0];
@@ -491,7 +536,7 @@ Node *maybe_parse_tags(Parser *state)
             auto tag_node = make_node(state, NodeType_Identifier, next->value);
 
             it = peek(state, 0);
-            if (token_is_open_bracket(it))
+            if (it && token_is_open_bracket(it))
             {
                 auto tag_children = parse_expression(state);
                 push_children_nodes(tag_node, tag_children);
@@ -537,7 +582,7 @@ Node *parse_primary_expression(Parser *state)
         return make_node(state, NodeType_String, it->value, tags);
     }
 
-    if (token_is_open_bracket(it))
+    if (it && token_is_open_bracket(it))
     {
         consume(state, it);
 
@@ -618,6 +663,16 @@ Node *parse_entire_string(Arena *arena, String text)
     return parse(arena, tokens);
 }
 
+Node *parse_entire_file(Arena *arena, String path)
+{
+    auto text = os_read_entire_file(path);
+    if (text.count)
+    {
+        return parse_entire_string(arena, text);
+    }
+    return null;
+}
+
 #define Each_Node(child, root) Node *child = root; !node_is_nil(child); child = child->next
 
 bool node_has_tag(Node *it, String tag_name)
@@ -666,13 +721,39 @@ Node *find_by_name(Node *start, String name)
     return result;
 }
 
-// @Incomplete: support triple quotes
-String node_to_string(Node *it)
+void meta_test(String text)
 {
-    String result = {};
-    if (it && !node_is_nil(it))
+    auto tokens = tokenize(text);
+
+    print("--- Tokenize ---\n");
+
+    For (tokens)
     {
-        result = string_slice(it->string, 1, it->string.count - 1);
+        print("%S: %S\n", token_type_to_string(it.type), it.value);
     }
-    return result;
+
+    auto root = parse(temp_arena(), tokens);
+
+    print("\n");
+    print("--- Parse ---\n");
+
+    for (Each_Node(it, root->first_child))
+    {
+        print("Node: %S ", it->string);
+
+        for (Each_Node(tag, it->first_tag))
+        {
+            print("@%S ", tag->string);
+        }
+
+        print("\n");
+
+        for (Each_Node(child, it->first_child))
+        {
+            print("  Child: %S\n", child->string);
+        }
+    }
+
+    auto title = find_by_name(root->first_child, S("title"));
+    dump(title->first_child->string);
 }

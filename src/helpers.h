@@ -7,7 +7,7 @@ struct RSS_Entry
     String category;
 };
 
-String MinifyCSS(String str)
+String minify_css(String str)
 {
     u8 *data = push_array(temp_arena(), u8, str.count);
     u8 *at = data;
@@ -123,7 +123,6 @@ String MinifyCSS(String str)
         did_write_char = true;
     }
 
-
     return make_string(data, at - data);
 }
 
@@ -145,46 +144,45 @@ void write(Arena *arena, char *format, ...)
     va_list args;
     va_start(args, format);
     string_printv(arena, format, args);
-    string_print(arena, "\n");
     va_end(args);
 }
 
-String GenerateRSSFeed(Page_Meta meta, Array<RSS_Entry> items)
+String generate_rss_feed(Page_Meta meta, Array<RSS_Entry> items)
 {
     auto arena = arena_make_from_memory(megabytes(1));
 
     auto pub_date = to_rss_date_string(os_get_current_time_in_utc());
 
-    write(&arena, "<?xml version='1.0' encoding='UTF-8'?>");
+    write(&arena, "<?xml version='1.0' encoding='UTF-8'?>\n");
 
-    write(&arena, "<rss version='2.0' xmlns:atom='http://www.w3.org/2005/Atom'>");
-    write(&arena, "<channel>");
+    write(&arena, "<rss version='2.0' xmlns:atom='http://www.w3.org/2005/Atom'>\n");
+    write(&arena, "<channel>\n");
     write(&arena, "\n");
 
-    write(&arena, "<title>%S</title>", meta.title);
-    write(&arena, "<link>%S</link>", meta.url);
-    write(&arena, "<description>%S</description>", meta.description);
-    write(&arena, "<pubDate>%S</pubDate>", pub_date);
-    write(&arena, "<lastBuildDate>%S</lastBuildDate>", pub_date);
-    write(&arena, "<language>en-us</language>");
-    write(&arena, "<image><url>%S</url></image>", meta.image);
+    write(&arena, "<title>%S</title>\n", meta.title);
+    write(&arena, "<link>%S</link>\n", meta.url);
+    write(&arena, "<description>%S</description>\n", meta.description);
+    write(&arena, "<pubDate>%S</pubDate>\n", pub_date);
+    write(&arena, "<lastBuildDate>%S</lastBuildDate>\n", pub_date);
+    write(&arena, "<language>en-us</language>\n");
+    write(&arena, "<image><url>%S</url></image>\n", meta.image);
     write(&arena, "\n");
 
     For (items)
     {
-        write(&arena, "<item>");
-        write(&arena, "<title>%S</title>", it.title);
-        write(&arena, "<description>%S</description>", it.description);
-        write(&arena, "<pubDate>%S</pubDate>", to_rss_date_string(it.pub_date));
-        write(&arena, "<link>%S</link>", it.link);
-        write(&arena, "<guid isPermaLink='true'>%S</guid>", it.link);
-        write(&arena, "<category>%S</category>", it.category);
-        write(&arena, "</item>");
+        write(&arena, "<item>\n");
+        write(&arena, "<title>%S</title>\n", it.title);
+        write(&arena, "<description>%S</description>\n", it.description);
+        write(&arena, "<pubDate>%S</pubDate>\n", to_rss_date_string(it.pub_date));
+        write(&arena, "<link>%S</link>\n", it.link);
+        write(&arena, "<guid isPermaLink='true'>%S</guid>\n", it.link);
+        write(&arena, "<category>%S</category>\n", it.category);
+        write(&arena, "</item>\n");
         write(&arena, "\n");
     }
 
-    write(&arena, "</channel>");
-    write(&arena, "</rss>");
+    write(&arena, "</channel>\n");
+    write(&arena, "</rss>\n");
 
     return arena_to_string(&arena);
 }
