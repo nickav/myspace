@@ -294,6 +294,24 @@ void push_child_node(Node *parent, Node *child)
     }
 }
 
+void push_children_nodes(Node *parent, Node *children)
+{
+    parent->first_child = children;
+
+    if (children)
+    {
+        Node *last = children;
+        while (last->next != NULL) last = last->next;
+
+        parent->last_child = last;
+    }
+}
+
+void push_tag_nodes(Node *parent, Node *tags)
+{
+    parent->first_tag = tags;
+}
+
 void push_sibling_node(Node *node, Node *it)
 {
     print("push_sibling_node: %S -> %S\n", node->string, it->string);
@@ -364,6 +382,7 @@ bool token_is_close_bracket(Token *it)
 }
 
 Node *parse_expression(Parser *state);
+Node *parse_primary_expression(Parser *state);
 
 Node *parse_siblings(Parser *state)
 {
@@ -385,8 +404,42 @@ Node *parse_siblings(Parser *state)
     return first_expr;
 }
 
+Node *maybe_parse_tags(Parser *state)
+{
+    Node *result = null;
+    auto it = peek(state, 0);
+
+    while (it && it->type == TokenType_Symbol && it->value.data[0] == '@')
+    {
+        consume(state, it);
+
+        auto next = peek(state, 0);
+        if (next && next->type == TokenType_Identifier)
+        {
+            consume(state, next);
+            auto tag_node = make_node(state, NodeType_Identifier, next->value);
+
+            it = peek(state, 0);
+            if (token_is_open_bracket(it))
+            {
+                auto tag_children = parse_expression(state);
+                push_children_nodes(tag_node, tag_children);
+            }
+
+            if (!result) result = tag_node;
+            else push_sibling_node(result, tag_node);
+        }
+
+        it = peek(state, 0);
+    }
+
+    return result;
+}
+
 Node *parse_primary_expression(Parser *state)
 {
+    auto tags = maybe_parse_tags(state);
+
     auto it = peek(state, 0);
 
     if (!it)
@@ -398,7 +451,9 @@ Node *parse_primary_expression(Parser *state)
     if (it->type == TokenType_Identifier)
     {
         consume(state, it);
-        return make_node(state, NodeType_Identifier, it->value);
+        auto result = make_node(state, NodeType_Identifier, it->value);
+        push_tag_nodes(result, tags);
+        return result;
     }
 
     if (it->type == TokenType_Number)
@@ -430,21 +485,6 @@ Node *parse_primary_expression(Parser *state)
         consume_any_separators(state);
 
         return expr;
-    }
-
-    // @Incomplete: make tags actually group onto children
-    if (it->type == TokenType_Symbol && it->value.data[0] == '@')
-    {
-        consume(state, it);
-        auto next = peek(state, 0);
-        if (!next || next->type != TokenType_Identifier)
-        {
-            print("Excpected identifier, but got '%S' instead!\n", next->value);
-            assert(!"Expected identifier after tag start: @!");
-        }
-
-        consume(state, next);
-        return make_node(state, NodeType_Identifier, next->value);
     }
 
     dump(it->value);
@@ -490,6 +530,52 @@ Node *parse(Arena *arena, Array<Token> tokens)
     return root;
 }
 
+bool node_has_tag(Node *it, String tag_name)
+{
+    bool result = false;
+
+    for (Node *tag = it->first_tag; tag != NULL; tag = tag->next)
+    {
+        if (string_equals(tag->string, tag_name))
+        {
+            result = true;
+            break;
+        }
+    }
+
+    return result;
+}
+
+Node *find_child_by_name(Node *root, String name)
+{
+    Node *result = null;
+
+    for (Node *it = root->first_child; it != NULL; it = it->next)
+    {
+        if (string_equals(it->string, name))
+        {
+            result = it;
+            break;
+        }
+    }
+    return result;
+}
+
+Node *node_first_child(Node *it)
+{
+    if (it) return it->first_child;
+}
+
+String node_to_string(Node *it)
+{
+    String result = {};
+    if (it)
+    {
+        result = it->string;
+    }
+    return result;
+}
+
 int main(int argc, char **argv)
 {
     os_init();
@@ -512,11 +598,21 @@ int main(int argc, char **argv)
 
     for (Node *it = root->first_child; it != NULL; it = it->next)
     {
-        print("Node: %S\n", it->string);
+        print("Node: %S ", it->string);
+
+        for (Node *tag = it->first_tag; tag != NULL; tag = tag->next)
+        {
+            print("@%S ", tag->string);
+        }
+
+        print("\n");
 
         for (Node *child = it->first_child; child != NULL; child = child->next)
         {
             print("  Child: %S\n", child->string);
         }
     }
+
+    auto title = find_child_by_name(root, S("title"));
+    dump(node_to_string(node_first_child(title)));
 }
