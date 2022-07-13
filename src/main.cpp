@@ -242,7 +242,8 @@ Array<Token> tokenize(String text)
         if (
             it == ':' || it == '=' || it == ',' || it == ';' ||
             it == '(' || it == '{' || it == '[' ||
-            it == ')' || it == '}' || it == ']'
+            it == ')' || it == '}' || it == ']' ||
+            it == '@'
         )
         {
             i64 symbol_length = 1;
@@ -334,29 +335,55 @@ bool consume_any(Parser *state, Token_Type type)
     return result;
 }
 
+// @Cleanup: make consume_any also look at token flags, make flags for separators, open and close parens
+bool consume_any_separators(Parser *state)
+{
+    bool result = false;
+    auto token = peek(state, 0);
+
+    while (token && token->type == TokenType_Symbol && (token->value.data[0] == ',' || token->value.data[0] == ';'))
+    {
+        result = true;
+        consume(state, token);
+        token = peek(state, 0);
+    }
+
+    return result;
+}
+
+bool token_is_open_bracket(Token *it)
+{
+    char first = it->value.data[0];
+    return it->type == TokenType_Symbol && (first == '{' || first == '[' || first == '(');
+}
+
+bool token_is_close_bracket(Token *it)
+{
+    char first = it->value.data[0];
+    return it->type == TokenType_Symbol && (first == '}' || first == ']' || first == ')');
+}
+
 Node *parse_expression(Parser *state);
 
-#if 0
 Node *parse_siblings(Parser *state)
 {
     auto first_expr = parse_expression(state);
     auto token = peek(state, 0);
 
     auto expr = first_expr;
-    while (token && token->type != TokenType_Close_Bracket)
+    while (token && !token_is_close_bracket(token))
     {
-        consume_any(state, TokenType_Seperator);
+        consume_any_separators(state);
         auto next = parse_expression(state);
         push_sibling_node(expr, next);
         expr = next;
-        consume_any(state, TokenType_Seperator);
+        consume_any_separators(state);
 
         token = peek(state, 0);
     }
 
     return first_expr;
 }
-#endif
 
 Node *parse_primary_expression(Parser *state)
 {
@@ -386,14 +413,13 @@ Node *parse_primary_expression(Parser *state)
         return make_node(state, NodeType_String, it->value);
     }
 
-    /*
-    if (it->type == TokenType_Open_Bracket)
+    if (token_is_open_bracket(it))
     {
         consume(state, it);
         auto expr = parse_siblings(state);
         auto next = peek(state, 0);
 
-        if (!next || next->type != TokenType_Close_Bracket)
+        if (!next || !token_is_close_bracket(next))
         {
             print("Excpected closing paren, but got '%S' instead!\n", next->value);
             assert(!"Expected close paren!");
@@ -401,14 +427,28 @@ Node *parse_primary_expression(Parser *state)
 
         consume(state, next);
 
-        consume_any(state, TokenType_Seperator);
+        consume_any_separators(state);
 
         return expr;
     }
-    */
+
+    // @Incomplete: make tags actually group onto children
+    if (it->type == TokenType_Symbol && it->value.data[0] == '@')
+    {
+        consume(state, it);
+        auto next = peek(state, 0);
+        if (!next || next->type != TokenType_Identifier)
+        {
+            print("Excpected identifier, but got '%S' instead!\n", next->value);
+            assert(!"Expected identifier after tag start: @!");
+        }
+
+        consume(state, next);
+        return make_node(state, NodeType_Identifier, next->value);
+    }
 
     dump(it->value);
-    assert(!"IN a bad state!");
+    assert(!"Unexpected token!");
 
     return null;
 }
@@ -456,7 +496,7 @@ int main(int argc, char **argv)
 
     auto exe_dir = os_get_executable_directory();
 
-    auto text = os_read_entire_file(path_join(exe_dir, S("../src/dummy2.meta")));
+    auto text = os_read_entire_file(path_join(exe_dir, S("../src/dummy.meta")));
     auto tokens = tokenize(text);
 
     print("--- Tokenize ---\n");
