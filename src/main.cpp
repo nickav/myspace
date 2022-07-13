@@ -36,7 +36,8 @@ int main(int argc, char **argv)
 
     auto exe_dir = os_get_executable_directory();
 
-    auto text = os_read_entire_file(path_join(exe_dir, S("../src/post.meta")));
+    //auto text = os_read_entire_file(path_join(exe_dir, S("../meta/site.meta")));
+    auto text = os_read_entire_file(path_join(exe_dir, S("../src/dummy.meta")));
     auto tokens = tokenize(text);
 
     print("--- Tokenize ---\n");

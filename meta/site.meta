@@ -1,0 +1,17 @@
+title:          "Nick Aversano"
+description:    "Cool new web page"
+canonical_url:  "http://nickav.co"
+author:         "Nick Aversano"
+twitter_handle: "@nickaversano"
+
+social_icons: [
+    (Twitch,  "twitch.svg",  "https://twitch.tv/naversano")
+    (Twitter, "twitter.svg", "https://www.twitter.com/nickaversano")
+    (Github,  "github.svg",  "https://www.github.com/nickav")
+]
+
+foo: [A, B, C]
+
+[
+    1, 2, 3
+]

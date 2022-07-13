@@ -54,6 +54,19 @@ Foo: ( A B C ]
 Foo: A B C // A separator such as , would end the list of children
 
 
+social_icons: [
+    (Twitch,  "twitch.svg",  "https://twitch.tv/naversano")
+    (Twitter, "twitter.svg", "https://www.twitter.com/nickaversano")
+    (Github,  "github.svg",  "https://www.github.com/nickav")
+]
+
+foo: [A, B, C]
+
+[
+    1, 2, 3
+]
+
+
 never_ending_string:
 "
 This is a string for the rest of the file

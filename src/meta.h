@@ -50,6 +50,7 @@ enum {
     NodeType_Identifier,
     NodeType_Tag,
     NodeType_Root,
+    NodeType_Array,
 
     NodeType_COUNT,
 };
@@ -62,6 +63,7 @@ static String __node_type_name_lookup[] = {
     S("Identifier"),
     S("Tag"),
     S("Root"),
+    S("Array"),
 
     S("COUNT"),
 };
@@ -322,9 +324,33 @@ String node_type_to_string(Node_Type type)
     return result;
 }
 
-void set_node_tags(Node *parent, Node *tags)
+void node_set_tags(Node *parent, Node *tags)
 {
-    parent->first_tag = tags;
+    if (tags)
+    {
+        parent->first_tag = tags;
+    }
+    else
+    {
+        parent->first_tag = &__meta_nil_node;
+    }
+}
+
+void node_set_children(Node *parent, Node *children)
+{
+    if (children)
+    {
+        if (children->type == NodeType_Array)
+        {
+            children = children->first_child;
+        }
+
+        parent->first_child = children;
+    }
+    else
+    {
+        parent->first_child = &__meta_nil_node;
+    }
 }
 
 bool node_is_nil(Node *node)
@@ -347,11 +373,7 @@ Node *make_node(Parser *state, Node_Type type, String str, Node *tags = NULL)
     node->first_tag = &__meta_nil_node;
     node->last_tag = &__meta_nil_node;
 
-    if (tags)
-    {
-        set_node_tags(node, tags);
-    }
-
+    node_set_tags(node, tags);
     return node;
 }
 
@@ -453,26 +475,6 @@ bool token_is_close_bracket(Token *it)
 Node *parse_expression(Parser *state);
 Node *parse_primary_expression(Parser *state);
 
-Node *parse_siblings(Parser *state)
-{
-    auto first_expr = parse_expression(state);
-    auto token = peek(state, 0);
-
-    auto expr = first_expr;
-    while (token && !token_is_close_bracket(token))
-    {
-        consume_any_separators(state);
-        auto next = parse_expression(state);
-        push_sibling_node(expr, next);
-        expr = next;
-        consume_any_separators(state);
-
-        token = peek(state, 0);
-    }
-
-    return first_expr;
-}
-
 Node *maybe_parse_tags(Parser *state)
 {
     Node *result = null;
@@ -538,9 +540,21 @@ Node *parse_primary_expression(Parser *state)
     if (token_is_open_bracket(it))
     {
         consume(state, it);
-        auto expr = parse_siblings(state);
-        auto next = peek(state, 0);
 
+        Node *array = make_node(state, NodeType_Array, S("<array>"), NULL);
+
+        auto token = peek(state, 0);
+        while (token && !token_is_close_bracket(token))
+        {
+            consume_any_separators(state);
+            auto next = parse_expression(state);
+            push_child_node(array, next);
+            consume_any_separators(state);
+
+            token = peek(state, 0);
+        }
+
+        auto next = peek(state, 0);
         if (!next || !token_is_close_bracket(next))
         {
             print("Excpected closing paren, but got '%S' instead!\n", next->value);
@@ -551,8 +565,8 @@ Node *parse_primary_expression(Parser *state)
 
         consume_any_separators(state);
 
-        set_node_tags(expr, tags);
-        return expr;
+        node_set_tags(array, tags);
+        return array;
     }
 
     dump(it->value);
@@ -570,7 +584,7 @@ Node *parse_expression(Parser *state)
     {
         consume(state, token);
         auto right = parse_primary_expression(state);
-        push_child_node(expr, right);
+        node_set_children(expr, right);
         token = peek(state, 0);
     }
 
@@ -584,7 +598,7 @@ Node *parse(Arena *arena, Array<Token> tokens)
     state.index = 0;
     state.arena = arena;
 
-    Node *root = make_node(&state, NodeType_Root, S(""), NULL);
+    Node *root = make_node(&state, NodeType_Root, S("<root>"), NULL);
 
     while (state.index < state.tokens.count)
     {

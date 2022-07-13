@@ -1,4 +1,5 @@
 bin
+    (Twitter, "@nickaversano", "https://twitter.com/nickaversano"),
 build
 
 *.sublime-*
