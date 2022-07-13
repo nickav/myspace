@@ -9,9 +9,3 @@ social_icons: [
     (Twitter, "twitter.svg", "https://www.twitter.com/nickaversano")
     (Github,  "github.svg",  "https://www.github.com/nickav")
 ]
-
-foo: [A, B, C]
-
-[
-    1, 2, 3
-]

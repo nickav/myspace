@@ -36,8 +36,7 @@ int main(int argc, char **argv)
 
     auto exe_dir = os_get_executable_directory();
 
-    //auto text = os_read_entire_file(path_join(exe_dir, S("../meta/site.meta")));
-    auto text = os_read_entire_file(path_join(exe_dir, S("../src/dummy.meta")));
+    auto text = os_read_entire_file(path_join(exe_dir, S("../data/site.meta")));
     auto tokens = tokenize(text);
 
     print("--- Tokenize ---\n");
@@ -69,6 +68,6 @@ int main(int argc, char **argv)
         }
     }
 
-    auto title = find_child_by_name(root, S("title"));
+    auto title = find_by_name(root->first_child, S("title"));
     dump(node_to_string(title->first_child));
 }

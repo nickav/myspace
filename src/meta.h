@@ -624,7 +624,7 @@ bool node_has_tag(Node *it, String tag_name)
 {
     bool result = false;
 
-    for (Node *tag = it->first_tag; tag != NULL; tag = tag->next)
+    for (Each_Node(tag, it->first_tag))
     {
         if (string_equals(tag->string, tag_name))
         {
@@ -640,7 +640,22 @@ Node *find_child_by_name(Node *root, String name)
 {
     Node *result = null;
 
-    for (Node *it = root->first_child; it != NULL; it = it->next)
+    for (Each_Node(it, root->first_child))
+    {
+        if (string_equals(it->string, name))
+        {
+            result = it;
+            break;
+        }
+    }
+    return result;
+}
+
+Node *find_by_name(Node *start, String name)
+{
+    Node *result = null;
+
+    for (Each_Node(it, start))
     {
         if (string_equals(it->string, name))
         {
