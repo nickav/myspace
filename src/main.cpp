@@ -4,7 +4,7 @@
 #include "third_party/stb_sprintf.h"
 #include "na.h"
 
-#include "parser.h"
+#include "meta.h"
 
 struct Build_Config
 {
@@ -43,30 +43,31 @@ int main(int argc, char **argv)
 
     For (tokens)
     {
-        print("%S: %S\n", token_type_name_lookup[it.type], it.value);
+        print("%S: %S\n", token_type_to_string(it.type), it.value);
     }
 
     auto root = parse(temp_arena(), tokens);
 
+    print("\n");
     print("--- Parse ---\n");
 
-    for (Node *it = root->first_child; it != NULL; it = it->next)
+    for (Each_Node(it, root->first_child))
     {
         print("Node: %S ", it->string);
 
-        for (Node *tag = it->first_tag; tag != NULL; tag = tag->next)
+        for (Each_Node(tag, it->first_tag))
         {
             print("@%S ", tag->string);
         }
 
         print("\n");
 
-        for (Node *child = it->first_child; child != NULL; child = child->next)
+        for (Each_Node(child, it->first_child))
         {
             print("  Child: %S\n", child->string);
         }
     }
 
     auto title = find_child_by_name(root, S("title"));
-    dump(node_to_string(node_first_child(title)));
+    dump(node_to_string(title->first_child));
 }

@@ -1,6 +1,6 @@
 typedef u32 Token_Type;
 enum {
-    TokenType_Nil = 0,
+    TokenType_NULL = 0,
 
     TokenType_Number,
     TokenType_String,
@@ -13,8 +13,8 @@ enum {
     TokenType_COUNT,
 };
 
-String token_type_name_lookup[] = {
-    S("Nil"),
+static String __token_type_name_lookup[] = {
+    S("Null"),
 
     S("Number"),
     S("String"),
@@ -49,8 +49,21 @@ enum {
     NodeType_String,
     NodeType_Identifier,
     NodeType_Tag,
+    NodeType_Root,
 
     NodeType_COUNT,
+};
+
+static String __node_type_name_lookup[] = {
+    S("Null"),
+
+    S("Number"),
+    S("String"),
+    S("Identifier"),
+    S("Tag"),
+    S("Root"),
+
+    S("COUNT"),
 };
 
 struct Node
@@ -69,6 +82,8 @@ struct Node
     String    string;
     String    raw_string;
 };
+
+static Node __meta_nil_node = {};
 
 struct Parser
 {
@@ -287,30 +302,64 @@ Array<Token> tokenize(String text)
     return tokens;
 }
 
-void push_tag_nodes(Node *parent, Node *tags)
+String token_type_to_string(Token_Type type)
+{
+    String result = {};
+    if (type >= TokenType_NULL && type < TokenType_COUNT)
+    {
+        result = __token_type_name_lookup[type];
+    }
+    return result;
+}
+
+String node_type_to_string(Node_Type type)
+{
+    String result = {};
+    if (type >= NodeType_NULL && type < NodeType_COUNT)
+    {
+        result = __node_type_name_lookup[type];
+    }
+    return result;
+}
+
+void set_node_tags(Node *parent, Node *tags)
 {
     parent->first_tag = tags;
 }
 
+bool node_is_nil(Node *node)
+{
+    return node->type == NodeType_NULL;
+}
 
 Node *make_node(Parser *state, Node_Type type, String str, Node *tags = NULL)
 {
     Node *node = push_struct(state->arena, Node);
     *node = {};
+
     node->type = type;
     node->string = str;
+
+    node->next = &__meta_nil_node;
+    node->prev = &__meta_nil_node;
+    node->first_child = &__meta_nil_node;
+    node->last_child = &__meta_nil_node;
+    node->first_tag = &__meta_nil_node;
+    node->last_tag = &__meta_nil_node;
+
     if (tags)
     {
-        push_tag_nodes(node, tags);
+        set_node_tags(node, tags);
     }
+
     return node;
 }
 
 void push_child_node(Node *parent, Node *child)
 {
-    if (!parent->first_child) parent->first_child = child;
+    if (node_is_nil(parent->first_child)) parent->first_child = child;
 
-    if (!parent->last_child)
+    if (node_is_nil(parent->last_child))
     {
         parent->last_child = child;
     }
@@ -328,7 +377,7 @@ void push_children_nodes(Node *parent, Node *children)
     if (children)
     {
         Node *last = children;
-        while (last->next != NULL) last = last->next;
+        while (!node_is_nil(last->next)) last = last->next;
 
         parent->last_child = last;
     }
@@ -336,10 +385,8 @@ void push_children_nodes(Node *parent, Node *children)
 
 void push_sibling_node(Node *node, Node *it)
 {
-    print("push_sibling_node: %S -> %S\n", node->string, it->string);
-
     Node *at = node;
-    while (at->next != NULL) at = at->next;
+    while (!node_is_nil(at->next)) at = at->next;
 
     at->next = it;
 }
@@ -504,7 +551,7 @@ Node *parse_primary_expression(Parser *state)
 
         consume_any_separators(state);
 
-        push_tag_nodes(expr, tags);
+        set_node_tags(expr, tags);
         return expr;
     }
 
@@ -532,12 +579,12 @@ Node *parse_expression(Parser *state)
 
 Node *parse(Arena *arena, Array<Token> tokens)
 {
-    Node *root = push_struct(arena, Node);
-
     Parser state = {};
     state.tokens = tokens;
     state.index = 0;
     state.arena = arena;
+
+    Node *root = make_node(&state, NodeType_Root, S(""), NULL);
 
     while (state.index < state.tokens.count)
     {
@@ -550,6 +597,14 @@ Node *parse(Arena *arena, Array<Token> tokens)
 
     return root;
 }
+
+Node *parse_entire_string(Arena *arena, String text)
+{
+    auto tokens = tokenize(text);
+    return parse(arena, tokens);
+}
+
+#define Each_Node(child, root) Node *child = root; !node_is_nil(child); child = child->next
 
 bool node_has_tag(Node *it, String tag_name)
 {
@@ -582,16 +637,11 @@ Node *find_child_by_name(Node *root, String name)
     return result;
 }
 
-Node *node_first_child(Node *it)
-{
-    if (it) return it->first_child;
-    return null;
-}
-
+// @Incomplete: support triple quotes
 String node_to_string(Node *it)
 {
     String result = {};
-    if (it)
+    if (it && !node_is_nil(it))
     {
         result = string_slice(it->string, 1, it->string.count - 1);
     }
