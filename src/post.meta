@@ -1,0 +1,19 @@
+title: "Post 1"
+desc:  "An amazing blog post"
+date:  "2021-11-19 10:13:03"
+image: "godrays_04.png"
+
+```
+I am writing to inform you about this really cool post.
+
+We have really amazing things to say about it!
+
+@link{'Amazing link', 'http://nickav.co'}
+
+@img{'godrays_04.png'}
+```
+
+@code
+```
+whats up
+```
