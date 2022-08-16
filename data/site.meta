@@ -1,9 +1,11 @@
 title:          "Nick Aversano"
 description:    "Cool new web page"
 site_url:       "http://nickav.co"
+site_icon:      "logo.png"
 author:         "Nick Aversano"
 twitter_handle: "@nickaversano"
 og_type:        "website"
+theme_color:    "#000000"
 
 social_icons: [
     (Twitch,  "twitch.svg",  "https://twitch.tv/naversano")

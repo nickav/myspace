@@ -32,22 +32,25 @@ svg {
 :root {
   --black: #000;
   --white: #fff;
+
+  --bg:    var(--black);
+  --color: var(--white);
 }
 
 body.invert
 {
-  --black: #fff;
-  --white: #000;
+  --bg:    var(--white);
+  --color: var(--black);
 }
 
 body {
-  background: var(--black);
+  background: var(--bg);
+  color: var(--color);
 
   font-weight: 400;
   font-size: 16px;
   font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen-Sans,Ubuntu,Cantarell,"Helvetica Neue",sans-serif;
   line-height: 1.5;
-  color: var(--white);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -153,16 +156,6 @@ p {
 .csy-32 > *:not(:last-child) { margin-bottom: 2rem; }
 .csy-64 > *:not(:last-child) { margin-bottom: 4rem; }
 
-.c_white { color: var(--white); }
-.c_black { color: var(--black); }
-.bg_black { background: var(--black); }
-.bg_white { background: var(--white); }
-
-.content {
-  background: var(--white);
-  color: var(--black);
-}
-
 .site_name {
   font-size: 1.5rem;
   display: inline-block;
@@ -210,6 +203,15 @@ p {
 .tok-Function { color: #A6E22E; }
 
 
+/** breakpoints */
+
+@media screen and (min-width: 961px)
+{
+  body {
+    font-size: 20px;
+  }
+}
+
 @media screen and (max-width: 960px)
 {
   .md\:flex-x {
@@ -231,3 +233,13 @@ p {
 {
   .sm\:pad-32 { padding: 2rem; }
 }
+
+/*
+@media (prefers-color-scheme: dark) {
+  body
+  {
+    --black: #fff;
+    --white: #000;
+  }
+}
+*/

@@ -671,8 +671,6 @@ Node *parse_entire_string(Arena *arena, String text)
 Node *parse_entire_file(Arena *arena, String path)
 {
     auto text = os_read_entire_file(path);
-    dump(text);
-    dump(text.count);
     if (text.count)
     {
         return parse_entire_string(arena, text);
