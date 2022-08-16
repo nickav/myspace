@@ -54,6 +54,7 @@ body {
 a {
   color: inherit;
   text-decoration: none;
+  transition: all 200ms;
 }
 
 a:hover {
@@ -69,12 +70,18 @@ p {
   display: inline-block;
 }
 
-.flex-row, .flex-x {
+.inline-flex
+{
+  display: inline-flex;
+}
+
+
+.flex-x {
   display: flex;
   flex-direction: row;
 }
 
-.flex-col, .flex-y {
+.flex-y {
   display: flex;
   flex-direction: column;
 }
@@ -201,3 +208,26 @@ p {
 .tok-Number, .tok-Literal { color: #AE81FF; }
 .tok-String { color: #E6DB74 }
 .tok-Function { color: #A6E22E; }
+
+
+@media screen and (max-width: 960px)
+{
+  .md\:flex-x {
+    display: flex;
+    flex-direction: row;
+  }
+
+  .md\:flex-y {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .md\:csy-8 > *:not(:last-child) { margin-bottom: 0.5rem; }
+
+  .md\:pad-32 { padding: 2rem; }
+}
+
+@media screen and (max-width: 640px)
+{
+  .sm\:pad-32 { padding: 2rem; }
+}

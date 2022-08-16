@@ -95,6 +95,11 @@ VERSION HISTORY
 #if LANG_C
     #define BYTE_ORDER_LITTLE_ENDIAN (!*(u8*)&(u16){1})
     #define BYTE_ORDER_BIG_ENDIAN    (!BYTE_ORDER_LITTLE_ENDIAN)
+#else
+    static const int __endian_check_num = 1; 
+
+    #define BYTE_ORDER_LITTLE_ENDIAN (*(char *)&__endian_check_num == 1)
+    #define BYTE_ORDER_BIG_ENDIAN  (!BYTE_ORDER_LITTLE_ENDIAN)
 #endif
 
 //
@@ -144,6 +149,7 @@ VERSION HISTORY
     #endif
 
     void na__stb_printf(const char *format, ...) {
+        #if OS_WINDOWS
         static bool did_init_print = false;
         if (!did_init_print)
         {
@@ -152,6 +158,7 @@ VERSION HISTORY
                 AttachConsole(ATTACH_PARENT_PROCESS);
             }
         }
+        #endif
 
         char na__output_buffer[STB_SPRINTF_MIN];
 
@@ -287,12 +294,23 @@ VERSION HISTORY
 
 #ifndef global
 #define global        static // Global variables
-#define internal      static // Internal linkage
+// @Cleanup: this causes problems on MacOS
+// #define internal      static // Internal linkage
 #define local_persist static // Local Persisting variables
 #endif
 
-#ifndef FourCC
-#define FourCC(a, b, c, d) \
+#define fallthrough
+
+#if OS_WINDOWS
+#pragma section(".roglob", read)
+#define read_only __declspec(allocate(".roglob"))
+#else
+// TODO(rjf): figure out if this benefit is possible on non-Windows
+#define read_only
+#endif
+
+#ifndef FOUR_CC
+#define FOUR_CC(a, b, c, d) \
     (((u32)(a) << 0) | ((u32)(b) << 8) | ((u32)(c) << 16) | ((u32)(d) << 24))
 #endif
 
@@ -301,6 +319,11 @@ VERSION HISTORY
 #ifndef CONCAT
 #define CONCAT_HELPER(x, y) x##y
 #define CONCAT(x, y) CONCAT_HELPER(x, y)
+#endif
+
+#ifndef STRINGIFY
+#define STRINGIFY2(x) #x
+#define STRINGIFY(x) STRINGIFY2(x)
 #endif
 
 #ifndef defer
@@ -326,6 +349,19 @@ public:
 
 #ifndef set_flag
 #define set_flag(flags, mask, enable) do { if (enable) { flags |= (mask); } else { flags &= ~(mask); } } while(0)
+#endif
+
+//
+// Build Constants
+// @Cleanup: move these elsewhere? :0
+//
+
+#ifndef DEBUG
+#define DEBUG 0
+#endif
+
+#ifndef SHIP_MODE
+#define SHIP_MODE 0
 #endif
 
 //
@@ -356,6 +392,9 @@ typedef ptrdiff_t isize;
 typedef i8  b8;
 typedef i16 b16;
 typedef i32 b32;
+
+typedef u8 byte;
+typedef i32 rune;
 
 #define enum8(Type)  u8
 #define enum16(Type) u16
@@ -488,6 +527,22 @@ inline void *na_pointer_sub(void *ptr, isize bytes) {
 inline isize na_pointer_diff(void *begin, void *end) {
     return cast(isize)(cast(u8 *)end - cast(u8 *)begin);
 }
+
+inline u16 na_endian_swap16(u16 i) {
+    return (i>>8) | (i<<8);
+}
+
+inline u32 na_endian_swap32(u32 i) {
+    return (i>>24) |(i<<24) | ((i&0x00ff0000u)>>8)  | ((i&0x0000ff00u)<<8);
+}
+
+inline u64 na_endian_swap64(u64 i) {
+    return (i>>56) | (i<<56) |
+           ((i&0x00ff000000000000ull)>>40) | ((i&0x000000000000ff00ull)<<40) |
+           ((i&0x0000ff0000000000ull)>>24) | ((i&0x0000000000ff0000ull)<<24) |
+           ((i&0x000000ff00000000ull)>>8)  | ((i&0x00000000ff000000ull)<<8);
+}
+
 
 //
 // Functions
@@ -876,6 +931,8 @@ bool arena_contains_pointer(Arena *arena, void *ptr) {
 
 #define push_array(arena, Struct, count) (Struct *)arena_push(arena, (count) * sizeof(Struct))
 
+#define push_array_zero(arena, Struct, count) push_array(arena, Struct, count)
+
 Arena_Mark arena_get_position(Arena *arena) {
     Arena_Mark result = {};
     result.offset = arena->offset;
@@ -989,9 +1046,6 @@ isize na_binary_search(void *base, isize count, isize size, void *key, Compare_P
 //
 // Threading Primitives
 //
-
-void *os_alloc(u64 size);
-void os_free(void *ptr);
 
 #if !OS_WINDOWS
 #include <pthread.h>
@@ -1132,6 +1186,12 @@ struct String {
     }
 };
 
+typedef u32 MatchFlags;
+enum
+{
+    MatchFlags_IgnoreCase,
+};
+
 #define S(x) String{sizeof(x) - 1, cast(u8 *)x}
 
 #define LIT(str) (int)str.count, (char *)str.data
@@ -1228,10 +1288,6 @@ bool string_starts_with(String str, String prefix) {
     return str.count >= prefix.count && memory_equals(str.data, prefix.data, prefix.count);
 }
 
-bool string_match(String str, i64 index, String prefix) {
-    return str.count - index >= prefix.count && memory_equals(str.data + index, prefix.data, prefix.count);
-}
-
 bool string_ends_with(String str, String postfix) {
     return str.count >= postfix.count && memory_equals(str.data + (str.count - postfix.count), postfix.data, postfix.count);
 }
@@ -1275,7 +1331,6 @@ String string_range(u8 *at, u8 *end) {
     return make_string(at, (end - at));
 }
 
-// @Cleanup @Robustness: make this return str.count if not found
 i64 string_index(String str, String search, i64 start_index = 0) {
     for (i64 i = start_index; i < str.count; i += 1) {
         if (memory_equals(str.data + i, search.data, search.count)) {
@@ -1287,16 +1342,9 @@ i64 string_index(String str, String search, i64 start_index = 0) {
 }
 
 i64 string_index(String str, char search, i64 start_index = 0) {
-    for (i64 i = start_index; i < str.count; i += 1) {
-        if (str.data[i] == search) {
-            return i;
-        }
-    }
-
-    return -1;
+    return string_index(str, make_string(&search, 1), start_index);
 }
 
-// @Cleanup @Robustness: make this return -1 if not found
 i64 string_last_index(String str, String search) {
     i64 start_index = str.count - 1;
     for (i64 i = start_index; i >= 0; i -= 1) {
@@ -1341,14 +1389,17 @@ String string_temp(String other) { return string_copy(temp_arena(), other); }
 
 String string_write(String str, char *buffer, u64 limit)
 {
+    String result = {};
+
     if (str.count && buffer)
     {
         u64 count = Min(str.count, limit - 1);
         memory_copy(str.data, buffer, count);
-        buffer[count] = NULL;
+        buffer[count] = '\0';
+        result = make_string(buffer, count);
     }
 
-    return str;
+    return result;
 }
 
 String string_write(String str, u8 *buffer, u64 limit) {
@@ -1376,22 +1427,20 @@ void string_free(Allocator allocator, String *string) {
 }
 
 String string_concat(Arena *arena, String a, String b) {
-    u8 *data = push_array(arena, u8, a.count + b.count);
+    u64 count = a.count + b.count;
+    u8 *data = push_array(arena, u8, count);
 
     if (data) {
         memory_copy(a.data, data + 0,       a.count);
         memory_copy(b.data, data + a.count, b.count);
     }
 
-    return make_string(data, a.count + b.count);
-}
-
-String string_concat(String a, String b) {
-    return string_concat(temp_arena(), a, b);
+    return make_string(data, count);
 }
 
 String string_concat(Arena *arena, String a, String b, String c) {
-    u8 *data = push_array(arena, u8, a.count + b.count + c.count);
+    u64 count = a.count + b.count + c.count;
+    u8 *data = push_array(arena, u8, count);
 
     if (data) {
         memory_copy(a.data, data + 0,                 a.count);
@@ -1399,11 +1448,33 @@ String string_concat(Arena *arena, String a, String b, String c) {
         memory_copy(c.data, data + a.count + b.count, c.count);
     }
 
-    return make_string(data, a.count + b.count + c.count);
+    return make_string(data, count);
+}
+
+String string_concat(Arena *arena, String a, String b, String c, String d) {
+    u64 count = a.count + b.count + c.count + d.count;
+    u8 *data = push_array(arena, u8, count);
+
+    if (data) {
+        memory_copy(a.data, data + 0,                           a.count);
+        memory_copy(b.data, data + a.count,                     b.count);
+        memory_copy(c.data, data + a.count + b.count,           c.count);
+        memory_copy(d.data, data + a.count + b.count + c.count, d.count);
+    }
+
+    return make_string(data, count);
+}
+
+String string_concat(String a, String b) {
+    return string_concat(temp_arena(), a, b);
 }
 
 String string_concat(String a, String b, String c) {
     return string_concat(temp_arena(), a, b, c);
+}
+
+String string_concat(String a, String b, String c, String d) {
+    return string_concat(temp_arena(), a, b, c, d);
 }
 
 void string_to_lower(String *str) {
@@ -1448,14 +1519,14 @@ String string_trim_whitespace(String str) {
     return copy;
 }
 
-i64 string_eat_whitespace(String *str) {
+bool string_eat_whitespace(String *str) {
     u64 start_count = str->count;
 
     while (str->count > 0 && char_is_whitespace((*str)[0])) {
         string_advance(str, 1);
     }
 
-    return start_count - str->count;
+    return start_count != str->count;
 }
 
 String string_eat_until(String *str, String token) {
@@ -1472,13 +1543,18 @@ String string_eat_until(String *str, String token) {
     return make_string(start.data, start.count - str->count);
 }
 
+String string_eat_until_newline(String *str)
+{
+    return string_eat_until(str, S("\n"));
+}
+
 void string_strip_nulls(String *str) {
     for (i64 i = 0; i < str->count; i ++)
     {
-        if (str->data[i] == NULL)
+        if (str->data[i] == '\0')
         {
             i64 run_count = 1;
-            while(str->data[i + run_count] == NULL) {
+            while(str->data[i + run_count] == '\0') {
                 run_count += 1;
             }
 
@@ -1559,9 +1635,18 @@ char *cstr_print(Arena *arena, const char *format, ...) {
 #define cprint(...) cstr_print(temp_arena(), __VA_ARGS__)
 
 
+void arena_write(Arena *arena, char *format, ...)
+{
+    va_list args;
+    va_start(args, format);
+    string_printv(arena, format, args);
+    va_end(args);
+}
+
 String arena_to_string(Arena *arena) {
     return make_string(arena->data, arena->offset);
 }
+
 
 i64 string_to_i64(String str, int base = 10) {
     i64 result = 0;
@@ -1594,6 +1679,61 @@ i64 string_to_i64(String str, int base = 10) {
     return result * fact;
 }
 
+f64 string_to_f64(String str) {
+    f64 result = 0;
+    f64 fact = 1;
+
+    if (str.data[0] == '-') {
+        string_advance(&str, 1);
+        fact = -1;
+    }
+
+    bool point_seen = false;
+    bool e_seen = false;
+
+    u64 i = 0;
+    for (; i < str.count; i++) {
+        char ch = str.data[i];
+
+        if (ch == '.') {
+            point_seen = true;
+            continue;
+        }
+
+        if ((ch == 'e' || ch == 'E') && i > 0) {
+            e_seen = true;
+            i++;
+            break;
+        }
+
+        int d = ch - '0';
+        if (d >= 0 && d <= 9) {
+            if (point_seen) fact /= 10.0f;
+            result = result * 10.0f + (f64)d;
+        }
+    }
+
+    if (e_seen) {
+        i64 int_value = string_to_i64(string_slice(str, i, str.count));
+        f64 multiple = 10.0f;
+        if (int_value < 0) {
+            int_value *= -1;
+            multiple = 0.1f;
+        }
+
+        for (i32 j = 0; j < int_value; j++) {
+            fact *= multiple;
+        }
+    }
+
+    return result * fact;
+}
+
+String string_pluralize(i64 count, String singular, String plural)
+{
+    auto numstr = sprint("%d ", count);
+    return string_concat(numstr, count == 1 ? singular : plural);
+}
 
 
 // NOTE(nick): The path_* functions assume that we are working with a normalized (unix-like) path string.
@@ -2154,20 +2294,17 @@ String to_string(Date_Time it) {
 }
 
 //
-// Functions
-//
-
-inline f32 lerp(f32 a, f32 b, f32 t) {
-  return (1 - t) * a + b * t;
-}
-
-//
 // Random
 //
 
 struct Random_Lcg {
     u32 state;
 };
+
+inline f32 random_lerp(f32 a, f32 b, f32 t) {
+  return (1 - t) * a + b * t;
+}
+
 
 inline Random_Lcg random_seed_lcg(u32 state) {
     return {state};
@@ -2183,7 +2320,7 @@ inline f32 random(Random_Lcg *series) {
 }
 
 inline f32 random_between(Random_Lcg *series, f32 min, f32 max) {
-    return lerp(min, max, random(series));
+    return random_lerp(min, max, random(series));
 }
 
 inline i32 random_int_between(Random_Lcg *series, i32 min, i32 max) {
@@ -2222,7 +2359,7 @@ inline f32 random(Random_Pcg *series) {
 }
 
 inline f32 random_between(Random_Pcg *series, f32 min, f32 max) {
-    return lerp(min, max, random(series));
+    return random_lerp(min, max, random(series));
 }
 
 inline i32 random_int_between(Random_Pcg *series, i32 min, i32 max) {
@@ -2308,8 +2445,6 @@ struct Thread_Params {
 
 #pragma comment(lib, "user32")
 
-static DWORD win32_thread_context_index = 0;
-
 struct File_Lister {
     Arena *arena;
 
@@ -2355,30 +2490,25 @@ na_internal Dense_Time win32_dense_time_from_file_time(FILETIME *file_time) {
     return result;
 }
 
-
 static u64 win32_ticks_per_second = 0;
 static u64 win32_counter_offset = 0;
 
 bool os_init() {
     thread_context_init(gigabytes(1));
 
-    if (!win32_ticks_per_second)
-    {
-        LARGE_INTEGER perf_frequency = {};
-        if (QueryPerformanceFrequency(&perf_frequency)) {
-            win32_ticks_per_second = perf_frequency.QuadPart;
-        }
-        LARGE_INTEGER perf_counter = {};
-        if (QueryPerformanceCounter(&perf_counter)) {
-            win32_counter_offset = perf_counter.QuadPart;
-        }
+    LARGE_INTEGER perf_frequency = {};
+    if (QueryPerformanceFrequency(&perf_frequency)) {
+        win32_ticks_per_second = perf_frequency.QuadPart;
+    }
+    LARGE_INTEGER perf_counter = {};
+    if (QueryPerformanceCounter(&perf_counter)) {
+        win32_counter_offset = perf_counter.QuadPart;
     }
 
     return true;
 }
 
 f64 os_time_in_miliseconds() {
-
     f64 result = 0;
 
     LARGE_INTEGER perf_counter;
@@ -2491,6 +2621,90 @@ void win32_file_error(File *file, const char *message, String file_name = {}) {
 #endif
 
     file->has_errors = true;
+}
+
+String os_read_entire_file(Allocator allocator, String path)
+{
+    String result = {};
+
+    auto scratch = begin_scratch_memory();
+    String16 path_w = string16_from_string(scratch.arena, path);
+    HANDLE handle = CreateFileW(cast(WCHAR *)path_w.data, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+    end_scratch_memory(scratch);
+
+    if (handle != INVALID_HANDLE_VALUE)
+    {
+        LARGE_INTEGER file_size;
+        GetFileSizeEx(handle, &file_size);
+        u64 size = cast(u64)file_size.QuadPart;
+        if (size > 0)
+        {
+            u8 *data = cast(u8 *)allocator_alloc(allocator, size);
+            result.data  = data;
+            result.count = size;
+
+            u8 *ptr = data;
+            u8 *end = data + size;
+
+            for (;;)
+            {
+                u64 bytes_remaining = (u64)(end - ptr);
+                DWORD to_read = (DWORD)(ClampTop(bytes_remaining, U32_MAX));
+                DWORD bytes_read = 0;
+                if (!ReadFile(handle, ptr, to_read, &bytes_read, 0))
+                {
+                    break;
+                }
+
+                ptr += bytes_read;
+                if (ptr >= end)
+                {
+                    break;
+                }
+            }
+        }
+
+        CloseHandle(handle);
+    }
+
+    return result;
+}
+
+bool os_write_entire_file(String path, String contents)
+{
+    bool result = false;
+
+    auto scratch = begin_scratch_memory();
+    String16 path_w = string16_from_string(scratch.arena, path);
+    HANDLE handle = CreateFileW(cast(WCHAR *)path_w.data, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_ALWAYS, 0, 0);
+    end_scratch_memory(scratch);
+
+    if (handle != INVALID_HANDLE_VALUE)
+    {
+        u8 *ptr = contents.data;
+        u8 *end = contents.data + contents.count;
+        for (;;)
+        {
+            u64 bytes_remaining = (u64)(end - ptr);
+            DWORD to_write = (DWORD)(ClampTop(bytes_remaining, U32_MAX));
+
+            DWORD bytes_written = 0;
+            if (!WriteFile(handle, ptr, to_write, &bytes_written, 0)) {
+                break;
+            }
+
+            ptr += bytes_written;
+            if (ptr >= end)
+            {
+                result = true;
+                break;
+            }
+        }
+
+        CloseHandle(handle);
+    }
+
+    return result;
 }
 
 File os_file_open(String path, u32 mode_flags) {
@@ -2628,8 +2842,15 @@ bool os_delete_directory(String path) {
     return success;
 }
 
+i64 __wcslen(WCHAR *str)
+{
+    WCHAR *at = str;
+    while (*at != 0) *at ++;
+    return at - str;
+}
+
 String string_from_wstr(Arena *arena, WCHAR *wstr) {
-    String16 str16 = make_string16(wstr, wcslen(wstr));
+    String16 str16 = make_string16(wstr, __wcslen(wstr));
     return string_from_string16(arena, str16);
 }
 
@@ -2982,14 +3203,23 @@ String os_clipboard_get_text() {
     return result;
 }
 
-#if 0
+#if 1
 typedef HINSTANCE (WINAPI * ShellExecuteW_t)(
     HWND hwnd, LPCWSTR lpOperation, LPCWSTR lpFile, LPCWSTR lpParameters, LPCWSTR lpDirectory, INT nShowCmd);
 
 static ShellExecuteW_t _ShellExecuteW = NULL;
 
 bool os_shell_open(String path) {
-    if (!_ShellExecuteW) return false;
+    if (!_ShellExecuteW)
+    {
+        HMODULE libshell32 = LoadLibraryA("shell32.dll");
+        _ShellExecuteW = (ShellExecuteW_t) GetProcAddress(libshell32, "ShellExecuteW");
+
+        if (!_ShellExecuteW)
+        {
+            return false;
+        }
+    }
 
     auto scratch = begin_scratch_memory();
     String16 path_w = string16_from_string(scratch.arena, path);
@@ -3001,7 +3231,16 @@ bool os_shell_open(String path) {
 }
 
 bool os_shell_execute(String cmd, String arguments, bool admin = false) {
-    if (!_ShellExecuteW) return false;
+    if (!_ShellExecuteW)
+    {
+        HMODULE libshell32 = LoadLibraryA("shell32.dll");
+        _ShellExecuteW = (ShellExecuteW_t) GetProcAddress(libshell32, "ShellExecuteW");
+
+        if (!_ShellExecuteW)
+        {
+            return false;
+        }
+    }
 
     auto scratch = begin_scratch_memory();
     String16 cmd_w = string16_from_string(scratch.arena, cmd);
@@ -3049,7 +3288,7 @@ bool os_init() {
 
     pthread_key_create(&macos_thread_local_key, NULL);
 
-    thread_context_init(megabytes(32));
+    thread_context_init(gigabytes(1));
 
     return true;
 }
@@ -3467,6 +3706,30 @@ void os_file_close(File *file) {
     }
 }
 
+String os_read_entire_file(Allocator allocator, String path) {
+    auto file = os_file_open(path, FILE_MODE_READ);
+    auto size = os_file_get_size(&file);
+
+    String result = {};
+    result.data = cast(u8 *)allocator_alloc(allocator, size);
+    result.count = size;
+
+    os_file_read(&file, 0, size, result.data);
+    os_file_close(&file);
+
+    return result;
+}
+
+bool os_write_entire_file(String path, String contents) {
+    auto file = os_file_open(path, FILE_MODE_WRITE);
+    if (!file.has_errors)
+    {
+        os_file_write(&file, 0, contents.count, contents.data);
+    }
+    os_file_close(&file);
+    return !file.has_errors;
+}
+
 File_Lister os_file_list_begin(Arena *arena, String path) {
     File_Lister result = {};
 
@@ -3622,8 +3885,14 @@ struct OS_Library {
 typedef void (*OS_Library_Proc)(void);
 
 OS_Library os_library_load(String path);
-void os_library_release(OS_Library lib);
+void os_library_unload(OS_Library lib);
 OS_Library_Proc os_library_get_proc(OS_Library lib, char *proc_name);
+
+
+bool os_library_is_loaded(OS_Library lib)
+{
+    return lib.handle != 0;
+}
 
 #if OS_WINDOWS
 
@@ -3638,7 +3907,7 @@ OS_Library os_library_load(String path) {
     return result;
 }
 
-inline void os_library_release(OS_Library lib) {
+inline void os_library_unload(OS_Library lib) {
     if (lib.handle) {
         FreeLibrary((HMODULE)lib.handle);
         lib.handle = 0;
@@ -3665,7 +3934,7 @@ OS_Library os_library_load(String path) {
     return result;
 }
 
-inline void os_library_release(OS_Library lib) {
+inline void os_library_unload(OS_Library lib) {
     if (lib.handle) {
         dlclose(lib.handle);
         lib.handle = 0;
@@ -3838,15 +4107,6 @@ Allocator null_allocator() {
     return Allocator{null_allocator_proc, NULL};
 }
 
-ALLOCATOR_PROC(assert_allocator_proc) {
-    assert(!"Assert allocator");
-    return NULL;
-}
-
-Allocator assert_allocator() {
-    return Allocator{assert_allocator_proc, NULL};
-}
-
 Allocator temp_allocator() {
     return arena_allocator(temp_arena());
 }
@@ -3875,6 +4135,26 @@ Allocator temp_allocator() {
             if (auto it = &(array).data[index])
 
 #define Array_Each(it, array) auto it = (array).begin(); it < (array).end(); it ++
+                
+#define Array_Foreach(item, array)                                             \
+  for (i64 index = 0;                                                          \
+       index < cast(i64)(array).count ? (item) = (array).data[index], true : false; \
+       index++)
+
+#define Array_Foreach_Pointer(item, array)                                     \
+  for (i64 index = 0;                                                          \
+       index < cast(i64)(array).count ? (item) = &(array).data[index], true : false; \
+       index++)
+
+#define Array_Foreach_Reverse(item, array)                                     \
+  for (i64 index = cast(i64)(array).count - 1;                             \
+       index >= 0 ? (item) = (array).data[index], true : false;                \
+       index--)
+
+#define Array_Foreach_Pointer_Reverse(item, array)                             \
+  for (i64 index = cast(i64)(array).count - 1;                             \
+       index >= 0 ? (item) = &(array).data[index], true : false;               \
+       index--)
 
 template <typename T>
 struct Array {
@@ -4019,11 +4299,12 @@ T *array_push(Array<T> *it, T item) {
 template <typename T>
 T *array_push_elements(Array<T> *it, void *items, u64 count) {
     if (it->count + count >= it->capacity) {
-        array_resize(it, it->capacity ? (it->capacity + count) * 2 : 16);
+        i64 next_capacity = na_next_power_of_two(Max(it->capacity + count, 16));
+        array_resize(it, next_capacity);
     }
 
     T *result = it->data + it->count;
-    memory_copy(items, it->data, count * sizeof(T));
+    memory_copy(items, result, count * sizeof(T));
     it->count += count;
     return result;
 }
@@ -4031,6 +4312,11 @@ T *array_push_elements(Array<T> *it, void *items, u64 count) {
 template <typename T>
 void array_concat(Array<T> *it, T *data, u64 count) {
     array_push_elements(it, data, count);
+}
+
+template <typename T>
+void array_concat(Array<T> *it, Array<T> other) {
+    array_push_elements(it, other.data, other.count);
 }
 
 template <typename T>
@@ -4047,6 +4333,9 @@ template <typename T>
 void array_sort(Array<T> *it, i32 (*compare)(T *a, T *b)) {
     na_sort(it->data, it->count, sizeof(T), cast(Compare_Proc *)compare);
 }
+
+
+String string_join(Allocator allocator, Array<String> list, String join);
 
 template <typename T>
 String to_string(Array<T> it) {
@@ -4341,7 +4630,14 @@ void table_init(Hash_Table<K, V> *it, u32 table_size) {
     assert(na_is_power_of_two(it->capacity)); // Must be a power of two!
 
     it->data = (typename Hash_Table<K, V>::Entry *)allocator_alloc(it->allocator, it->capacity * sizeof(typename Hash_Table<K, V>::Entry));
+    memory_zero(it->data, it->capacity * sizeof(typename Hash_Table<K, V>::Entry));
     table_reset(it); // @Speed: Can be removed if data is initialized to zero!
+}
+
+template <typename K, typename V>
+void table_init_from_allocator(Hash_Table<K, V> *it, Allocator allocator, u32 table_size) {
+    it->allocator = allocator;
+    table_init(it, table_size);
 }
 
 template <typename K, typename V>
@@ -4529,30 +4825,8 @@ String to_string(Hash_Table<K, V> table) {
 // Extended OS Functions
 //
 
-String os_read_entire_file(Allocator allocator, String path) {
-    auto file = os_file_open(path, FILE_MODE_READ);
-    auto size = os_file_get_size(&file);
-
-    String result = {};
-    result.data = cast(u8 *)allocator_alloc(allocator, size);
-    result.count = size;
-    assert(result.data);
-
-    os_file_read(&file, 0, size, result.data);
-    os_file_close(&file);
-
-    return result;
-}
-
 String os_read_entire_file(String path) {
     return os_read_entire_file(temp_allocator(), path);
-}
-
-bool os_write_entire_file(String path, String contents) {
-    auto file = os_file_open(path, FILE_MODE_WRITE);
-    os_file_write(&file, 0, contents.count, contents.data);
-    os_file_close(&file);
-    return !file.has_errors;
 }
 
 File_Info os_get_file_info(String path) {
@@ -4763,6 +5037,28 @@ Array<File_Info> os_scan_files_recursive(Allocator allocator, String path, i32 m
 
 Array<File_Info> os_scan_files_recursive(String path, i32 max_depth = 1024) {
     return os_scan_files_recursive(temp_allocator(), path, max_depth);
+}
+
+bool os_copy_entire_file(String from, String to)
+{
+    bool result = false;
+
+    auto contents = os_read_entire_file(from);
+    if (contents.count)
+    {
+        result = os_write_entire_file(to, contents);
+
+        if (!result)
+        {
+            print("[file] Copy failed to write entire file: %S\n", to);
+        }
+    }
+    else
+    {
+        print("[file] Copy failed to read entire file: %S\n", from);
+    }
+    
+    return result;
 }
 
 //

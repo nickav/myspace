@@ -10,3 +10,10 @@ social_icons: [
     (Twitter, "twitter.svg", "https://www.twitter.com/nickaversano")
     (Github,  "github.svg",  "https://www.github.com/nickav")
 ]
+
+pages: [
+    (Home, "index"),
+    (Blog, "blog"),
+]
+
+//posts: []

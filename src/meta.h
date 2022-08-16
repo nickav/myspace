@@ -671,11 +671,13 @@ Node *parse_entire_string(Arena *arena, String text)
 Node *parse_entire_file(Arena *arena, String path)
 {
     auto text = os_read_entire_file(path);
+    dump(text);
+    dump(text.count);
     if (text.count)
     {
         return parse_entire_string(arena, text);
     }
-    return null;
+    return &__meta_nil_node;
 }
 
 #define Each_Node(child, root) Node *child = root; !node_is_nil(child); child = child->next
@@ -698,7 +700,7 @@ bool node_has_tag(Node *it, String tag_name)
 
 Node *find_child_by_name(Node *root, String name)
 {
-    Node *result = null;
+    Node *result = &__meta_nil_node;
 
     for (Each_Node(it, root->first_child))
     {
@@ -711,9 +713,24 @@ Node *find_child_by_name(Node *root, String name)
     return result;
 }
 
+Node *node_get_child(Node *root, i64 child_index)
+{
+    if (node_is_nil(root)) return nil_node();
+
+    Node *result = root->first_child;
+
+    while (child_index > 0 && !node_is_nil(result))
+    {
+        result = result->next;
+        child_index -= 1;
+    }
+
+    return result;
+}
+
 Node *find_by_name(Node *start, String name)
 {
-    Node *result = null;
+    Node *result = &__meta_nil_node;
 
     for (Each_Node(it, start))
     {

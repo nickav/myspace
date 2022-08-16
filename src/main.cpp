@@ -21,6 +21,7 @@ struct Site_Meta
     String twitter_handle;
 
     Node *social_icons;
+    Node *pages;
 };
 
 struct Page_Meta
@@ -50,6 +51,7 @@ Site_Meta parse_site_info(Node *root)
         else if (string_equals(key, S("author")))         { result.author = value; }
         else if (string_equals(key, S("twitter_handle"))) { result.twitter_handle = value; } 
         else if (string_equals(key, S("social_icons")))   { result.social_icons = it->first_child; } 
+        else if (string_equals(key, S("pages")))          { result.pages = it->first_child; } 
     }
 
     return result;
@@ -85,12 +87,24 @@ int main(int argc, char **argv)
     css = minify_css(css);
 
     auto site_root = parse_entire_file(temp_arena(), path_join(exe_dir, S("../data/site.meta")));
-    auto page_root = parse_entire_file(temp_arena(), path_join(exe_dir, S("../data/post.meta")));
 
     auto site = parse_site_info(site_root);
-    auto meta = parse_page_meta(page_root);
 
+    for (Each_Node(page, site.pages))
     {
+        auto page_title = node_get_child(page, 0)->string;
+        auto page_slug  = node_get_child(page, 1)->string;
+
+        auto meta_file = path_join(exe_dir, sprint("../data/%S.meta", page_slug));
+        auto page_root = parse_entire_file(temp_arena(), meta_file);
+
+        if (node_is_nil(page_root)) {
+            print("Warning, page '%S' is empty: %S\n", page_slug, meta_file);
+            continue;
+        }
+
+        auto meta = parse_page_meta(page_root);
+
         Arena __arena = arena_make_from_memory(megabytes(1));
         Arena *arena = &__arena;
 
@@ -126,27 +140,27 @@ int main(int argc, char **argv)
         write(arena, "</head>\n");
         write(arena, "<body>\n");
 
-        write(arena, "<div class='flex-x pad-32'>");
-            write(arena, "<div class='csx-8 flex-1 flex-row center-y'>\n");
-                write(arena, "<h1>%S</h1>", site.site_name);
+        write(arena, "<div class='flex-x pad-64  md:flex-y md:csy-8 sm:pad-32'>\n");
+            write(arena, "<div class='csx-16 flex-1 flex-x center-y'>\n");
+                write(arena, "<h1><a href='%S'>%S</a></h1>\n", site.site_url, site.site_name);
             write(arena, "</div>\n");
 
-            write(arena, "<div class='csx-16 flex-row center-y'>\n");
+            write(arena, "<div class='csx-16 flex-x'>\n");
 
             for (Each_Node(it, site.social_icons))
             {
-                auto name  = it->first_child->string;
-                auto image = it->first_child->next->string;
-                auto url   = it->first_child->next->next->string;
+                auto name  = node_get_child(it, 0)->string;
+                auto image = node_get_child(it, 1)->string;
+                auto url   = node_get_child(it, 2)->string;
 
                 auto content = os_read_entire_file(path_join(exe_dir, sprint("../data/icons/%S", image)));
 
-                write(arena, "<a title='%S' href='%S' target='_blank'><div class='inline-block size-24'>%S</div></a>\n", name, url, content);
+                write(arena, "<a title='%S' href='%S' target='_blank' class='inline-flex center pad-8'><div class='inline-block size-24'>%S</div></a>\n", name, url, content);
             }
             write(arena, "</div>\n");
-        write(arena, "</div>");
+        write(arena, "</div>\n");
 
-        write(arena, "<div class='pad-32 w-800'>\n");
+        write(arena, "<div class='pad-64 w-800 sm:pad-32'>\n");
             for (Each_Node(it, page_root->first_child))
             {
                 auto key   = it->string;
@@ -163,7 +177,7 @@ int main(int argc, char **argv)
         write(arena, "</html>\n");
 
         auto html = arena_to_string(arena);
-        os_write_entire_file(path_join(output_dir, S("index.html")), html);
+        os_write_entire_file(path_join(output_dir, sprint("%S.html", page_slug)), html);
     }
 
     print("Done! Took %.2fms", os_time_in_miliseconds());
