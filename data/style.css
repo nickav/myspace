@@ -69,29 +69,35 @@ p {
   display: inline-block;
 }
 
-.flex-row {
+.flex-row, .flex-x {
   display: flex;
   flex-direction: row;
 }
 
-.flex-col {
+.flex-col, .flex-y {
   display: flex;
   flex-direction: column;
 }
 
-.flex-full {
+.flex-1 {
   flex: 1;
 }
 
-.flex-right {
+.align-right {
   margin-left: auto;
 }
 
-.flex-row .center-y, .flex-row.center-y { align-items: center;}
-.flex-col .center-y, .flex-col.center-y { justify-content: center; }
+.flex-row.center-y { align-items: center;}
+.flex-col.center-y { justify-content: center; }
 
-.flex-row .center-x, .flex-row.center-x { justify-content: center; }
-.flex-col .center-x, .flex-col.center-x { align-items: center; }
+.flex-row.center-x { justify-content: center; }
+.flex-col.center-x { align-items: center; }
+
+.flex-x.center-y { align-items: center;}
+.flex-y.center-y { justify-content: center; }
+
+.flex-x.center-x { justify-content: center; }
+.flex-y.center-x { align-items: center; }
 
 .center {
   justify-content: center;

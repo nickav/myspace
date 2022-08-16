@@ -126,30 +126,38 @@ int main(int argc, char **argv)
         write(arena, "</head>\n");
         write(arena, "<body>\n");
 
-        write(arena, "<div class='csx-8'>\n");
+        write(arena, "<div class='flex-x pad-32'>");
+            write(arena, "<div class='csx-8 flex-1 flex-row center-y'>\n");
+                write(arena, "<h1>%S</h1>", site.site_name);
+            write(arena, "</div>\n");
 
-        for (Each_Node(it, site.social_icons))
-        {
-            auto name  = it->first_child->string;
-            auto image = it->first_child->next->string;
-            auto url   = it->first_child->next->next->string;
+            write(arena, "<div class='csx-16 flex-row center-y'>\n");
 
-            auto content = os_read_entire_file(path_join(exe_dir, sprint("../data/icons/%S", image)));
-
-            write(arena, "<a title='%S' href='%S' target='_blank'><div class='inline-block size-24'>%S</div></a>\n", name, url, content);
-        }
-        write(arena, "</div>\n");
-
-        for (Each_Node(it, page_root->first_child))
-        {
-            auto key   = it->string;
-            auto value = it->first_child->string;
-
-            if (value.count == 0)
+            for (Each_Node(it, site.social_icons))
             {
-                write(arena, "%S\n", key);
+                auto name  = it->first_child->string;
+                auto image = it->first_child->next->string;
+                auto url   = it->first_child->next->next->string;
+
+                auto content = os_read_entire_file(path_join(exe_dir, sprint("../data/icons/%S", image)));
+
+                write(arena, "<a title='%S' href='%S' target='_blank'><div class='inline-block size-24'>%S</div></a>\n", name, url, content);
             }
-        }
+            write(arena, "</div>\n");
+        write(arena, "</div>");
+
+        write(arena, "<div class='pad-32 w-800'>\n");
+            for (Each_Node(it, page_root->first_child))
+            {
+                auto key   = it->string;
+                auto value = it->first_child->string;
+
+                if (value.count == 0)
+                {
+                    write(arena, "%S\n", key);
+                }
+            }
+        write(arena, "</div>\n");
 
         write(arena, "</body>\n");
         write(arena, "</html>\n");
