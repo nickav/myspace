@@ -1,3 +1,6 @@
+#ifndef META_H
+#define META_H
+
 typedef u32 Token_Type;
 enum {
     TokenType_NULL = 0,
@@ -373,8 +376,10 @@ void node_set_children(Node *parent, Node *children)
 
 bool node_is_nil(Node *node)
 {
-    return node->type == NodeType_NULL;
+    return node == NULL || node->type == NodeType_NULL;
 }
+
+Node *nil_node() { return &__meta_nil_node; }
 
 Node *make_node(Parser *state, Node_Type type, String str, Node *tags = NULL)
 {
@@ -757,3 +762,5 @@ void meta_test(String text)
     auto title = find_by_name(root->first_child, S("title"));
     dump(title->first_child->string);
 }
+
+#endif // META_H

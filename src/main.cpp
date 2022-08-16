@@ -12,15 +12,6 @@ struct Build_Config
     String output_dir;
 };
 
-struct Page_Meta
-{
-    String title;
-    String description;
-    String image;
-    String og_type;
-    String url;
-};
-
 struct Site_Meta
 {
     String site_name;
@@ -28,6 +19,17 @@ struct Site_Meta
     String description;
     String author;
     String twitter_handle;
+
+    Node *social_icons;
+};
+
+struct Page_Meta
+{
+    String title;
+    String description;
+    String image;
+    String og_type;
+    String url;
 };
 
 #include "helpers.h"
@@ -44,9 +46,10 @@ Site_Meta parse_site_info(Node *root)
         if (false) {}
         else if (string_equals(key, S("title")))          { result.site_name = value; }
         else if (string_equals(key, S("description")))    { result.description = value; }
-        else if (string_equals(key, S("canonical_url")))  { result.site_url = value; }
+        else if (string_equals(key, S("site_url")))       { result.site_url = value; }
         else if (string_equals(key, S("author")))         { result.author = value; }
         else if (string_equals(key, S("twitter_handle"))) { result.twitter_handle = value; } 
+        else if (string_equals(key, S("social_icons")))   { result.social_icons = it->first_child; } 
     }
 
     return result;
@@ -82,9 +85,10 @@ int main(int argc, char **argv)
     css = minify_css(css);
 
     auto site_root = parse_entire_file(temp_arena(), path_join(exe_dir, S("../data/site.meta")));
+    auto page_root = parse_entire_file(temp_arena(), path_join(exe_dir, S("../data/post.meta")));
 
     auto site = parse_site_info(site_root);
-    auto meta = Page_Meta{};
+    auto meta = parse_page_meta(page_root);
 
     {
         Arena __arena = arena_make_from_memory(megabytes(1));
@@ -120,17 +124,39 @@ int main(int argc, char **argv)
         if (css.count) write(arena, "<style type='text/css'>%S</style>\n", css);
 
         write(arena, "</head>\n");
+        write(arena, "<body>\n");
 
-        // Body
+        write(arena, "<div class='csx-8'>\n");
+
+        for (Each_Node(it, site.social_icons))
         {
-            write(arena, "<body>\n");
+            auto name  = it->first_child->string;
+            auto image = it->first_child->next->string;
+            auto url   = it->first_child->next->next->string;
 
-            write(arena, "</body>\n");
+            auto content = os_read_entire_file(path_join(exe_dir, sprint("../data/icons/%S", image)));
+
+            write(arena, "<a title='%S' href='%S' target='_blank'><div class='inline-block size-24'>%S</div></a>\n", name, url, content);
+        }
+        write(arena, "</div>\n");
+
+        for (Each_Node(it, page_root->first_child))
+        {
+            auto key   = it->string;
+            auto value = it->first_child->string;
+
+            if (value.count == 0)
+            {
+                write(arena, "%S\n", key);
+            }
         }
 
+        write(arena, "</body>\n");
         write(arena, "</html>\n");
 
         auto html = arena_to_string(arena);
         os_write_entire_file(path_join(output_dir, S("index.html")), html);
     }
+
+    print("Done! Took %.2fms", os_time_in_miliseconds());
 }

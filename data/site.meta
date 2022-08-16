@@ -1,8 +1,9 @@
 title:          "Nick Aversano"
 description:    "Cool new web page"
-canonical_url:  "http://nickav.co"
+site_url:       "http://nickav.co"
 author:         "Nick Aversano"
 twitter_handle: "@nickaversano"
+og_type:        "website"
 
 social_icons: [
     (Twitch,  "twitch.svg",  "https://twitch.tv/naversano")

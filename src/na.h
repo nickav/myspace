@@ -2355,15 +2355,12 @@ na_internal Dense_Time win32_dense_time_from_file_time(FILETIME *file_time) {
     return result;
 }
 
+
+static u64 win32_ticks_per_second = 0;
+static u64 win32_counter_offset = 0;
+
 bool os_init() {
     thread_context_init(gigabytes(1));
-
-    return true;
-}
-
-f64 os_time_in_miliseconds() {
-    static u64 win32_ticks_per_second = 0;
-    static u64 win32_counter_offset = 0;
 
     if (!win32_ticks_per_second)
     {
@@ -2377,6 +2374,10 @@ f64 os_time_in_miliseconds() {
         }
     }
 
+    return true;
+}
+
+f64 os_time_in_miliseconds() {
 
     f64 result = 0;
 
