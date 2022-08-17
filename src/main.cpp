@@ -83,6 +83,53 @@ Page_Meta parse_page_meta(Node *root)
     return result;
 }
 
+String generate_blog_rss_feed(Site_Meta site, Node *posts)
+{
+    auto arena = arena_make_from_memory(megabytes(1));
+    auto pub_date = to_rss_date_string(os_get_current_time_in_utc());
+
+    write(&arena, "<?xml version='1.0' encoding='UTF-8'?>\n");
+
+    write(&arena, "<rss version='2.0' xmlns:atom='http://www.w3.org/2005/Atom'>\n");
+    write(&arena, "<channel>\n");
+    write(&arena, "\n");
+
+    write(&arena, "<title>%S</title>\n", site.name);
+    write(&arena, "<link>%S</link>\n", site.url);
+    write(&arena, "<description>%S</description>\n", site.description);
+    write(&arena, "<pubDate>%S</pubDate>\n", pub_date);
+    write(&arena, "<lastBuildDate>%S</lastBuildDate>\n", pub_date);
+    write(&arena, "<language>en-us</language>\n");
+    write(&arena, "<image><url>%S</url></image>\n", site.image);
+    write(&arena, "\n");
+
+    write(&arena, "</channel>\n");
+    write(&arena, "</rss>\n");
+
+    for (Each_Node(it, posts->first_child))
+    {
+        // @Cleanup: root root situation
+        auto post = parse_page_meta(it->first_child);
+        auto date = ParsePostDate(post.date);
+
+        if (!post.og_type.count) post.og_type = S("article");
+
+        auto link = S("http://nickav.co/post/1");
+
+        write(&arena, "<item>\n");
+        write(&arena, "<title>%S</title>\n", post.title);
+        write(&arena, "<description>%S</description>\n", post.description);
+        write(&arena, "<pubDate>%S</pubDate>\n", to_rss_date_string(date));
+        write(&arena, "<link>%S</link>\n", link);
+        write(&arena, "<guid isPermaLink='true'>%S</guid>\n", link);
+        write(&arena, "<category>%S</category>\n", post.og_type);
+        write(&arena, "</item>\n");
+        write(&arena, "\n");
+    }
+
+    return arena_to_string(&arena);
+}
+
 int main(int argc, char **argv)
 {
     os_init();
@@ -120,6 +167,9 @@ int main(int argc, char **argv)
             }
         }
     }
+
+    auto rss_feed = generate_blog_rss_feed(site, posts);
+    os_write_entire_file(path_join(output_dir, S("feed.xml")), rss_feed);
 
     for (Each_Node(node, site.pages))
     {
@@ -181,6 +231,11 @@ int main(int argc, char **argv)
         if (css.count)
         {
         write(arena, "<style type='text/css'>%S</style>\n", css);
+        }
+
+        if (rss_feed.count)
+        {
+        write(arena, "<link rel='alternate' type='application/rss+xml' title='Nick Aversano' href='%S/feed.xml' />\n", site.url);
         }
 
         write(arena, "</head>\n");

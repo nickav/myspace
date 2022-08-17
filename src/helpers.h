@@ -1,12 +1,3 @@
-struct RSS_Entry
-{
-    String title;
-    String description;
-    Date_Time pub_date;
-    String link;
-    String category;
-};
-
 String minify_css(String str)
 {
     u8 *data = push_array(temp_arena(), u8, str.count);
@@ -233,44 +224,4 @@ void write(Arena *arena, char *format, ...)
     va_start(args, format);
     string_printv(arena, format, args);
     va_end(args);
-}
-
-String generate_rss_feed(Page_Meta meta, Array<RSS_Entry> items)
-{
-    auto arena = arena_make_from_memory(megabytes(1));
-
-    auto pub_date = to_rss_date_string(os_get_current_time_in_utc());
-
-    write(&arena, "<?xml version='1.0' encoding='UTF-8'?>\n");
-
-    write(&arena, "<rss version='2.0' xmlns:atom='http://www.w3.org/2005/Atom'>\n");
-    write(&arena, "<channel>\n");
-    write(&arena, "\n");
-
-    write(&arena, "<title>%S</title>\n", meta.title);
-    write(&arena, "<link>%S</link>\n", meta.url);
-    write(&arena, "<description>%S</description>\n", meta.description);
-    write(&arena, "<pubDate>%S</pubDate>\n", pub_date);
-    write(&arena, "<lastBuildDate>%S</lastBuildDate>\n", pub_date);
-    write(&arena, "<language>en-us</language>\n");
-    write(&arena, "<image><url>%S</url></image>\n", meta.image);
-    write(&arena, "\n");
-
-    For (items)
-    {
-        write(&arena, "<item>\n");
-        write(&arena, "<title>%S</title>\n", it.title);
-        write(&arena, "<description>%S</description>\n", it.description);
-        write(&arena, "<pubDate>%S</pubDate>\n", to_rss_date_string(it.pub_date));
-        write(&arena, "<link>%S</link>\n", it.link);
-        write(&arena, "<guid isPermaLink='true'>%S</guid>\n", it.link);
-        write(&arena, "<category>%S</category>\n", it.category);
-        write(&arena, "</item>\n");
-        write(&arena, "\n");
-    }
-
-    write(&arena, "</channel>\n");
-    write(&arena, "</rss>\n");
-
-    return arena_to_string(&arena);
 }

@@ -15,5 +15,5 @@ social_icons: [
 
 pages: [
     (Home, "index"),
-    (Blog, "blog"),
+    (About, "about"),
 ]
