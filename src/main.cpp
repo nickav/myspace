@@ -134,10 +134,20 @@ int main(int argc, char **argv)
 {
     os_init();
 
+    if (argc < 2) {
+        char *arg0 = argv[0];
+        print("Usage: %s <data> <bin>\n", arg0);
+        return -1;
+    }
+
     auto exe_dir = os_get_executable_directory();
 
-    auto data_dir   = path_join(exe_dir, S("../data"));
-    auto output_dir = path_join(exe_dir, S("bin"));
+    char *arg0 = argv[0];
+    char *arg1 = argv[1];
+    char *arg2 = argv[2];
+
+    auto data_dir   = path_resolve(exe_dir, string_from_cstr(arg1));
+    auto output_dir = path_resolve(exe_dir, string_from_cstr(arg2));
 
     auto css = os_read_entire_file(path_join(data_dir, S("style.css")));
     css = minify_css(css);
@@ -262,14 +272,16 @@ int main(int argc, char **argv)
         write(arena, "</div>\n");
 
         write(arena, "<div class='pad-64 w-800 sm:pad-32'>\n");
+
             for (Each_Node(it, page_root->first_child))
             {
-                auto key   = it->string;
-                auto value = node_get_child(it, 0)->string;
-
-                if (value.count == 0)
+                if (node_has_children(it)) continue;
+                
+                auto lines = string_split(it->string, S("\n"));
+                For (lines)
                 {
-                    write(arena, "%S\n", key);
+                    if (!string_trim_whitespace(it).count) continue;
+                    write(arena, "<p>%S</p>\n", it);
                 }
             }
 
@@ -280,8 +292,11 @@ int main(int argc, char **argv)
                 auto post = parse_page_meta(it->first_child);
                 auto date = pretty_date(ParsePostDate(post.date));
 
-
                 write(arena, "<div class='flex-y csy-8'>\n");
+                if (post.image.count)
+                {
+                write(arena, "<img src='%S' />", post.image);
+                }
                 write(arena, "<div><b>%S</b></div> <div>%S</div>\n", post.title, date);
                 write(arena, "</div>\n");
             }

@@ -745,6 +745,11 @@ i64 node_count_children(Node *root)
     return result;
 }
 
+bool node_has_children(Node *node)
+{
+    return !node_is_nil(node->first_child);
+}
+
 Node *find_by_name(Node *start, String name)
 {
     Node *result = &__meta_nil_node;

@@ -1331,6 +1331,16 @@ String string_range(u8 *at, u8 *end) {
     return make_string(at, (end - at));
 }
 
+i64 string_find(String str, String search, i64 start_index = 0) {
+    for (i64 i = start_index; i < str.count; i += 1) {
+        if (memory_equals(str.data + i, search.data, search.count)) {
+            return i;
+        }
+    }
+
+    return str.count;
+}
+
 i64 string_index(String str, String search, i64 start_index = 0) {
     for (i64 i = start_index; i < str.count; i += 1) {
         if (memory_equals(str.data + i, search.data, search.count)) {
@@ -1783,6 +1793,12 @@ bool path_is_root(String path) {
         // Windows drive root:
         ((path.count == 2 || path.count == 3) && char_is_alpha(path[0]) && path[1] == ':' && (path.count == 2 || path[2] == '/'))
     );
+}
+
+String path_resolve(String base_folder, String subpath)
+{
+    if (path_is_absolute(subpath)) return subpath;
+    return path_join(base_folder, subpath);
 }
 
 String path_dirname(String path) {

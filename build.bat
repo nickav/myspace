@@ -15,11 +15,10 @@ pushd %project_root%
 
     rmdir /s /q bin
     mkdir bin
-    mkdir bin\r
 
     xcopy /s /i /q /y ..\public bin\
 
-    .\%exe_name%
+    .\%exe_name% ..\data bin
   popd
 popd
 
