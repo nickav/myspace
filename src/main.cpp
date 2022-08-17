@@ -108,13 +108,11 @@ String generate_blog_rss_feed(Site_Meta site, Node *posts)
 
     for (Each_Node(it, posts->first_child))
     {
-        // @Cleanup: root root situation
-        auto post = parse_page_meta(it->first_child);
+        auto post = parse_page_meta(it);
         auto date = ParsePostDate(post.date);
+        auto link = path_join(site.url, it->string);
 
         if (!post.og_type.count) post.og_type = S("article");
-
-        auto link = S("http://nickav.co/post/1");
 
         write(&arena, "<item>\n");
         write(&arena, "<title>%S</title>\n", post.title);
@@ -168,13 +166,13 @@ int main(int argc, char **argv)
 
             auto fp = path_join(posts_dir, it->name);
             auto post = parse_entire_file(temp_arena(), fp);
+            post->string = path_join(S("posts"), it->name);
 
             if (!node_is_nil(post))
             {
-                node_push_key_value(posts, it->name, post);
+                node_push_child(posts, post);
 
-                auto mname = path_strip_extension(path_join(S("posts"), it->name));
-                auto array = make_array_node(node_from_string(it->name), node_from_string(mname));
+                auto array = make_array_node(node_from_string(it->name), node_from_string(post->string));
                 node_push_sibling(site.pages, array);
             }
         }
@@ -190,7 +188,7 @@ int main(int argc, char **argv)
         auto page_title = node_get_child(node, 0)->string;
         auto page_slug  = node_get_child(node, 1)->string;
 
-        dump(page_slug);
+        page_slug = path_strip_extension(page_slug);
 
         auto meta_file = path_join(data_dir, sprint("%S.meta", page_slug));
         auto page_root = parse_entire_file(temp_arena(), meta_file);
@@ -297,16 +295,18 @@ int main(int argc, char **argv)
                 write(arena, "<div class='flex-y csy-16'>\n");
                 for (Each_Node(it, posts->first_child))
                 {
-                    // @Cleanup: root root situation
-                    auto post = parse_page_meta(it->first_child);
+                    auto post = parse_page_meta(it);
                     auto date = pretty_date(ParsePostDate(post.date));
+                    auto link = it->string;
 
                     write(arena, "<div class='flex-y csy-8'>\n");
+                    write(arena, "<a href='%S'>\n", link);
                     if (post.image.count)
                     {
-                    write(arena, "<img src='%S' />", post.image);
+                    write(arena, "<img src='%S' />\n", post.image);
                     }
                     write(arena, "<div><b>%S</b></div> <div>%S</div>\n", post.title, date);
+                    write(arena, "</a>\n");
                     write(arena, "</div>\n");
                 }
                 write(arena, "</div>\n");

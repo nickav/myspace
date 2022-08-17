@@ -54,8 +54,9 @@ enum {
     NodeType_String,
     NodeType_Identifier,
     NodeType_Tag,
-    NodeType_Root,
     NodeType_Array,
+    NodeType_Root,
+    NodeType_File,
 
     NodeType_COUNT,
 };
@@ -67,8 +68,9 @@ static String __node_type_name_lookup[] = {
     S("String"),
     S("Identifier"),
     S("Tag"),
-    S("Root"),
     S("Array"),
+    S("Root"),
+    S("File"),
 
     S("COUNT"),
 };
@@ -706,7 +708,10 @@ Node *parse_entire_file(Arena *arena, String path)
     auto text = os_read_entire_file(path);
     if (text.count)
     {
-        return parse_entire_string(arena, text);
+        auto result = parse_entire_string(arena, text);
+        result->type = NodeType_File;
+        result->string = path;
+        return result;
     }
     return &__meta_nil_node;
 }
