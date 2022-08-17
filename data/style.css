@@ -156,9 +156,12 @@ p {
 .csy-32 > *:not(:last-child) { margin-bottom: 2rem; }
 .csy-64 > *:not(:last-child) { margin-bottom: 4rem; }
 
-.site_name {
-  font-size: 1.5rem;
-  display: inline-block;
+.font-normal {
+  font-weight: 400;
+}
+
+.font-bold {
+  font-weight: 700
 }
 
 .code, .inline_code {

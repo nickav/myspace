@@ -34,6 +34,7 @@ struct Page_Meta
     String image;
     String og_type;
     String url;
+    String date;
 };
 
 #include "helpers.h"
@@ -77,6 +78,7 @@ Page_Meta parse_page_meta(Node *root)
         else if (string_equals(key, S("image")))          { result.image = value; }
         else if (string_equals(key, S("og_type")))        { result.og_type = value; }
         else if (string_equals(key, S("desc")) || string_equals(key, S("description"))) { result.description = value; }
+        else if (string_equals(key, S("date")))        { result.date = value; }
     }
     return result;
 }
@@ -93,17 +95,38 @@ int main(int argc, char **argv)
     auto css = os_read_entire_file(path_join(data_dir, S("style.css")));
     css = minify_css(css);
 
-    auto site_root = parse_entire_file(temp_arena(), path_join(exe_dir, S("../data/site.meta")));
+    auto site_root = parse_entire_file(temp_arena(), path_join(data_dir, S("site.meta")));
 
     auto site = parse_site_info(site_root);
     if (!site.image.count) site.image = site.icon;
+
+    auto posts = nil_node();
+    {
+        auto posts_dir = path_join(data_dir, S("posts"));
+        auto post_files = os_scan_directory(posts_dir);
+        File_Info *it;
+        Array_Foreach_Pointer_Reverse (it, post_files)
+        {
+            if (file_is_directory(it)) continue;
+
+            auto fp = path_join(posts_dir, it->name);
+            auto post = parse_entire_file(temp_arena(), fp);
+
+            if (!node_is_nil(post))
+            {
+                auto child = make_node(temp_arena(), NodeType_Root, string_temp(it->name));
+                node_push_child(child, post);
+                node_push_child(posts, child);
+            }
+        }
+    }
 
     for (Each_Node(node, site.pages))
     {
         auto page_title = node_get_child(node, 0)->string;
         auto page_slug  = node_get_child(node, 1)->string;
 
-        auto meta_file = path_join(exe_dir, sprint("../data/%S.meta", page_slug));
+        auto meta_file = path_join(data_dir, sprint("%S.meta", page_slug));
         auto page_root = parse_entire_file(temp_arena(), meta_file);
 
         if (node_is_nil(page_root)) {
@@ -176,7 +199,7 @@ int main(int argc, char **argv)
                 auto image = node_get_child(it, 1)->string;
                 auto url   = node_get_child(it, 2)->string;
 
-                auto content = os_read_entire_file(path_join(exe_dir, sprint("../data/icons/%S", image)));
+                auto content = os_read_entire_file(path_join(data_dir, S("icons"), image));
 
                 write(arena, "<a title='%S' href='%S' target='_blank' class='inline-flex center pad-8'><div class='inline-block size-24'>%S</div></a>\n", name, url, content);
             }
@@ -194,6 +217,21 @@ int main(int argc, char **argv)
                     write(arena, "%S\n", key);
                 }
             }
+
+            write(arena, "<div class='flex-y csy-16'>\n");
+            for (Each_Node(it, posts->first_child))
+            {
+                // @Cleanup: root root situation
+                auto post = parse_page_meta(it->first_child);
+                auto date = pretty_date(ParsePostDate(post.date));
+
+
+                write(arena, "<div class='flex-y csy-8'>\n");
+                write(arena, "<div><b>%S</b></div> <div>%S</div>\n", post.title, date);
+                write(arena, "</div>\n");
+            }
+            write(arena, "</div>\n");
+
         write(arena, "</div>\n");
 
         write(arena, "</body>\n");

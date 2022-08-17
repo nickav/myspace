@@ -381,9 +381,9 @@ bool node_is_nil(Node *node)
 
 Node *nil_node() { return &__meta_nil_node; }
 
-Node *make_node(Parser *state, Node_Type type, String str, Node *tags = NULL)
+Node *make_node(Arena *arena, Node_Type type, String str, Node *tags = NULL)
 {
-    Node *node = push_struct(state->arena, Node);
+    Node *node = push_struct(arena, Node);
     *node = {};
 
     // Set up nil children
@@ -422,7 +422,7 @@ Node *make_node(Parser *state, Node_Type type, String str, Node *tags = NULL)
     return node;
 }
 
-void push_child_node(Node *parent, Node *child)
+void node_push_child(Node *parent, Node *child)
 {
     if (node_is_nil(parent->first_child)) parent->first_child = child;
 
@@ -538,7 +538,7 @@ Node *maybe_parse_tags(Parser *state)
         if (next && next->type == TokenType_Identifier)
         {
             consume(state, next);
-            auto tag_node = make_node(state, NodeType_Identifier, next->value);
+            auto tag_node = make_node(state->arena, NodeType_Identifier, next->value);
 
             it = peek(state, 0);
             if (it && token_is_open_bracket(it))
@@ -572,33 +572,33 @@ Node *parse_primary_expression(Parser *state)
     if (it->type == TokenType_Identifier)
     {
         consume(state, it);
-        return make_node(state, NodeType_Identifier, it->value, tags);
+        return make_node(state->arena, NodeType_Identifier, it->value, tags);
     }
 
     if (it->type == TokenType_Number)
     {
         consume(state, it);
-        return make_node(state, NodeType_Number, it->value, tags);
+        return make_node(state->arena, NodeType_Number, it->value, tags);
     }
 
     if (it->type == TokenType_String)
     {
         consume(state, it);
-        return make_node(state, NodeType_String, it->value, tags);
+        return make_node(state->arena, NodeType_String, it->value, tags);
     }
 
     if (it && token_is_open_bracket(it))
     {
         consume(state, it);
 
-        Node *array = make_node(state, NodeType_Array, S("<array>"), NULL);
+        Node *array = make_node(state->arena, NodeType_Array, S("<array>"), NULL);
 
         auto token = peek(state, 0);
         while (token && !token_is_close_bracket(token))
         {
             consume_any_separators(state);
             auto next = parse_expression(state);
-            push_child_node(array, next);
+            node_push_child(array, next);
             consume_any_separators(state);
 
             token = peek(state, 0);
@@ -648,14 +648,14 @@ Node *parse(Arena *arena, Array<Token> tokens)
     state.index = 0;
     state.arena = arena;
 
-    Node *root = make_node(&state, NodeType_Root, S("<root>"), NULL);
+    Node *root = make_node(state.arena, NodeType_Root, S("<root>"), NULL);
 
     while (state.index < state.tokens.count)
     {
         Node *result = parse_expression(&state);
         if (result)
         {
-            push_child_node(root, result);
+            node_push_child(root, result);
         }
     }
 
@@ -665,7 +665,9 @@ Node *parse(Arena *arena, Array<Token> tokens)
 Node *parse_entire_string(Arena *arena, String text)
 {
     auto tokens = tokenize(text);
-    return parse(arena, tokens);
+    auto root = parse(arena, tokens);
+    root->raw_string = text;
+    return root;
 }
 
 Node *parse_entire_file(Arena *arena, String path)
@@ -711,6 +713,11 @@ Node *find_child_by_name(Node *root, String name)
     return result;
 }
 
+Node *node_find_key_value(Node *root, String key)
+{
+    return find_child_by_name(root, key)->first_child;
+}
+
 Node *node_get_child(Node *root, i64 child_index)
 {
     if (node_is_nil(root)) return nil_node();
@@ -723,6 +730,18 @@ Node *node_get_child(Node *root, i64 child_index)
         child_index -= 1;
     }
 
+    return result;
+}
+
+i64 node_count_children(Node *root)
+{
+    i64 result = 0;
+    Node *node = root->first_child;
+    while (!node_is_nil(node))
+    {
+        node = node->next;
+        result += 1;
+    }
     return result;
 }
 

@@ -17,5 +17,3 @@ pages: [
     (Home, "index"),
     (Blog, "blog"),
 ]
-
-//posts: []
