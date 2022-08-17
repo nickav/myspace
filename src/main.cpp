@@ -171,9 +171,11 @@ int main(int argc, char **argv)
 
             if (!node_is_nil(post))
             {
-                auto child = make_node(temp_arena(), NodeType_Root, string_temp(it->name));
-                node_push_child(child, post);
-                node_push_child(posts, child);
+                node_push_key_value(posts, it->name, post);
+
+                auto mname = path_strip_extension(path_join(S("posts"), it->name));
+                auto array = make_array_node(node_from_string(it->name), node_from_string(mname));
+                node_push_sibling(site.pages, array);
             }
         }
     }
@@ -181,10 +183,14 @@ int main(int argc, char **argv)
     auto rss_feed = generate_blog_rss_feed(site, posts);
     os_write_entire_file(path_join(output_dir, S("feed.xml")), rss_feed);
 
+    os_make_directory(path_join(output_dir, S("posts")));
+
     for (Each_Node(node, site.pages))
     {
         auto page_title = node_get_child(node, 0)->string;
         auto page_slug  = node_get_child(node, 1)->string;
+
+        dump(page_slug);
 
         auto meta_file = path_join(data_dir, sprint("%S.meta", page_slug));
         auto page_root = parse_entire_file(temp_arena(), meta_file);
@@ -276,7 +282,7 @@ int main(int argc, char **argv)
             for (Each_Node(it, page_root->first_child))
             {
                 if (node_has_children(it)) continue;
-                
+
                 auto lines = string_split(it->string, S("\n"));
                 For (lines)
                 {
@@ -285,22 +291,26 @@ int main(int argc, char **argv)
                 }
             }
 
-            write(arena, "<div class='flex-y csy-16'>\n");
-            for (Each_Node(it, posts->first_child))
+            // @Incomplete: make this feed into some sort of custom tag parser thing
+            if (string_equals(page_slug, S("index")))
             {
-                // @Cleanup: root root situation
-                auto post = parse_page_meta(it->first_child);
-                auto date = pretty_date(ParsePostDate(post.date));
-
-                write(arena, "<div class='flex-y csy-8'>\n");
-                if (post.image.count)
+                write(arena, "<div class='flex-y csy-16'>\n");
+                for (Each_Node(it, posts->first_child))
                 {
-                write(arena, "<img src='%S' />", post.image);
+                    // @Cleanup: root root situation
+                    auto post = parse_page_meta(it->first_child);
+                    auto date = pretty_date(ParsePostDate(post.date));
+
+                    write(arena, "<div class='flex-y csy-8'>\n");
+                    if (post.image.count)
+                    {
+                    write(arena, "<img src='%S' />", post.image);
+                    }
+                    write(arena, "<div><b>%S</b></div> <div>%S</div>\n", post.title, date);
+                    write(arena, "</div>\n");
                 }
-                write(arena, "<div><b>%S</b></div> <div>%S</div>\n", post.title, date);
                 write(arena, "</div>\n");
             }
-            write(arena, "</div>\n");
 
         write(arena, "</div>\n");
 

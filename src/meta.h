@@ -379,6 +379,16 @@ bool node_is_nil(Node *node)
     return node == NULL || node->type == NodeType_NULL;
 }
 
+bool node_is_array(Node *node)
+{
+    return node && node->type == NodeType_Array;
+}
+
+bool node_is_identifier(Node *node)
+{
+    return node && node->type == NodeType_Array;
+}
+
 Node *nil_node() { return &__meta_nil_node; }
 
 Node *make_node(Arena *arena, Node_Type type, String str, Node *tags = NULL)
@@ -410,7 +420,8 @@ Node *make_node(Arena *arena, Node_Type type, String str, Node *tags = NULL)
 
         if (is_triple)
         {
-            node->string = string_slice(str, 3, str.count - 3);
+            bool was_closed = str.data[str.count - 1] == quote_char && str.data[str.count - 2] == quote_char;
+            node->string = string_slice(str, 3, str.count - (was_closed ? 3 : 0));
         }
         else
         {
@@ -450,12 +461,32 @@ void push_children_nodes(Node *parent, Node *children)
     }
 }
 
-void push_sibling_node(Node *node, Node *it)
+void node_push_sibling(Node *node, Node *it)
 {
     Node *at = node;
     while (!node_is_nil(at->next)) at = at->next;
 
     at->next = it;
+}
+
+Node *node_from_string(String str)
+{
+    return make_node(temp_arena(), NodeType_Identifier, string_temp(str));
+}
+
+void node_push_key_value(Node *node, String key, Node *value)
+{
+    auto child = node_from_string(key);
+    node_push_child(node, child);
+    node_push_child(child, value);
+}
+
+Node *make_array_node(Node *child1, Node *child2)
+{
+    Node *array = make_node(temp_arena(), NodeType_Array, S("<array>"), NULL);
+    node_push_child(array, child1);
+    node_push_child(array, child2);
+    return array;
 }
 
 Token *peek(Parser *state, i64 offset)
@@ -548,7 +579,7 @@ Node *maybe_parse_tags(Parser *state)
             }
 
             if (!result) result = tag_node;
-            else push_sibling_node(result, tag_node);
+            else node_push_sibling(result, tag_node);
         }
 
         it = peek(state, 0);
