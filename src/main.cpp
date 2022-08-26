@@ -38,6 +38,7 @@ struct Page_Meta
     String og_type;
     String url;
     String date;
+    String author;
 };
 
 #include "helpers.h"
@@ -85,6 +86,7 @@ Page_Meta parse_page_meta(Node *root)
         else if (string_equals(key, S("og_type")))        { result.og_type = value; }
         else if (string_equals(key, S("desc")) || string_equals(key, S("description"))) { result.description = value; }
         else if (string_equals(key, S("date")))        { result.date = value; }
+        else if (string_equals(key, S("author")))         { result.author = value; }
     }
     return result;
 }
@@ -293,7 +295,7 @@ int main(int argc, char **argv)
         write(arena, "<body>\n");
 
         //~nja: header
-        write(arena, "<div class='flex-x pad-64  md:flex-y sm:csy-8 sm:pad-32'>\n");
+        write(arena, "<div class='content flex-x pad-64  md:flex-y sm:csy-8 sm:pad-32'>\n");
             write(arena, "<div class='csx-16 flex-1 flex-x center-y'>\n");
                 write(arena, "<h1 class='font-32'><a href='%S'>%S</a></h1>\n", S("/"), site.name);
             write(arena, "</div>\n");
@@ -322,7 +324,7 @@ int main(int argc, char **argv)
         }
 
         //~nja: page content
-        write(arena, "<div class='pad-64 w-800 sm:pad-32'>\n");
+        write(arena, "<div class='content pad-64 w-800 sm:pad-32'>\n");
 
             //~nja: page header
             if (page.title.count || page.date.count)
@@ -336,6 +338,12 @@ int main(int argc, char **argv)
                 {
                 write(arena, "<div>%S</div>\n", pretty_date(ParsePostDate(page.date)));
                 }
+                /*
+                if (page.author.count)
+                {
+                write(arena, "<div>by %S</div>\n", page.author);
+                }
+                */
             write(arena, "</div>\n", page.title);
             }
 
@@ -373,7 +381,7 @@ int main(int argc, char **argv)
                     auto date = pretty_date(ParsePostDate(post.date));
                     auto link = string_concat(post_slug, S(".html"));
 
-                    write(arena, "<div class='flex-y csy-8 pad-16' style='background: rgba(255, 255, 255, 0.1)'>\n");
+                    write(arena, "<div class='flex-y' style='background: rgba(255, 255, 255, 0.1)'>\n");
                     write(arena, "<a href='%S'>\n", link);
                     if (post.image.count)
                     {
@@ -381,7 +389,7 @@ int main(int argc, char **argv)
                     write(arena, "<img class='cover' src='%S' />\n", post.image);
                     write(arena, "</div>\n");
                     }
-                    write(arena, "<div class='flex-y pady-8'><div><b>%S</b></div><div>%S</div></div>\n", post.title, date);
+                    write(arena, "<div class='flex-y pad-16'><div><b>%S</b></div><div style='font-size: 0.9rem;'>%S</div></div>\n", post.title, date);
                     write(arena, "</a>\n");
                     write(arena, "</div>\n");
                 }
