@@ -6,6 +6,9 @@
 
 #include "meta.h"
 
+#define NA_HOTLOADER_IMPLEMENTATION
+#include "na_hotloader.h"
+
 struct Build_Config
 {
     String asset_dir;
@@ -23,8 +26,8 @@ struct Site_Meta
     String twitter_handle;
     String theme_color;
 
-    Node *social_icons;
     Node *pages;
+    Node *social_icons;
 };
 
 struct Page_Meta
@@ -42,6 +45,9 @@ struct Page_Meta
 Site_Meta parse_site_info(Node *root)
 {
     Site_Meta result = {};
+
+    result.pages = nil_node();
+    result.social_icons = nil_node();
 
     for (Each_Node(it, root->first_child))
     {
@@ -108,9 +114,13 @@ String generate_blog_rss_feed(Site_Meta site, Node *posts)
 
     for (Each_Node(it, posts->first_child))
     {
-        auto post = parse_page_meta(it);
+        auto post_title = node_get_child(it, 0)->string;
+        auto post_slug  = node_get_child(it, 1)->string;
+        auto post_root  = node_get_child(it, 2);
+
+        auto post = parse_page_meta(post_root);
         auto date = ParsePostDate(post.date);
-        auto link = path_join(site.url, it->string);
+        auto link = path_join(site.url, post_slug);
 
         if (!post.og_type.count) post.og_type = S("article");
 
@@ -128,6 +138,11 @@ String generate_blog_rss_feed(Site_Meta site, Node *posts)
     return arena_to_string(&arena);
 }
 
+HOTLOADER_CALLBACK(my_hotloader_callback) {
+        String relative_name = change.relative_name;
+        print("[hotloader] Changed file: %S\n", relative_name);
+}
+
 int main(int argc, char **argv)
 {
     os_init();
@@ -138,6 +153,7 @@ int main(int argc, char **argv)
         return -1;
     }
 
+    //~nja: parse arguments
     auto exe_dir = os_get_executable_directory();
 
     char *arg0 = argv[0];
@@ -147,15 +163,31 @@ int main(int argc, char **argv)
     auto data_dir   = path_resolve(exe_dir, string_from_cstr(arg1));
     auto output_dir = path_resolve(exe_dir, string_from_cstr(arg2));
 
-    auto css = os_read_entire_file(path_join(data_dir, S("style.css")));
-    css = minify_css(css);
-
+    //~nja: parse site meta
     auto site_root = parse_entire_file(temp_arena(), path_join(data_dir, S("site.meta")));
 
     auto site = parse_site_info(site_root);
     if (!site.image.count) site.image = site.icon;
 
-    auto posts = nil_node();
+    auto css = os_read_entire_file(path_join(data_dir, S("style.css")));
+    css = minify_css(css);
+
+    //~nja: site pages
+    auto output_pages = empty_node();
+    for (Each_Node(node, site.pages))
+    {
+        auto page_title = node_get_child(node, 0);
+        auto page_slug  = node_get_child(node, 1);
+
+        auto meta_file = path_join(data_dir, sprint("%S.meta", page_slug->string));
+        auto page_root = parse_entire_file(temp_arena(), meta_file);
+
+        auto array = make_array_node(page_title, page_slug, page_root);
+        node_push_child(output_pages, array);
+    }
+
+    //~nja: parse posts
+    auto posts = empty_node();
     {
         auto posts_dir = path_join(data_dir, S("posts"));
         auto post_files = os_scan_directory(posts_dir);
@@ -165,38 +197,43 @@ int main(int argc, char **argv)
             if (file_is_directory(it)) continue;
 
             auto fp = path_join(posts_dir, it->name);
-            auto post = parse_entire_file(temp_arena(), fp);
-            post->string = path_join(S("posts"), it->name);
+            auto post_root = parse_entire_file(temp_arena(), fp);
 
-            if (!node_is_nil(post))
+            if (!node_is_nil(post_root))
             {
-                node_push_child(posts, post);
+                auto meta = parse_page_meta(post_root);
+                auto title = meta.title;
+                auto slug = path_strip_extension(path_join(S("posts"), it->name));
+                post_root->string = slug;
 
-                auto array = make_array_node(node_from_string(it->name), node_from_string(post->string));
-                node_push_sibling(site.pages, array);
+                auto array = make_array_node(node_from_string(title), node_from_string(slug), post_root);
+                node_push_child(output_pages, array);
+                node_push_child(posts, array);
             }
         }
     }
 
+    //~nja: generate RSS feed
     auto rss_feed = generate_blog_rss_feed(site, posts);
     os_write_entire_file(path_join(output_dir, S("feed.xml")), rss_feed);
 
+    //~nja: output site pages
     os_make_directory(path_join(output_dir, S("posts")));
 
-    for (Each_Node(node, site.pages))
+    print("Generating Pages...\n");
+
+    for (Each_Node(node, output_pages->first_child))
     {
         auto page_title = node_get_child(node, 0)->string;
         auto page_slug  = node_get_child(node, 1)->string;
-
-        page_slug = path_strip_extension(page_slug);
-
-        auto meta_file = path_join(data_dir, sprint("%S.meta", page_slug));
-        auto page_root = parse_entire_file(temp_arena(), meta_file);
+        auto page_root  = node_get_child(node, 2);
 
         if (node_is_nil(page_root)) {
-            print("Warning, page '%S' is empty: %S\n", page_slug, meta_file);
+            print("Warning, page '%S' is empty: %S\n", page_slug, page_title);
             continue;
         }
+
+        print("  %S\n", page_slug);
 
         auto page = parse_page_meta(page_root);
 
@@ -257,7 +294,7 @@ int main(int argc, char **argv)
 
         write(arena, "<div class='flex-x pad-64  md:flex-y md:csy-8 sm:pad-32'>\n");
             write(arena, "<div class='csx-16 flex-1 flex-x center-y'>\n");
-                write(arena, "<h1><a href='%S'>%S</a></h1>\n", site.url, site.name);
+                write(arena, "<h1><a href='%S'>%S</a></h1>\n", S("/"), site.name);
             write(arena, "</div>\n");
 
             write(arena, "<div class='csx-16 flex-x'>\n");
@@ -295,9 +332,13 @@ int main(int argc, char **argv)
                 write(arena, "<div class='flex-y csy-16'>\n");
                 for (Each_Node(it, posts->first_child))
                 {
-                    auto post = parse_page_meta(it);
+                    auto post_title = node_get_child(it, 0)->string;
+                    auto post_slug  = node_get_child(it, 1)->string;
+                    auto post_root  = node_get_child(it, 2);
+
+                    auto post = parse_page_meta(post_root);
                     auto date = pretty_date(ParsePostDate(post.date));
-                    auto link = it->string;
+                    auto link = string_concat(post_slug, S(".html"));
 
                     write(arena, "<div class='flex-y csy-8'>\n");
                     write(arena, "<a href='%S'>\n", link);
@@ -321,5 +362,31 @@ int main(int argc, char **argv)
         os_write_entire_file(path_join(output_dir, sprint("%S.html", page_slug)), html);
     }
 
-    print("Done! Took %.2fms", os_time_in_miliseconds());
+    print("Done! Took %.2fms\n", os_time_in_miliseconds());
+
+    os_shell_execute(S("firefox.exe"), string_concat(S("file://"), path_join(output_dir, S("index.html"))));
+
+    #if 0
+    //~nja: poll for changes
+
+    print("Watching for changes...\n");
+
+    static Hotloader hot;
+    hotloader_init(&hot, path_join(os_get_executable_directory(), S("../src")));
+    hotloader_register_callback(&hot, my_hotloader_callback);
+
+    // NOTE(nick): main loop
+
+    while (1)
+    {
+        auto change = hotloader_poll_events(&hot);
+        if (change)
+        {
+            os_shell_execute(S("cmd"), S("/K 'C:/dev/myspace/build.bat'"));
+
+        }
+
+        os_sleep(100);
+    }
+    #endif
 }

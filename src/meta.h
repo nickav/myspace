@@ -435,6 +435,11 @@ Node *make_node(Arena *arena, Node_Type type, String str, Node *tags = NULL)
     return node;
 }
 
+Node *empty_node()
+{
+    return make_node(temp_arena(), NodeType_NULL, S(""), 0);
+}
+
 void node_push_child(Node *parent, Node *child)
 {
     if (node_is_nil(parent->first_child)) parent->first_child = child;
@@ -488,6 +493,15 @@ Node *make_array_node(Node *child1, Node *child2)
     Node *array = make_node(temp_arena(), NodeType_Array, S("<array>"), NULL);
     node_push_child(array, child1);
     node_push_child(array, child2);
+    return array;
+}
+
+Node *make_array_node(Node *child1, Node *child2, Node *child3)
+{
+    Node *array = make_node(temp_arena(), NodeType_Array, S("<array>"), NULL);
+    node_push_child(array, child1);
+    node_push_child(array, child2);
+    node_push_child(array, child3);
     return array;
 }
 

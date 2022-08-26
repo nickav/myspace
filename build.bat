@@ -1,8 +1,7 @@
 @echo off
 
 :: Setup
-set script_path=%~dp0%
-set project_root=%script_path%
+set project_root=%~dp0%
 set exe_name=myspace.exe
 
 pushd %project_root%

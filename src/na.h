@@ -282,6 +282,10 @@ VERSION HISTORY
 #define offset_of(Type, member) ((uint64_t) & (((Type *)0)->member))
 #endif
 
+#ifndef member_from_offset
+#define member_from_offset(ptr, Type, offset) (*(Type *)((u8 *)ptr + offset))
+#endif
+
 #ifndef align_of
 #define align_of(Type) ((isize)alignof(Type))
 #endif
@@ -678,6 +682,8 @@ void memory_zero(void *ptr, u64 size) {
     memory_set(ptr, 0, size);
 }
 
+#define memory_zero_array(Array) memory_zero(Array, count_of(Array) * sizeof(Array[0]))
+
 void *memory_move(void *from, void *to, u64 size) {
     // @Speed: heavily optimize!
     char *d = (char *)to;
@@ -853,11 +859,15 @@ void *arena_push(Arena *arena, u64 size) {
 
             if (ARENA_COMMIT(arena->data + arena->commit_position, commit_size)) {
                 arena->commit_position += commit_size;
-                memory_zero(result, size);
             } else {
                 result = NULL;
             }
         }
+    }
+
+    if (result)
+    {
+        memory_zero(result, size);
     }
 
     return result;
@@ -941,7 +951,6 @@ Arena_Mark arena_get_position(Arena *arena) {
 
 void arena_set_position(Arena *arena, Arena_Mark mark) {
     arena_pop_to(arena, mark.offset);
-
     arena->offset = mark.offset;
 }
 
@@ -1186,10 +1195,13 @@ struct String {
     }
 };
 
-typedef u32 MatchFlags;
+typedef u32 Match_Flags;
 enum
 {
-    MatchFlags_IgnoreCase,
+    MatchFlags_None            = 0,
+    MatchFlags_IgnoreCase      = 1 << 0,
+    MatchFlags_FindLast        = 1 << 1,
+    MatchFlags_RightSideSloppy = 1 << 2,
 };
 
 #define S(x) String{sizeof(x) - 1, cast(u8 *)x}
@@ -1280,8 +1292,39 @@ String string_from_cstr(char *data) {
     return result;
 }
 
-bool string_equals(String a, String b) {
+bool string_equals(String a, String b)
+{
     return a.count == b.count && memory_equals(a.data, b.data, a.count);
+}
+
+bool string_match(String a, String b, Match_Flags flags)
+{
+    bool result = false;
+
+    if (a.count == b.count || ((flags & MatchFlags_RightSideSloppy) && a.count >= b.count))
+    {
+        result = true;
+
+        for (i64 i = 0; i < b.count; i += 1)
+        {
+            u8 char_a = a.data[i];
+            u8 char_b = b.data[i];
+
+            if (flags & MatchFlags_IgnoreCase)
+            {
+                char_a = char_to_lower(char_a);
+                char_b = char_to_lower(char_b);
+            }
+
+            if (char_a != char_b)
+            {
+                result = false;
+                break;
+            }
+        }
+    }
+
+    return result;
 }
 
 bool string_starts_with(String str, String prefix) {
@@ -1331,14 +1374,22 @@ String string_range(u8 *at, u8 *end) {
     return make_string(at, (end - at));
 }
 
-i64 string_find(String str, String search, i64 start_index = 0) {
+i64 string_find(String str, String search, i64 start_index = 0, Match_Flags flags = 0)
+{
+    i64 result = str.count;
+
     for (i64 i = start_index; i < str.count; i += 1) {
-        if (memory_equals(str.data + i, search.data, search.count)) {
-            return i;
+        if (string_match(string_skip(str, i), search, flags | MatchFlags_RightSideSloppy))
+        {
+            result = i;
+            if (!(flags & MatchFlags_FindLast))
+            {
+                break;
+            }
         }
     }
 
-    return str.count;
+    return result;
 }
 
 i64 string_index(String str, String search, i64 start_index = 0) {
@@ -1383,6 +1434,8 @@ i64 string_count_occurances(String str, String search, i64 start_index = 0) {
     return result;
 }
 
+#define push_string_copy string_copy
+
 String string_copy(Arena *arena, String other) {
     String copy = {};
     u8 *data = push_array(arena, u8, other.count);
@@ -1414,6 +1467,12 @@ String string_write(String str, char *buffer, u64 limit)
 
 String string_write(String str, u8 *buffer, u64 limit) {
     return string_write(str, (char *)buffer, limit);
+}
+
+String string_push(Arena *arena, i64 count)
+{
+    u8 *buffer = push_array(arena, u8, count);
+    return make_string(buffer, count);
 }
 
 String string_alloc(Allocator allocator, String other) {
@@ -1645,6 +1704,26 @@ char *cstr_print(Arena *arena, const char *format, ...) {
 #define cprint(...) cstr_print(temp_arena(), __VA_ARGS__)
 
 
+i64 print_to_stringv(String buffer, const char *format, va_list args) {
+    i64 result = 0;
+    // NOTE(nick): print_to_buffer returns size excluding the null terminator
+    result = print_to_buffer((char *)buffer.data, buffer.count, format, args);
+    return result;
+}
+
+i64 print_to_string(String buffer, const char *format, ...)
+{
+    i64 result = 0;
+
+    va_list args;
+    va_start(args, format);
+    result = print_to_stringv(buffer, format, args);
+    va_end(args);
+
+    return result;
+}
+
+
 void arena_write(Arena *arena, char *format, ...)
 {
     va_list args;
@@ -1795,12 +1874,6 @@ bool path_is_root(String path) {
     );
 }
 
-String path_resolve(String base_folder, String subpath)
-{
-    if (path_is_absolute(subpath)) return subpath;
-    return path_join(base_folder, subpath);
-}
-
 String path_dirname(String path) {
     // normalize path
     if (path.data[path.count - 1] == '/') path.count -= 1;
@@ -1812,6 +1885,12 @@ String path_dirname(String path) {
     }
 
     return sprint("./");
+}
+
+String path_resolve(String base_folder, String subpath)
+{
+    if (path_is_absolute(subpath)) return subpath;
+    return path_join(base_folder, subpath);
 }
 
 String path_filename(String path) {
@@ -3271,6 +3350,11 @@ bool os_shell_execute(String cmd, String arguments, bool admin = false) {
     return success;
 }
 #endif
+
+void os_exit(i32 code)
+{
+    ExitProcess(code);
+}
 
 #endif // OS_WINDOWS
 
