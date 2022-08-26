@@ -109,9 +109,6 @@ String generate_blog_rss_feed(Site_Meta site, Node *posts)
     write(&arena, "<image><url>%S</url></image>\n", site.image);
     write(&arena, "\n");
 
-    write(&arena, "</channel>\n");
-    write(&arena, "</rss>\n");
-
     for (Each_Node(it, posts->first_child))
     {
         auto post_title = node_get_child(it, 0)->string;
@@ -120,6 +117,7 @@ String generate_blog_rss_feed(Site_Meta site, Node *posts)
 
         auto post = parse_page_meta(post_root);
         auto date = ParsePostDate(post.date);
+        //auto link = path_join(site.url, string_concat(post_slug, S(".html")));
         auto link = path_join(site.url, post_slug);
 
         if (!post.og_type.count) post.og_type = S("article");
@@ -135,12 +133,10 @@ String generate_blog_rss_feed(Site_Meta site, Node *posts)
         write(&arena, "\n");
     }
 
-    return arena_to_string(&arena);
-}
+    write(&arena, "</channel>\n");
+    write(&arena, "</rss>\n");
 
-HOTLOADER_CALLBACK(my_hotloader_callback) {
-        String relative_name = change.relative_name;
-        print("[hotloader] Changed file: %S\n", relative_name);
+    return arena_to_string(&arena);
 }
 
 int main(int argc, char **argv)
@@ -236,13 +232,16 @@ int main(int argc, char **argv)
         print("  %S\n", page_slug);
 
         auto page = parse_page_meta(page_root);
+        auto meta = page;
 
-        if (!page.title.count)       page.title = site.name;
-        if (!page.description.count) page.description = site.description;
-        if (!page.image.count)       page.image = site.image;
+        if (!meta.title.count)       meta.title = site.name;
+        if (!meta.description.count) meta.description = site.description;
+        if (!meta.image.count)       meta.image = site.image;
 
         Arena __arena = arena_make_from_memory(megabytes(1));
         Arena *arena = &__arena;
+
+        //~nja: html template
 
         write(arena, "<!DOCTYPE html>\n");
         write(arena, "<html lang='en'>\n");
@@ -251,24 +250,24 @@ int main(int argc, char **argv)
         write(arena, "<meta charset='utf-8' />\n");
         write(arena, "<meta name='viewport' content='width=device-width, initial-scale=1' />\n");
 
-        write(arena, "<title>%S</title>\n", page.title);
-        write(arena, "<meta name='description' content='%S' />\n", page.description);
+        write(arena, "<title>%S</title>\n", meta.title);
+        write(arena, "<meta name='description' content='%S' />\n", meta.description);
 
-        write(arena, "<meta itemprop='name' content='%S'>\n", page.title);
-        write(arena, "<meta itemprop='description' content='%S'>\n", page.description);
-        write(arena, "<meta itemprop='image' content='%S'>\n", page.image);
+        write(arena, "<meta itemprop='name' content='%S'>\n", meta.title);
+        write(arena, "<meta itemprop='description' content='%S'>\n", meta.description);
+        write(arena, "<meta itemprop='image' content='%S'>\n", meta.image);
 
-        write(arena, "<meta property='og:title' content='%S' />\n", page.title);
-        write(arena, "<meta property='og:description' content='%S' />\n", page.description);
-        write(arena, "<meta property='og:type' content='%S' />\n", page.og_type);
-        write(arena, "<meta property='og:url' content='%S' />\n", page.url);
+        write(arena, "<meta property='og:title' content='%S' />\n", meta.title);
+        write(arena, "<meta property='og:description' content='%S' />\n", meta.description);
+        write(arena, "<meta property='og:type' content='%S' />\n", meta.og_type);
+        write(arena, "<meta property='og:url' content='%S' />\n", meta.url);
         write(arena, "<meta property='og:site_name' content='%S' />\n", site.name);
         write(arena, "<meta property='og:locale' content='en_us' />\n");
 
         write(arena, "<meta name='twitter:card' content='summary' />\n");
-        write(arena, "<meta name='twitter:title' content='%S' />\n", page.title);
-        write(arena, "<meta name='twitter:description' content='%S' />\n", page.description);
-        write(arena, "<meta name='twitter:image' content='%S' />\n", page.image);
+        write(arena, "<meta name='twitter:title' content='%S' />\n", meta.title);
+        write(arena, "<meta name='twitter:description' content='%S' />\n", meta.description);
+        write(arena, "<meta name='twitter:image' content='%S' />\n", meta.image);
         write(arena, "<meta name='twitter:site' content='%S' />\n", site.twitter_handle);
 
         //write(arena, "<link rel='icon' type='image/png' href='%S' sizes='%dx%d' />\n", asset_path, size, size);
@@ -290,11 +289,13 @@ int main(int argc, char **argv)
         }
 
         write(arena, "</head>\n");
+        //~nja: body
         write(arena, "<body>\n");
 
-        write(arena, "<div class='flex-x pad-64  md:flex-y md:csy-8 sm:pad-32'>\n");
+        //~nja: header
+        write(arena, "<div class='flex-x pad-64  md:flex-y sm:csy-8 sm:pad-32'>\n");
             write(arena, "<div class='csx-16 flex-1 flex-x center-y'>\n");
-                write(arena, "<h1><a href='%S'>%S</a></h1>\n", S("/"), site.name);
+                write(arena, "<h1 class='font-32'><a href='%S'>%S</a></h1>\n", S("/"), site.name);
             write(arena, "</div>\n");
 
             write(arena, "<div class='csx-16 flex-x'>\n");
@@ -312,7 +313,31 @@ int main(int argc, char **argv)
             write(arena, "</div>\n");
         write(arena, "</div>\n");
 
+        //~nja: page header
+        if (page.image.count)
+        {
+        write(arena, "<div class='w-full h-320' style='background: rgba(255, 255, 255, 0.1)'>\n");
+        write(arena, "<img class='cover' src='%S' />\n", page.image);
+        write(arena, "</div>\n");
+        }
+
+        //~nja: page content
         write(arena, "<div class='pad-64 w-800 sm:pad-32'>\n");
+
+            //~nja: page header
+            if (page.title.count || page.date.count)
+            {
+            write(arena, "<div class='marb-32'>\n", page.title);
+                if (page.title.count)
+                {
+                write(arena, "<h1>%S</h1>\n", page.title);
+                }
+                if (page.date.count)
+                {
+                write(arena, "<div>%S</div>\n", pretty_date(ParsePostDate(page.date)));
+                }
+            write(arena, "</div>\n", page.title);
+            }
 
             for (Each_Node(it, page_root->first_child))
             {
@@ -321,15 +346,23 @@ int main(int argc, char **argv)
                 auto lines = string_split(it->string, S("\n"));
                 For (lines)
                 {
-                    if (!string_trim_whitespace(it).count) continue;
-                    write(arena, "<p>%S</p>\n", it);
+                    it = string_trim_whitespace(it);
+                    if (!it.count) continue;
+                    if (string_starts_with(it, S("<")) && string_ends_with(it, S(">")))
+                    {
+                        write(arena, "%S\n", it);
+                    }
+                    else
+                    {
+                        write(arena, "<p>%S</p>\n", it);
+                    }
                 }
             }
 
             // @Incomplete: make this feed into some sort of custom tag parser thing
-            if (string_equals(page_slug, S("index")))
+            if (string_equals(page_slug, S("index")) || string_equals(page_slug, S("posts")))
             {
-                write(arena, "<div class='flex-y csy-16'>\n");
+                write(arena, "<div class='flex-y csy-32 mary-32'>\n");
                 for (Each_Node(it, posts->first_child))
                 {
                     auto post_title = node_get_child(it, 0)->string;
@@ -340,13 +373,15 @@ int main(int argc, char **argv)
                     auto date = pretty_date(ParsePostDate(post.date));
                     auto link = string_concat(post_slug, S(".html"));
 
-                    write(arena, "<div class='flex-y csy-8'>\n");
+                    write(arena, "<div class='flex-y csy-8 pad-16' style='background: rgba(255, 255, 255, 0.1)'>\n");
                     write(arena, "<a href='%S'>\n", link);
                     if (post.image.count)
                     {
-                    write(arena, "<img src='%S' />\n", post.image);
+                    write(arena, "<div class='w-full h-256'>\n");
+                    write(arena, "<img class='cover' src='%S' />\n", post.image);
+                    write(arena, "</div>\n");
                     }
-                    write(arena, "<div><b>%S</b></div> <div>%S</div>\n", post.title, date);
+                    write(arena, "<div class='flex-y pady-8'><div><b>%S</b></div><div>%S</div></div>\n", post.title, date);
                     write(arena, "</a>\n");
                     write(arena, "</div>\n");
                 }
