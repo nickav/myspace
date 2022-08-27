@@ -249,3 +249,89 @@ void write(Arena *arena, char *format, ...)
     string_printv(arena, format, args);
     va_end(args);
 }
+
+static char unsigned OverhangMask[32] =
+{
+    255, 255, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,  255, 255, 255, 255,
+    0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0
+};
+
+static char unsigned DefaultSeed[16] =
+{
+    178, 201, 95, 240, 40, 41, 143, 216,
+    2, 209, 178, 114, 232, 4, 176, 188
+};
+
+struct Asset_Hash
+{
+    __m128i value;
+};
+
+static Asset_Hash ComputeAssetHash(char unsigned *At, size_t Count, char unsigned *Seedx16)
+{
+    /* TODO(casey):
+        Consider and test some alternate hash designs.  The hash here
+        was the simplest thing to type in, but it is not necessarily
+        the best hash for the job.  It may be that less AES rounds
+        would produce equivalently collision-free results for the
+        problem space.  It may be that non-AES hashing would be
+        better.  Some careful analysis would be nice.
+    */
+
+    // TODO(casey): Double-check exactly the pattern
+    // we want to use for the hash here
+
+    Asset_Hash Result = {0};
+
+    // TODO(casey): Should there be an IV?
+    __m128i HashValue = _mm_cvtsi64_si128(Count);
+    HashValue = _mm_xor_si128(HashValue, _mm_loadu_si128((__m128i *)Seedx16));
+
+    size_t ChunkCount = Count / 16;
+    while(ChunkCount--)
+    {
+        __m128i In = _mm_loadu_si128((__m128i *)At);
+        At += 16;
+
+        HashValue = _mm_xor_si128(HashValue, In);
+        HashValue = _mm_aesdec_si128(HashValue, _mm_setzero_si128());
+        HashValue = _mm_aesdec_si128(HashValue, _mm_setzero_si128());
+        HashValue = _mm_aesdec_si128(HashValue, _mm_setzero_si128());
+        HashValue = _mm_aesdec_si128(HashValue, _mm_setzero_si128());
+    }
+
+    size_t Overhang = Count % 16;
+
+#if 0
+    __m128i In = _mm_loadu_si128((__m128i *)At);
+#else
+    // TODO(casey): This needs to be improved - it's too slow, and the #if 0 branch would be nice but can't
+    // work because of overrun, etc.
+    char Temp[16];
+    
+    #if OS_WINDOWS
+    __movsb((unsigned char *)Temp, At, Overhang);
+    #else
+    memcpy(Temp, At, Overhang);
+    #endif
+
+    __m128i In = _mm_loadu_si128((__m128i *)Temp);
+#endif
+    In = _mm_and_si128(In, _mm_loadu_si128((__m128i *)(OverhangMask + 16 - Overhang)));
+    HashValue = _mm_xor_si128(HashValue, In);
+    HashValue = _mm_aesdec_si128(HashValue, _mm_setzero_si128());
+    HashValue = _mm_aesdec_si128(HashValue, _mm_setzero_si128());
+    HashValue = _mm_aesdec_si128(HashValue, _mm_setzero_si128());
+    HashValue = _mm_aesdec_si128(HashValue, _mm_setzero_si128());
+
+    Result.value = HashValue;
+
+    return Result;
+}
+
+static bool AssetHashesAreEqual(Asset_Hash a, Asset_Hash b)
+{
+    __m128i compare = _mm_cmpeq_epi32(a.value, b.value);
+    int result = _mm_movemask_epi8(compare) == 0xffff;
+    return result;
+}
