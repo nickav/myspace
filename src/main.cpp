@@ -102,6 +102,11 @@ String absolute_url(String src)
     return string_concat(S("/"), src);
 }
 
+String res_url(String src)
+{
+    return absolute_url(path_join(S("r"), src));
+}
+
 String post_link(Node *post)
 {
     String result = {};
@@ -223,12 +228,12 @@ String escape_html(String text)
 
 void write_image_cover(Arena *arena, String src)
 {
-    write(arena, "<img class='cover' src='%S' />\n", absolute_url(src));
+    write(arena, "<img class='cover' src='%S' />\n", res_url(src));
 }
 
 void write_image_tag(Arena *arena, String src, String alt)
 {
-    write(arena, "<img src='%S' alt='%S' />\n", absolute_url(src), alt);
+    write(arena, "<img src='%S' alt='%S' />\n", res_url(src), alt);
 }
 
 void write_code_block(Arena *arena, String code)
@@ -264,6 +269,64 @@ void write_code_block(Arena *arena, String code)
 
     write(arena, "</pre>");
 }
+
+void run_server(String server_url, String public_path)
+{
+    socket_init();
+
+    Socket_Address address = socket_make_address_from_url(server_url);
+    print("Server listening on http://%S:%d...\n", socket_get_address_name(address), address.port);
+    Socket socket = socket_create_tcp_server(address);
+
+    while (1)
+    {
+        reset_temporary_storage();
+
+        Socket client;
+        Socket_Address client_address;
+        if (socket_accept(&socket, &client, &client_address))
+        {
+            print("Got request from %S:%d\n", socket_get_address_name(client_address), client_address.port);
+
+            auto start_time = os_time_in_miliseconds();
+
+            auto request = socket_recieve_entire_stream(temp_arena(), &client);
+            auto req = http_parse_request(request);
+            dump(req.method);
+            dump(req.url);
+
+            auto file = req.url;
+            if (string_equals(file, S("/"))) file = S("index.html");
+
+            auto ext = path_get_extension(file);
+            if (!ext.count) {
+                file = string_concat(file, S(".html"));
+                ext = S(".html");
+            }
+
+            auto file_path = path_join(public_path, file);
+            auto contents = os_read_entire_file(file_path);
+
+            auto content_type = S("text/plain");
+            if (false) {}
+            else if (string_equals(ext, S(".html"))) { content_type = S("text/html"); }
+            else if (string_equals(ext, S(".png")))  { content_type = S("image/png"); }
+            else if (string_equals(ext, S(".jpg")))  { content_type = S("image/jpeg"); }
+            else if (string_equals(ext, S(".jpeg"))) { content_type = S("image/jpeg"); }
+            else if (string_equals(ext, S(".ico")))  { content_type = S("image/x-icon"); }
+
+            auto resp = sprint("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n%S", contents);
+            socket_send(&client, {}, resp);
+            socket_close(&client);
+
+            auto end_time = os_time_in_miliseconds();
+            print("Responded in %.2fms\n", end_time - start_time);
+        }
+
+        os_sleep(1);
+    }
+}
+
 
 int main(int argc, char **argv)
 {
@@ -407,6 +470,8 @@ int main(int argc, char **argv)
         write(arena, "<meta name='theme-color' content='%S' />\n", site.theme_color);
         write(arena, "<meta name='msapplication-TileColor' content='%S' />\n", site.theme_color);
         }
+
+        write(arena, "<link rel='shortcut icon' href='/favicon.png' sizes='32x32' />\n");
 
         if (css.count)
         {
@@ -598,62 +663,9 @@ int main(int argc, char **argv)
     print("Done! Took %.2fms\n", os_time_in_miliseconds());
 
     //os_exit(0);
-    
-    auto public_path = string_alloc(os_allocator(), output_dir);
-
-    socket_init();
-
-    Socket_Address address = socket_make_address_from_url(S("127.0.0.1:3000"));
-    print("Server listening on http://%S:%d...\n", socket_get_address_name(address), address.port);
-    Socket socket = socket_create_tcp_server(address);
 
     os_shell_execute(S("firefox.exe"), S("http://localhost:3000"));
-
-    while (1)
-    {
-        reset_temporary_storage();
-
-        Socket client;
-        Socket_Address client_address;
-        if (socket_accept(&socket, &client, &client_address))
-        {
-            print("Got request from %S:%d\n", socket_get_address_name(client_address), client_address.port);
-
-            auto start_time = os_time_in_miliseconds();
-
-            auto request = socket_recieve_entire_stream(temp_arena(), &client);
-            auto req = http_parse_request(request);
-            dump(req.method);
-            dump(req.url);
-
-            auto file = req.url;
-            if (string_equals(file, S("/"))) file = S("index.html");
-
-            auto ext = path_get_extension(file);
-            if (!ext.count) {
-                file = string_concat(file, S(".html"));
-                ext = S(".html");
-            }
-
-            auto file_path = path_join(public_path, file);
-            auto contents = os_read_entire_file(file_path);
-
-            auto content_type = S("text/plain");
-            if (false) {}
-            else if (string_equals(ext, S(".html"))) { content_type = S("text/html"); }
-            else if (string_equals(ext, S(".png")))  { content_type = S("image/png"); }
-            else if (string_equals(ext, S(".jpg")))  { content_type = S("image/jpeg"); }
-            else if (string_equals(ext, S(".jpeg"))) { content_type = S("image/jpeg"); }
-            else if (string_equals(ext, S(".ico")))  { content_type = S("image/x-icon"); }
-
-            auto resp = sprint("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n%S", contents);
-            socket_send(&client, {}, resp);
-            socket_close(&client);
-
-            auto end_time = os_time_in_miliseconds();
-            print("Responded in %.2fms\n", end_time - start_time);
-        }
-
-        os_sleep(1);
-    }
+    
+    auto public_path = string_alloc(os_allocator(), output_dir);
+    run_server(S("127.0.0.1:3000"), public_path);
 }
