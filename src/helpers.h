@@ -117,6 +117,30 @@ String minify_css(String str)
     return make_string(data, at - data);
 }
 
+String minify_js(String str)
+{
+    u8 *data = push_array(temp_arena(), u8, str.count);
+    u8 *at = data;
+    u8 *end = data + str.count;
+
+    while (str.count)
+    {
+        char it = str[0];
+
+        if (it == '\r' || it == '\n')
+        {
+            string_advance(&str, 1);
+            string_eat_whitespace(&str);
+            continue;
+        }
+
+        string_advance(&str, 1);
+        *at++ = it;
+    }
+
+    return make_string(data, at - data);
+}
+
 u64 ParsePostID(String name) {
     i64 i0 = string_index(name, S("_"));
     if (i0 >= 0)

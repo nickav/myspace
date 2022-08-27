@@ -170,6 +170,9 @@ int main(int argc, char **argv)
     auto css = os_read_entire_file(path_join(data_dir, S("style.css")));
     css = minify_css(css);
 
+    auto js = os_read_entire_file(path_join(data_dir, S("script.js")));
+    js = minify_js(js);
+
     //~nja: site pages
     auto output_pages = empty_node();
     for (Each_Node(node, site.pages))
@@ -315,10 +318,10 @@ int main(int argc, char **argv)
             write(arena, "</div>\n");
         write(arena, "</div>\n");
 
-        //~nja: page header
+        //~nja: image header / banner
         if (page.image.count)
         {
-        write(arena, "<div class='w-full h-320' style='background: rgba(255, 255, 255, 0.1)'>\n");
+        write(arena, "<div class='w-full h-320 xl:h-480 bg-light'>\n");
         write(arena, "<img class='cover' src='%S' />\n", page.image);
         write(arena, "</div>\n");
         }
@@ -330,6 +333,7 @@ int main(int argc, char **argv)
             if (page.title.count || page.date.count)
             {
             write(arena, "<div class='marb-32'>\n", page.title);
+
                 if (page.title.count)
                 {
                 write(arena, "<h1>%S</h1>\n", page.title);
@@ -371,7 +375,7 @@ int main(int argc, char **argv)
             if (string_equals(page_slug, S("index")) || string_equals(page_slug, S("posts")))
             {
                 //~nja: blog list
-                write(arena, "<div class='flex-y csy-32 mary-32'>\n");
+                write(arena, "<div class='flex-y csy-32'>\n");
                 for (Each_Node(it, posts->first_child))
                 {
                     auto post_title = node_get_child(it, 0)->string;
@@ -383,15 +387,15 @@ int main(int argc, char **argv)
                     auto link = string_concat(post_slug, S(".html"));
 
                     //~nja: article
-                    write(arena, "<div class='flex-y' style='background: rgba(255, 255, 255, 0.1)'>\n");
+                    write(arena, "<div class='flex-y bg-light'>\n");
                     write(arena, "<a href='%S'>\n", link);
                     if (post.image.count)
                     {
-                    write(arena, "<div class='w-full h-256'>\n");
+                    write(arena, "<div class='w-full h-256 sm:h-176'>\n");
                     write(arena, "<img class='cover' src='%S' />\n", post.image);
                     write(arena, "</div>\n");
                     }
-                    write(arena, "<div class='flex-y padx-32 pady-16'><div><b>%S</b></div><div style='font-size: 0.9rem;'>%S</div></div>\n", post.title, date);
+                    write(arena, "<div class='flex-y padx-32 pady-16'><div class='font-bold'>%S</div><div style='font-size: 0.9rem;'>%S</div></div>\n", post.title, date);
                     write(arena, "</a>\n");
                     write(arena, "</div>\n");
                 }
@@ -400,7 +404,15 @@ int main(int argc, char **argv)
 
         write(arena, "</div>\n");
 
+        //~nja: footer
+        write(arena, "<div class='content pad-64 w-800 sm:pad-32 flex-x center-x'>\n");
+        write(arena, "<a class='pad-16' onclick='toggle()'>💡</a>\n");
+        write(arena, "</div>\n");
+
+        write(arena, "<script>%S</script>\n", js);
+
         write(arena, "</body>\n");
+
         write(arena, "</html>\n");
 
         auto html = arena_to_string(arena);

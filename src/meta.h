@@ -52,6 +52,7 @@ enum {
 
     NodeType_Number,
     NodeType_String,
+    NodeType_Boolean,
     NodeType_Identifier,
     NodeType_Tag,
     NodeType_Array,
@@ -66,6 +67,7 @@ static String __node_type_name_lookup[] = {
 
     S("Number"),
     S("String"),
+    S("Boolean"),
     S("Identifier"),
     S("Tag"),
     S("Array"),
@@ -92,7 +94,15 @@ struct Node
     String    raw_string;
 };
 
-static Node __meta_nil_node = {};
+static Node __meta_nil_node = {
+    &__meta_nil_node,
+    &__meta_nil_node,
+    &__meta_nil_node,
+    &__meta_nil_node,
+    &__meta_nil_node,
+    &__meta_nil_node,
+    &__meta_nil_node,
+};
 
 struct Parser
 {
@@ -815,6 +825,7 @@ Node *find_by_name(Node *start, String name)
     return result;
 }
 
+#if 0
 void meta_test(String text)
 {
     auto tokens = tokenize(text);
@@ -851,5 +862,6 @@ void meta_test(String text)
     auto title = find_by_name(root->first_child, S("title"));
     dump(title->first_child->string);
 }
+#endif
 
 #endif // META_H

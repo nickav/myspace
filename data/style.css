@@ -32,15 +32,21 @@ svg {
 :root {
   --black: #000;
   --white: #fff;
+  --white-light: rgba(255, 255, 255, 0.05);
+  --black-light: rgba(0, 0, 0, 0.05);
 
   --bg:    var(--black);
   --color: var(--white);
+  --highlight: var(--white-light);
 }
 
-body.invert
+.invert
 {
   --bg:    var(--white);
   --color: var(--black);
+  --highlight: var(--black-light);
+  background: var(--bg);
+  color: var(--color);
 }
 
 body {
@@ -58,6 +64,7 @@ a {
   color: inherit;
   text-decoration: none;
   transition: all 200ms;
+  cursor: pointer;
 }
 
 a:hover {
@@ -68,16 +75,12 @@ p {
   margin: 0.75rem 0;
 }
 
-.inline-block
-{
-  display: inline-block;
+.bg-light {
+  background: var(--highlight);
 }
 
-.inline-flex
-{
-  display: inline-flex;
-}
-
+.inline-block { display: inline-block; }
+.inline-flex  { display: inline-flex; }
 
 .flex-x {
   display: flex;
@@ -142,6 +145,7 @@ p {
 
 .h-full { height: 100%; }
 .h-64   { height: 4rem; }
+.h-128  { height: 8rem; }
 .h-256  { height: 16rem; }
 .h-320  { height: 20rem; }
 
@@ -169,6 +173,20 @@ p {
 .content {
   max-width: 60rem;
   margin: 0 auto;
+}
+
+.video {
+  position: relative;
+  padding-bottom: 56.25%; /* 16:9 */
+  height: 0;
+}
+
+.video iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
 }
 
 /** Code snippets */
@@ -236,6 +254,10 @@ p {
   body {
     font-size: 20px;
   }
+
+  .xl\:h-480 {
+    height: 30rem;
+  }
 }
 
 @media screen and (max-width: 960px)
@@ -271,6 +293,8 @@ p {
 
   .sm\:pad-32 { padding: 2rem; }
   .sm\:pad-16 { padding: 1rem; }
+
+  .sm\:h-176  { height: 11rem; }
 }
 
 /*
