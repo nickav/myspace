@@ -2,10 +2,10 @@
 
 #define STB_SPRINTF_IMPLEMENTATION
 #include "third_party/stb_sprintf.h"
-#include "na.h"
 
-#define NA_HOTLOADER_IMPLEMENTATION
-#include "na_hotloader.h"
+#include "na.h"
+#define NA_NET_IMPLEMENTATION
+#include "na_net.h"
 
 #include "meta.h"
 #include "helpers.h"
@@ -97,14 +97,18 @@ Page_Meta parse_page_meta(Node *root)
     return result;
 }
 
+String absolute_url(String src)
+{
+    return string_concat(S("/"), src);
+}
+
 String post_link(Node *post)
 {
     String result = {};
     if (!node_is_nil(post))
     {
         auto post_slug = node_get_child(post, 1)->string;
-        //return post_slug;
-        return string_concat(post_slug, S(".html"));
+        return absolute_url(post_slug);
     }
     return result;
 }
@@ -162,7 +166,6 @@ String generate_blog_rss_feed(Site_Meta site, Node *posts)
 Nav_Links find_next_and_prev_pages(String page_slug, Node *posts)
 {
     Nav_Links result = {};
-    dump(path_filename(page_slug));
     i64 id = cast(i64)ParsePostID(path_filename(page_slug));
 
     i64 next_id = I64_MAX;
@@ -218,6 +221,16 @@ String escape_html(String text)
     return text;
 }
 
+void write_image_cover(Arena *arena, String src)
+{
+    write(arena, "<img class='cover' src='%S' />\n", absolute_url(src));
+}
+
+void write_image_tag(Arena *arena, String src, String alt)
+{
+    write(arena, "<img src='%S' alt='%S' />\n", absolute_url(src), alt);
+}
+
 void write_code_block(Arena *arena, String code)
 {
     string_trim_whitespace(&code);
@@ -244,7 +257,6 @@ void write_code_block(Arena *arena, String code)
         else
         {
             auto type = c_token_type_to_string(it.type);
-            dump(it.type);
             auto tok = sprint("<span class='tok-%S'>%S</span>", type, it.value);
             arena_write(arena, tok);
         }
@@ -435,7 +447,7 @@ int main(int argc, char **argv)
         if (page.image.count)
         {
         write(arena, "<div class='w-full h-320 xl:h-480 bg-light'>\n");
-            write(arena, "<img class='cover' src='%S' />\n", page.image);
+            write_image_cover(arena, page.image);
         write(arena, "</div>\n");
 
         auto links = find_next_and_prev_pages(page_slug, posts);
@@ -516,7 +528,7 @@ int main(int argc, char **argv)
                                 auto alt = node_get_child(args, 1)->string;
                                 if (!alt.count) alt = S("");
 
-                                write(arena, "<img src='%S' alt='%S' />\n", src, alt);
+                                write_image_tag(arena, src, alt);
                                 continue;
                             }
                             else if (string_match(tag_name, S("posts"), MatchFlags_IgnoreCase))
@@ -539,7 +551,7 @@ int main(int argc, char **argv)
                                     if (post.image.count)
                                     {
                                     write(arena, "<div class='w-full h-256 sm:h-176'>\n");
-                                    write(arena, "<img class='cover' src='%S' />\n", post.image);
+                                    write_image_cover(arena, post.image);
                                     write(arena, "</div>\n");
                                     }
                                     write(arena, "<div class='flex-y padx-32 pady-16'><div class='font-bold'>%S</div><div style='font-size: 0.9rem;'>%S</div></div>\n", post.title, date);
@@ -585,29 +597,58 @@ int main(int argc, char **argv)
 
     print("Done! Took %.2fms\n", os_time_in_miliseconds());
 
-    os_shell_execute(S("firefox.exe"), string_concat(S("file://"), path_join(output_dir, S("index.html"))));
+    //os_shell_execute(S("firefox.exe"), string_concat(S("file://"), path_join(output_dir, S("index.html"))));
+    //os_exit(0);
+    
+    auto public_path = string_alloc(os_allocator(), output_dir);
 
-    #if 0
-    //~nja: poll for changes
+    socket_init();
 
-    print("Watching for changes...\n");
-
-    static Hotloader hot;
-    hotloader_init(&hot, path_join(os_get_executable_directory(), S("../src")));
-    hotloader_register_callback(&hot, my_hotloader_callback);
-
-    // NOTE(nick): main loop
+    Socket socket = socket_create_tcp_server(socket_make_address_from_url(S("127.0.0.1:3000")));
+    Socket client;
 
     while (1)
     {
-        auto change = hotloader_poll_events(&hot);
-        if (change)
-        {
-            os_shell_execute(S("cmd"), S("/K 'C:/dev/myspace/build.bat'"));
+        reset_temporary_storage();
 
+        Socket client;
+        Socket_Address client_address;
+        if (socket_accept(&socket, &client, &client_address))
+        {
+            print("Got request from %S:%d\n", socket_get_address_name(client_address), client_address.port);
+
+            auto request = socket_recieve_entire_stream(temp_arena(), &client);
+            auto req = http_parse_request(request);
+            dump(req.method);
+            dump(req.url);
+            //socket_send(&client, {}, S("HTTP/1.1 200 OK\r\n\r\nHello, World!"));
+            //socket_close(&client);
+
+            auto file = req.url;
+            if (string_equals(file, S("/"))) file = S("index.html");
+
+            auto ext = path_get_extension(file);
+            if (!ext.count) {
+                file = string_concat(file, S(".html"));
+                ext = S(".html");
+            }
+
+            auto file_path = path_join(public_path, file);
+            auto contents = os_read_entire_file(file_path);
+
+            auto content_type = S("text/plain");
+            if (false) {}
+            else if (string_equals(ext, S(".html"))) { content_type =  S("text/html"); }
+            else if (string_equals(ext, S(".png"))) { content_type = S("image/png"); }
+            else if (string_equals(ext, S(".jpg"))) { content_type = S("image/jpeg"); }
+            else if (string_equals(ext, S(".jpeg"))) { content_type = S("image/jpeg"); }
+            else if (string_equals(ext, S(".ico"))) { content_type = S("image/x-icon"); }
+
+            auto resp = sprint("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n%S", contents);
+            socket_send(&client, {}, resp);
+            socket_close(&client);
         }
 
-        os_sleep(100);
+        os_sleep(1);
     }
-    #endif
 }
