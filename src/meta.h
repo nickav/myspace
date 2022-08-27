@@ -595,7 +595,7 @@ Node *maybe_parse_tags(Parser *state)
         if (next && next->type == TokenType_Identifier)
         {
             consume(state, next);
-            auto tag_node = make_node(state->arena, NodeType_Identifier, next->value);
+            auto tag_node = make_node(state->arena, NodeType_Tag, next->value);
 
             it = peek(state, 0);
             if (it && token_is_open_bracket(it))
@@ -622,6 +622,11 @@ Node *parse_primary_expression(Parser *state)
 
     if (!it)
     {
+        if (tags)
+        {
+            return tags;
+        }
+        
         assert(!"Expected number, literal or string!");
         return null;
     }
@@ -742,26 +747,9 @@ Node *parse_entire_file(Arena *arena, String path)
 
 #define Each_Node(child, root) Node *child = root; !node_is_nil(child); child = child->next
 
-bool node_has_tag(Node *it, String tag_name)
-{
-    bool result = false;
-
-    for (Each_Node(tag, it->first_tag))
-    {
-        if (string_equals(tag->string, tag_name))
-        {
-            result = true;
-            break;
-        }
-    }
-
-    return result;
-}
-
-Node *find_child_by_name(Node *root, String name)
+Node *node_find_child(Node *root, String name)
 {
     Node *result = &__meta_nil_node;
-
     for (Each_Node(it, root->first_child))
     {
         if (string_equals(it->string, name))
@@ -775,21 +763,57 @@ Node *find_child_by_name(Node *root, String name)
 
 Node *node_find_key_value(Node *root, String key)
 {
-    return find_child_by_name(root, key)->first_child;
+    return node_find_child(root, key)->first_child;
 }
 
 Node *node_get_child(Node *root, i64 child_index)
 {
-    if (node_is_nil(root)) return nil_node();
-
-    Node *result = root->first_child;
-
-    while (child_index > 0 && !node_is_nil(result))
+    Node *result = nil_node();
+    if (root)
     {
-        result = result->next;
-        child_index -= 1;
+        Node *at = root->first_child;
+        while (child_index > 0 && !node_is_nil(at))
+        {
+            at = at->next;
+            child_index -= 1;
+        }
+
+        if (!node_is_nil(at)) result = at;
+    }
+    return result;
+}
+
+Node *node_find_tag(Node *it, String tag_name)
+{
+    Node *result = null;
+
+    for (Each_Node(tag, it->first_tag))
+    {
+        if (string_equals(tag->string, tag_name))
+        {
+            result = tag;
+            break;
+        }
     }
 
+    return result;
+}
+
+Node *node_get_tag(Node *root, i64 tag_index)
+{
+    Node *result = nil_node();
+
+    if (root)
+    {
+        Node *at = root->first_tag;
+        while (tag_index > 0 && !node_is_nil(at))
+        {
+            at = at->next;
+            tag_index -= 1;
+        }
+
+        if (!node_is_nil(at)) result = at;
+    }
     return result;
 }
 

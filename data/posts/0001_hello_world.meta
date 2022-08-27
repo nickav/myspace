@@ -15,5 +15,6 @@ We have really amazing things to say about it!
 
 @code
 ```
-whats up
+String string = os_read_entire_file(S("hello.txt"));
+print("%S\n", string);
 ```

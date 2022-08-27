@@ -613,9 +613,13 @@ STBSP__PUBLICDEF int STB_SPRINTF_DECORATE(vsprintfcb)(STBSP_SPRINTFCB *callback,
          // get the string
          str = va_arg(va, stbsp_String);
 
-         if (str.count == 0) {
+         if (str.count == 0 && str.data == 0) {
             s = (char *)"null";
             l = 4;
+         }
+         else if (str.count == 0) {
+            s = (char *)"";
+            l = 0;
          } else {
             s = (char *)str.data;
             l = str.count > (~0u) ? (~0u) : str.count;;

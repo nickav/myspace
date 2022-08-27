@@ -141,19 +141,14 @@ String minify_js(String str)
     return make_string(data, at - data);
 }
 
-u64 ParsePostID(String name) {
-    i64 i0 = string_index(name, S("_"));
-    if (i0 >= 0)
-    {
-        i64 i1 = string_index(name, S("."), i0 + 1);
-        if (i1 >= 0)
-        {
-            auto str = string_slice(name, i0 + 1, i1);
-            return (i64)string_to_i64(str);
-        }
-    }
+u64 ParsePostID(String name)
+{
+    name = path_strip_extension(name);
+    name = path_filename(name);
 
-    return 0;
+    i64 idx = string_find(name, S("_"));
+    name = string_slice(name, 0, idx);
+    return (i64)string_to_i64(name);
 }
 
 Date_Time ParsePostDate(String str)
