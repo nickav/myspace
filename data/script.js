@@ -23,3 +23,7 @@ if (window.matchMedia)
         up(!e.matches, true);
     });
 }
+
+window.addEventListener('load', () => {
+    document.getElementsByTagName('html')[0].className += 'load';
+});
