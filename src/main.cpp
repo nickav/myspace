@@ -370,6 +370,7 @@ int main(int argc, char **argv)
             // @Incomplete: make this feed into some sort of custom tag parser thing
             if (string_equals(page_slug, S("index")) || string_equals(page_slug, S("posts")))
             {
+                //~nja: blog list
                 write(arena, "<div class='flex-y csy-32 mary-32'>\n");
                 for (Each_Node(it, posts->first_child))
                 {
@@ -381,6 +382,7 @@ int main(int argc, char **argv)
                     auto date = pretty_date(ParsePostDate(post.date));
                     auto link = string_concat(post_slug, S(".html"));
 
+                    //~nja: article
                     write(arena, "<div class='flex-y' style='background: rgba(255, 255, 255, 0.1)'>\n");
                     write(arena, "<a href='%S'>\n", link);
                     if (post.image.count)
@@ -389,7 +391,7 @@ int main(int argc, char **argv)
                     write(arena, "<img class='cover' src='%S' />\n", post.image);
                     write(arena, "</div>\n");
                     }
-                    write(arena, "<div class='flex-y pad-16'><div><b>%S</b></div><div style='font-size: 0.9rem;'>%S</div></div>\n", post.title, date);
+                    write(arena, "<div class='flex-y padx-32 pady-16'><div><b>%S</b></div><div style='font-size: 0.9rem;'>%S</div></div>\n", post.title, date);
                     write(arena, "</a>\n");
                     write(arena, "</div>\n");
                 }
