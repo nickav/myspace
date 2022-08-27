@@ -799,6 +799,11 @@ Node *node_find_tag(Node *it, String tag_name)
     return result;
 }
 
+bool node_has_tag(Node *it, String tag_name)
+{
+    return !node_is_nil(node_find_tag(it, tag_name));
+}
+
 Node *node_get_tag(Node *root, i64 tag_index)
 {
     Node *result = nil_node();

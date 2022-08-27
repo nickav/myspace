@@ -5,44 +5,41 @@
 Here is a block comment!
 */
 
-typedef u32 Token_Type;
+typedef u32 C_Token_Type;
+typedef u32 C_Parser_Type;
 enum {
-    TokenType_Unknown = 0,
+    C_TokenType_Unknown = 0,
 
-    TokenType_Number,
-    TokenType_String,
-    TokenType_Keyword,
-    TokenType_Literal,
-    TokenType_Identifier,
+    C_TokenType_Number,
+    C_TokenType_String,
+    C_TokenType_Literal,
+    C_TokenType_Identifier,
 
-    TokenType_Operator,
+    C_TokenType_Operator,
 
-    TokenType_Paren,
-    TokenType_Brace,
-    TokenType_Bracket,
-    TokenType_Semicolon,
-    TokenType_Comma,
-    TokenType_Equals,
+    C_TokenType_Paren,
+    C_TokenType_Brace,
+    C_TokenType_Bracket,
+    C_TokenType_Semicolon,
+    C_TokenType_Comma,
+    C_TokenType_Equals,
 
-    TokenType_Comment,
-    TokenType_Whitespace,
+    C_TokenType_Comment,
 
-    TokenType_Macro,
+    C_TokenType_Macro,
 
-    // I dont' really know what to do with these... they're kind of really parser types
-    // more so than tokenizer types
-    TokenType_Type,
-    TokenType_Function,
-    TokenType_Constant,
+    // NOTE(nick): these are really more parser types
+    C_ParserType_Keyword,
+    C_ParserType_Token,
+    C_ParserType_Function,
 
-    TokenType_COUNT,
+    C_TokenType_COUNT,
 };
 
-String token_type_lt[] = {
+String __c_token_type_lt[] = {
     S("Unknown"),
     S("Number"),
     S("String"),
-    S("Keyword"),
     S("Literal"),
     S("Identifier"),
     S("Operator"),
@@ -53,21 +50,22 @@ String token_type_lt[] = {
     S("Comma"),
     S("Equals"),
     S("Comment"),
-    S("Whitespace"),
     S("Macro"),
+    S("Keyword"),
     S("Type"),
     S("Function"),
     S("Constant"),
+    S("COUNT"),
 };
 
-struct Token {
-    Token_Type type;
+struct C_Token {
+    C_Token_Type type;
     String     value;
 };
 
-Array<Token> tokenize(String text)
+Array<C_Token> c_tokenize(String text)
 {
-    Array<Token> tokens = {};
+    Array<C_Token> tokens = {};
     array_init_from_allocator(&tokens, temp_allocator(), 256);
 
     i64 i = 0;
@@ -83,9 +81,6 @@ Array<Token> tokenize(String text)
                 i += 1;
             }
 
-            //auto token = array_push(&tokens);
-            //token->type = TokenType_Whitespace;
-            //token->value = string_slice(text, start, i);
             continue;
         }
 
@@ -104,7 +99,7 @@ Array<Token> tokenize(String text)
                 }
 
                 auto token = array_push(&tokens);
-                token->type = TokenType_Comment;
+                token->type = C_TokenType_Comment;
                 token->value = string_slice(text, start, i - 1); // ignore the newline
                 continue;
             }
@@ -135,7 +130,7 @@ Array<Token> tokenize(String text)
                 auto value = string_slice(text, start, i + 2);
 
                 auto token = array_push(&tokens);
-                token->type = TokenType_Comment;
+                token->type = C_TokenType_Comment;
                 token->value = value;
                 i += 2;
                 continue;
@@ -171,7 +166,7 @@ Array<Token> tokenize(String text)
             i += 1;
 
             auto token = array_push(&tokens);
-            token->type = TokenType_String;
+            token->type = C_TokenType_String;
             token->value = string_slice(text, start, i);
             continue;
         }
@@ -184,7 +179,7 @@ Array<Token> tokenize(String text)
             while (i < text.count && char_is_alpha(text[i])) i += 1;
 
             auto token = array_push(&tokens);
-            token->type = TokenType_Macro;
+            token->type = C_TokenType_Macro;
             token->value = string_slice(text, start, i);
             continue;
         }
@@ -212,7 +207,7 @@ Array<Token> tokenize(String text)
             // @Incomplete: suffixes
 
             auto token = array_push(&tokens);
-            token->type = TokenType_Number;
+            token->type = C_TokenType_Number;
             token->value = string_slice(text, start, i);
             continue;
         }
@@ -227,10 +222,10 @@ Array<Token> tokenize(String text)
             for (int j = 0; j < count_of(literals); j++)
             {
                 auto it = literals[j];
-                if (string_match(text, i, it))
+                if (string_match(string_skip(text, i), it, MatchFlags_IgnoreCase))
                 {
                     auto token = array_push(&tokens);
-                    token->type = TokenType_Literal;
+                    token->type = C_TokenType_Literal;
                     token->value = string_slice(text, i, i + it.count);
                     i += it.count;
                     match = true;
@@ -253,7 +248,7 @@ Array<Token> tokenize(String text)
             }
 
             auto token = array_push(&tokens);
-            token->type = TokenType_Identifier;
+            token->type = C_TokenType_Identifier;
             token->value = string_slice(text, start, i);
             continue;
         }
@@ -264,7 +259,7 @@ Array<Token> tokenize(String text)
         if (it == ';')
         {
             auto token = array_push(&tokens);
-            token->type = TokenType_Semicolon;
+            token->type = C_TokenType_Semicolon;
             token->value = string_slice(text, i, i + 1);
             i += 1;
             continue;
@@ -273,7 +268,7 @@ Array<Token> tokenize(String text)
         if (it == '(' || it == ')')
         {
             auto token = array_push(&tokens);
-            token->type = TokenType_Paren;
+            token->type = C_TokenType_Paren;
             token->value = string_slice(text, i, i + 1);
             i += 1;
             continue;
@@ -306,14 +301,14 @@ Array<Token> tokenize(String text)
         )
         {
             auto token = array_push(&tokens);
-            token->type = TokenType_Operator;
+            token->type = C_TokenType_Operator;
             token->value = string_slice(text, i, i + 1);
             i += 1;
             continue;
         }
 
         auto token = array_push(&tokens);
-        token->type = TokenType_Unknown;
+        token->type = C_TokenType_Unknown;
         token->value = string_slice(text, i, i + 1);
         i ++;
     }
@@ -321,31 +316,31 @@ Array<Token> tokenize(String text)
     return tokens;
 }
 
-String token_type_to_string(Token_Type type)
+String c_token_type_to_string(C_Token_Type type)
 {
-    if (type >= 0 && type <= TokenType_COUNT)
+    if (type >= 0 && type < C_TokenType_COUNT)
     {
-        return token_type_lt[type];
+        return __c_token_type_lt[type];
     }
     return S("");
 }
 
-void print_tokens(Array<Token> tokens)
+void print_tokens(Array<C_Token> tokens)
 {
     For (tokens) {
-        auto type = token_type_to_string(it.type);
+        auto type = c_token_type_to_string(it.type);
         print("Token { type=%S, text=\"%S\" }\n", type, it.value);
     }
 }
 
-i64 token_loc(Token *it, String code)
+i64 c_token_loc(C_Token *it, String code)
 {
     return it->value.data - code.data;
 }
 
-String whitespace_before_token(Token *it, String code)
+String c_whitespace_before_token(C_Token *it, String code)
 {
-    i64 loc = token_loc(it, code);
+    i64 loc = c_token_loc(it, code);
     if (loc > 0 && char_is_whitespace(code[loc - 1]))
     {
         loc -= 1;
@@ -358,18 +353,9 @@ String whitespace_before_token(Token *it, String code)
     return S("");
 }
 
-bool string_is_upper(String str) {
-    for (i64 i = 0; i < str.count; i += 1) {
-        if (!char_is_upper(str[i])) {
-            return false;
-        }
-    }
-    return true;
-}
-
-void convert_token_c_like(Token *it, Token *prev)
+void c_convert_token_c_like(C_Token *it, C_Token *prev)
 {
-    if (it->type == TokenType_Identifier)
+    if (it->type == C_TokenType_Identifier)
     {
         auto lower = string_lower(it->value);
         if (
@@ -427,7 +413,7 @@ void convert_token_c_like(Token *it, Token *prev)
             false
         )
         {
-             it->type = TokenType_Keyword;
+             it->type = C_ParserType_Keyword;
         }
 
         if (
@@ -468,21 +454,30 @@ void convert_token_c_like(Token *it, Token *prev)
             false
         )
         {
-            it->type = TokenType_Type;
+            it->type = C_ParserType_Token;
         }
     }
 
     // NOTE(nick): some really basic parsing
     if (prev)
     {
-        if (it->type == TokenType_Identifier && prev->type == TokenType_Identifier)
+        if (it->type == C_TokenType_Identifier && prev->type == C_TokenType_Identifier)
         {
-            prev->type = TokenType_Type;
+            prev->type = C_ParserType_Token;
         }
 
-        if (it->type == TokenType_Paren && it->value.data[0] == '(' && prev->type == TokenType_Identifier)
+        if (it->type == C_TokenType_Paren && it->value.data[0] == '(' && prev->type == C_TokenType_Identifier)
         {
-            prev->type = TokenType_Function;
+            prev->type = C_ParserType_Function;
         }
+    }
+}
+
+void c_convert_tokens_to_c_like(Array<C_Token> tokens)
+{
+    For_Index (tokens) {
+        auto it = &tokens[index];
+        auto prev = index > 0 ? &tokens[index - 1] : null;
+        c_convert_token_c_like(it, prev);
     }
 }

@@ -1732,6 +1732,11 @@ void arena_write(Arena *arena, char *format, ...)
     va_end(args);
 }
 
+void arena_write(Arena *arena, String string)
+{
+    arena_write(arena, string.data, string.count);
+}
+
 String arena_to_string(Arena *arena) {
     return make_string(arena->data, arena->offset);
 }

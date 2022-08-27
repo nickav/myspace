@@ -9,6 +9,7 @@
 
 #include "meta.h"
 #include "helpers.h"
+#include "code_parser.h"
 
 struct Build_Config
 {
@@ -204,6 +205,54 @@ Nav_Links find_next_and_prev_pages(String page_slug, Node *posts)
     return result;
 }
 
+String escape_html(String text)
+{
+    if (string_contains(text, S("<")) || string_contains(text, S(">")))
+    {
+        // NOTE(nick): crazy inefficient!
+        auto parts = string_split(text, S("<"));
+        text = string_join(parts, S("&lt;"));
+        parts = string_split(text, S(">"));
+        text = string_join(parts, S("&gt;"));
+    }
+    return text;
+}
+
+void write_code_block(Arena *arena, String code)
+{
+    string_trim_whitespace(&code);
+    if (!code.count) return;
+
+    auto tokens = c_tokenize(code);
+    c_convert_tokens_to_c_like(tokens);
+
+    write(arena, "<pre class='code'>");
+
+    For (tokens)
+    {
+        auto whitespace = c_whitespace_before_token(&it, code);
+        arena_write(arena, whitespace);
+
+        if (
+            it.type == C_TokenType_Identifier ||
+            it.type == C_TokenType_Operator ||
+            it.type == C_TokenType_Semicolon ||
+            it.type == C_TokenType_Paren)
+        {
+            arena_write(arena, escape_html(it.value));
+        }
+        else
+        {
+            auto type = c_token_type_to_string(it.type);
+            dump(it.type);
+            auto tok = sprint("<span class='tok-%S'>%S</span>", type, it.value);
+            arena_write(arena, tok);
+        }
+    }
+
+    write(arena, "</pre>");
+}
+
 int main(int argc, char **argv)
 {
     os_init();
@@ -284,6 +333,7 @@ int main(int argc, char **argv)
     //~nja: output site pages
     os_make_directory(path_join(output_dir, S("posts")));
 
+    print("[time] %.2fms\n", os_time_in_miliseconds());
     print("Generating Pages...\n");
 
     for (Each_Node(node, output_pages->first_child))
@@ -428,7 +478,14 @@ int main(int argc, char **argv)
 
             for (Each_Node(it, page_root->first_child))
             {
+                // NOTE(nick): only emit "loose" nodes
                 if (node_has_children(it)) continue;
+
+                if (node_has_tag(it, S("code")))
+                {
+                    write_code_block(arena, it->string);
+                    continue;
+                }
 
                 auto lines = string_split(it->string, S("\n"));
                 For (lines)

@@ -123,19 +123,33 @@ String minify_js(String str)
     u8 *at = data;
     u8 *end = data + str.count;
 
+    bool did_write_char = false;
     while (str.count)
     {
         char it = str[0];
 
         if (it == '\r' || it == '\n')
         {
-            string_advance(&str, 1);
             string_eat_whitespace(&str);
             continue;
         }
 
+        char last_written_char = did_write_char ? at[-1] : '\0';
+
+        if (it == ' ')
+        {
+            // NOTE(nick): only emit max 1 consecutive space
+            if (last_written_char == ' ')
+            {
+                string_advance(&str, 1);
+                continue;
+            }
+        }
+
+
         string_advance(&str, 1);
         *at++ = it;
+        did_write_char = true;
     }
 
     return make_string(data, at - data);
