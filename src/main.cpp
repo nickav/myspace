@@ -597,15 +597,17 @@ int main(int argc, char **argv)
 
     print("Done! Took %.2fms\n", os_time_in_miliseconds());
 
-    //os_shell_execute(S("firefox.exe"), string_concat(S("file://"), path_join(output_dir, S("index.html"))));
     //os_exit(0);
     
     auto public_path = string_alloc(os_allocator(), output_dir);
 
     socket_init();
 
-    Socket socket = socket_create_tcp_server(socket_make_address_from_url(S("127.0.0.1:3000")));
-    Socket client;
+    Socket_Address address = socket_make_address_from_url(S("127.0.0.1:3000"));
+    print("Server listening on http://%S:%d...\n", socket_get_address_name(address), address.port);
+    Socket socket = socket_create_tcp_server(address);
+
+    os_shell_execute(S("firefox.exe"), S("http://localhost:3000"));
 
     while (1)
     {
@@ -617,12 +619,12 @@ int main(int argc, char **argv)
         {
             print("Got request from %S:%d\n", socket_get_address_name(client_address), client_address.port);
 
+            auto start_time = os_time_in_miliseconds();
+
             auto request = socket_recieve_entire_stream(temp_arena(), &client);
             auto req = http_parse_request(request);
             dump(req.method);
             dump(req.url);
-            //socket_send(&client, {}, S("HTTP/1.1 200 OK\r\n\r\nHello, World!"));
-            //socket_close(&client);
 
             auto file = req.url;
             if (string_equals(file, S("/"))) file = S("index.html");
@@ -638,15 +640,18 @@ int main(int argc, char **argv)
 
             auto content_type = S("text/plain");
             if (false) {}
-            else if (string_equals(ext, S(".html"))) { content_type =  S("text/html"); }
-            else if (string_equals(ext, S(".png"))) { content_type = S("image/png"); }
-            else if (string_equals(ext, S(".jpg"))) { content_type = S("image/jpeg"); }
+            else if (string_equals(ext, S(".html"))) { content_type = S("text/html"); }
+            else if (string_equals(ext, S(".png")))  { content_type = S("image/png"); }
+            else if (string_equals(ext, S(".jpg")))  { content_type = S("image/jpeg"); }
             else if (string_equals(ext, S(".jpeg"))) { content_type = S("image/jpeg"); }
-            else if (string_equals(ext, S(".ico"))) { content_type = S("image/x-icon"); }
+            else if (string_equals(ext, S(".ico")))  { content_type = S("image/x-icon"); }
 
             auto resp = sprint("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n%S", contents);
             socket_send(&client, {}, resp);
             socket_close(&client);
+
+            auto end_time = os_time_in_miliseconds();
+            print("Responded in %.2fms\n", end_time - start_time);
         }
 
         os_sleep(1);
