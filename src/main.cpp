@@ -226,14 +226,21 @@ String escape_html(String text)
     return text;
 }
 
+void write_image(Arena *arena, String src, String alt, String rest = {})
+{
+    if (string_contains(src, S("pixel"))) rest = string_concat(rest, S(" style='image-rendering:pixelated;'"));
+    write(arena, "<img src='%S' alt='%S' %S/>\n", res_url(src), alt, rest);
+}
+
 void write_image_cover(Arena *arena, String src)
 {
-    write(arena, "<img class='cover' src='%S' />\n", res_url(src));
+    String style = {};
+    write_image(arena, src, S(""), S("class='cover'"));
 }
 
 void write_image_tag(Arena *arena, String src, String alt)
 {
-    write(arena, "<img src='%S' alt='%S' />\n", res_url(src), alt);
+    write_image(arena, src, alt);
 }
 
 void write_code_block(Arena *arena, String code)
