@@ -29,6 +29,8 @@ struct Site_Meta
     String theme_color;
 
     Node *pages;
+    Node *projects;
+    Node *links;
     Node *social_icons;
 };
 
@@ -54,6 +56,8 @@ Site_Meta parse_site_info(Node *root)
     Site_Meta result = {};
 
     result.pages = nil_node();
+    result.links = nil_node();
+    result.projects = nil_node();
     result.social_icons = nil_node();
 
     for (Each_Node(it, root->first_child))
@@ -71,8 +75,10 @@ Site_Meta parse_site_info(Node *root)
         else if (string_equals(key, S("twitter_handle"))) { result.twitter_handle = value; } 
         else if (string_equals(key, S("theme_color")))    { result.theme_color = value; } 
 
-        else if (string_equals(key, S("social_icons")))   { result.social_icons = it->first_child; } 
         else if (string_equals(key, S("pages")))          { result.pages = it->first_child; } 
+        else if (string_equals(key, S("links")))          { result.links = it->first_child; } 
+        else if (string_equals(key, S("projects")))       { result.projects = it->first_child; } 
+        else if (string_equals(key, S("social_icons")))   { result.social_icons = it->first_child; } 
     }
 
     return result;
@@ -243,6 +249,13 @@ void write_image_tag(Arena *arena, String src, String alt)
     write_image(arena, src, alt);
 }
 
+void write_link(Arena *arena, String text, String href)
+{
+    bool is_external = string_find(href, S("://"), 0, 0) < href.count;
+    auto target = is_external ? S("_blank") : S("");
+    write(arena, "<a class='link' href='%S' target='%S'>%S</a>\n", href, target, text);
+}
+
 void write_code_block(Arena *arena, String code)
 {
     string_trim_whitespace(&code);
@@ -304,6 +317,7 @@ void run_server(String server_url, String public_path)
 
             auto file = req.url;
             if (string_equals(file, S("/"))) file = S("index.html");
+            if (string_ends_with(file, S("/"))) file = string_slice(file, 0, file.count - 1);
 
             auto ext = path_get_extension(file);
             if (!ext.count) {
@@ -313,6 +327,13 @@ void run_server(String server_url, String public_path)
 
             auto file_path = path_join(public_path, file);
             auto contents = os_read_entire_file(file_path);
+
+            if (!contents.data)
+            {
+                auto resp = sprint("HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\n\r\n%S", S("Not Found"));
+                socket_send(&client, {}, resp);
+                socket_close(&client);
+            }
 
             auto content_type = S("text/plain");
             if (false) {}
@@ -526,11 +547,11 @@ int main(int argc, char **argv)
         write(arena, "<div class='content w-800 padx-64 h-64 flex-x center-y csx-32' style='margin-bottom: -4rem'>");
             if (links.prev)
             {
-                write(arena, "<a class='' href='%S'>← Prev</a>", post_link(links.prev));
+                write(arena, "<a class='font-bold pady-16' href='%S'>← Prev</a>", post_link(links.prev));
             }
             if (links.next)
             {
-                write(arena, "<a class='align-right' href='%S'>Next →</a>", post_link(links.next));
+                write(arena, "<a class='font-bold pady-16 align-right' href='%S'>Next →</a>", post_link(links.next));
             }
         write(arena, "</div>\n");
 
@@ -571,6 +592,7 @@ int main(int argc, char **argv)
                     continue;
                 }
 
+                //~nja: custom tags
                 auto lines = string_split(it->string, S("\n"));
                 For (lines)
                 {
@@ -588,10 +610,7 @@ int main(int argc, char **argv)
                             {
                                 auto text = node_get_child(args, 0)->string;
                                 auto href = node_get_child(args, 1)->string;
-                                bool is_external = string_find(href, S("://"), 0, 0) < href.count;
-                                auto target = is_external ? S("_blank") : S("");
-
-                                write(arena, "<a href='%S' target='%S'>%S</a>\n", href, target, text);
+                                write_link(arena, text, href);
                                 continue;
                             }
                             else if (string_match(tag_name, S("img"), MatchFlags_IgnoreCase))
@@ -631,6 +650,39 @@ int main(int argc, char **argv)
                                     write(arena, "</div>\n");
                                 }
                                 write(arena, "</div>\n");
+
+                                continue;
+                            }
+                            else if (string_match(tag_name, S("projects"), MatchFlags_IgnoreCase))
+                            {
+                                write(arena, "<div class='grid marb-32'>");
+
+                                for (Each_Node(project, site.projects))
+                                {
+                                    auto title = node_get_child(project, 0)->string;
+                                    auto desc  = node_get_child(project, 1)->string;
+                                    auto link  = node_get_child(project, 2)->string;
+
+                                    write(arena, "<a class='flex-y center-y padx-32 pady-16 bg-light' href='%S' target='_blank'>", link);
+                                    write(arena, "<div class='flex-y'>");
+                                    write(arena, "<div class='font-bold'>%S</div>", title);
+                                    write(arena, "<div class='c-gray' style='font-size: 0.9rem;'>%S</div>", desc);
+                                    write(arena, "</div>");
+                                    write(arena, "</a>");
+                                }
+
+                                write(arena, "</div>\n");
+
+                                continue;
+                            }
+                            else if (string_match(tag_name, S("links"), MatchFlags_IgnoreCase))
+                            {
+                                for (Each_Node(link, site.links))
+                                {
+                                    auto text = node_get_child(link, 0)->string;
+                                    auto href = node_get_child(link, 1)->string;
+                                    write_link(arena, text, href);
+                                }
 
                                 continue;
                             }

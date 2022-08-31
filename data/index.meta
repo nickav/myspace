@@ -1,7 +1,17 @@
 ```
-<h4>
-Welcome to my website! Please take off your shoes and enjoy your stay
-</h4>
+@links
 
+<div class='csy-64'>
+
+<div class='csy-32'>
+<h2>Featured Work</h2>
+@projects
+</div>
+
+<div class='csy-32'>
+<h2>Recent Posts</h2>
 @posts
+</div>
+
+</div>
 ```

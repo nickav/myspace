@@ -32,12 +32,15 @@ svg {
 :root {
   --black: #000;
   --white: #fff;
+  --gray:  #bbb;
   --white-light: rgba(255, 255, 255, 0.05);
   --black-light: rgba(0, 0, 0, 0.05);
 
   --bg:    var(--black);
   --color: var(--white);
   --highlight: var(--white-light);
+
+  --accent: #afaffc;
 }
 
 .invert
@@ -45,6 +48,7 @@ svg {
   --bg:    var(--white);
   --color: var(--black);
   --highlight: var(--black-light);
+  --gray: #555;
   background: var(--bg);
   color: var(--color);
 }
@@ -78,9 +82,22 @@ p {
   margin: 0.75rem 0;
 }
 
+.link {
+  border-bottom: 4px solid var(--accent);
+}
+
+.c-gray { color: var(--gray); }
+
 .bg-light {
   background: var(--highlight);
 }
+
+.font-normal { font-weight: 400; }
+.font-bold   { font-weight: 700; }
+
+.font-16 { font-size: 1rem; }
+.font-32 { font-size: 2rem; }
+
 
 .inline-block { display: inline-block; }
 .inline-flex  { display: inline-flex; }
@@ -118,6 +135,13 @@ p {
 .center {
   justify-content: center;
   align-items: center;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-gap: 1rem;
+  grid-auto-rows: 1fr;
 }
 
 .size-16 { width: 1rem; height: 1rem; }
@@ -161,11 +185,6 @@ p {
 .csy-16 > *:not(:last-child) { margin-bottom: 1rem; }
 .csy-32 > *:not(:last-child) { margin-bottom: 2rem; }
 .csy-64 > *:not(:last-child) { margin-bottom: 4rem; }
-
-.font-normal { font-weight: 400; }
-.font-bold   { font-weight: 700; }
-
-.font-32 { font-size: 2rem; }
 
 .cover {
   object-fit: cover;
@@ -298,6 +317,10 @@ p {
   .sm\:pad-16 { padding: 1rem; }
 
   .sm\:h-176  { height: 11rem; }
+
+  .grid {
+    grid-template-columns: repeat(1, 1fr);
+  }
 }
 
 /*
