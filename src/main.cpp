@@ -152,7 +152,6 @@ String generate_blog_rss_feed(Site_Meta site, Node *posts)
 
         auto post = parse_page_meta(post_root);
         auto date = ParsePostDate(post.date);
-        //auto link = path_join(site.url, string_concat(post_slug, S(".html")));
         auto link = path_join(site.url, post_link(it));
 
         if (!post.og_type.count) post.og_type = S("article");
@@ -667,18 +666,17 @@ int main(int argc, char **argv)
             write(arena, "<div class='marb-32'>\n", page.title);
                 if (page.title.count)
                 {
-                write(arena, "<h1>%S</h1>\n", page.title);
+                    write(arena, "<h1>%S</h1>\n", page.title);
                 }
                 if (page.date.count)
                 {
-                write(arena, "<div>%S</div>\n", pretty_date(ParsePostDate(page.date)));
+                    write(arena, "<div class='c-gray'>%S</div>\n", pretty_date(ParsePostDate(page.date)));
                 }
-                /*
                 if (page.author.count)
                 {
-                write(arena, "<div>by %S</div>\n", page.author);
+                    // @Incomplete: support other author links
+                    write(arena, "<div>By <a class='font-bold link' href='/'>%S</a></div>\n", page.author);
                 }
-                */
             write(arena, "</div>\n", page.title);
             }
 
