@@ -252,6 +252,12 @@ void write_image_tag(Arena *arena, String src, String alt)
 void write_link(Arena *arena, String text, String href)
 {
     bool is_external = string_find(href, S("://"), 0, 0) < href.count;
+
+    if (string_equals(href, S("index"))) href = S("/");
+    if (!is_external && !string_starts_with(href, S("/"))) {
+        href = string_concat(S("/"), href);
+    }
+
     auto target = is_external ? S("_blank") : S("");
     write(arena, "<a class='link' href='%S' target='%S'>%S</a>\n", href, target, text);
 }
