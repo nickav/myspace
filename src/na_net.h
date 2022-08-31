@@ -1080,6 +1080,195 @@ Socket socket_create_tcp_server(Socket_Address address)
     return result;
 }
 
+typedef struct Http_Response Http_Response;
+struct Http_Response
+{
+    i32 status_code;
+    Array<Http_Header> headers;
+    String content_type;
+    String body;
+};
+
+// https://developer.mozilla.org/en-US/docs/Web/HTTP/Status
+String http_status_name_from_code(i32 status_code)
+{
+    String result = {};
+    switch (status_code)
+    {
+        // 100s
+        case 100: { result = S("Continue"); } break;
+        case 101: { result = S("Switching Protocols"); } break;
+
+        // 200s
+        case 200: { result = S("OK"); } break;
+        case 201: { result = S("Created"); } break;
+        case 202: { result = S("Accepted"); } break;
+        case 203: { result = S("Non-Authoritative Information"); } break;
+        case 204: { result = S("No Content"); } break;
+        case 205: { result = S("Reset Content"); } break;
+        case 206: { result = S("Partial Content"); } break;
+
+        // 300s
+        case 300: { result = S("Multiple Choices"); } break;
+        case 301: { result = S("Moved Permanently"); } break;
+        case 302: { result = S("Found"); } break;
+        case 303: { result = S("See Other"); } break;
+        case 304: { result = S("Not Modified"); } break;
+        case 305: { result = S("Use Proxy"); } break;
+
+        case 307: { result = S("Temporary Redirect"); } break;
+        case 308: { result = S("Permanent Redirect"); } break;
+
+        // 400s
+        case 400: { result = S("Bad Request"); } break;
+        case 401: { result = S("Unauthorized"); } break;
+        case 402: { result = S("Payment Required"); } break;
+        case 403: { result = S("Forbidden"); } break;
+        case 404: { result = S("Not Found"); } break;
+        case 405: { result = S("Method Not Allowed"); } break;
+        case 406: { result = S("Not Acceptable"); } break;
+        case 407: { result = S("Proxy Authentication Required"); } break;
+        case 408: { result = S("Request Timeout"); } break;
+        case 409: { result = S("Conflict"); } break;
+        case 410: { result = S("Gone"); } break;
+        case 411: { result = S("Length Required"); } break;
+        case 412: { result = S("Precondition Failed"); } break;
+        case 413: { result = S("Payload Too Large"); } break;
+        case 414: { result = S("URI Too Long"); } break;
+        case 415: { result = S("Unsupported Media Type"); } break;
+
+        case 418: { result = S("I'm a teapot"); } break;
+
+        case 429: { result = S("Too Many Requests"); } break;
+        case 451: { result = S("Unavailable For Legal Reasons"); } break;
+
+        // 500s
+        case 500: { result = S("Internal Server Error"); } break;
+        case 501: { result = S("Not Implemented"); } break;
+        case 502: { result = S("Bad Gateway"); } break;
+        case 503: { result = S("Service Unavailable"); } break;
+        case 504: { result = S("Gateway Timeout"); } break;
+        case 505: { result = S("HTTP Version Not Supported"); } break;
+
+        default: break;
+    }
+    return result;
+}
+
+// https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Common_types
+#if 0
+String http_content_type_from_extension(String ext)
+{
+    String result = {};
+
+    ext = string_lower(ext);
+
+    if (false) {}
+    else if (string_equals(ext, S(".txt")))  { result = S("text/plain"); }
+    else if (string_equals(ext, S(".md")))   { result = S("text/plain"); }
+    else if (string_equals(ext, S(".html"))) { result = S("text/html"); }
+    else if (string_equals(ext, S(".css")))  { result = S("text/css"); }
+    else if (string_equals(ext, S(".js")))   { result = S("text/javascript"); }
+    else if (string_equals(ext, S(".bmp")))  { result = S("image/bmp"); }
+    else if (string_equals(ext, S(".bmp")))  { result = S("image/bmp"); }
+    else if (string_equals(ext, S(".gif")))  { result = S("image/gif"); }
+    else if (string_equals(ext, S(".png")))  { result = S("image/png"); }
+    else if (string_equals(ext, S(".jpe")))  { result = S("image/jpeg"); }
+    else if (string_equals(ext, S(".jpg")))  { result = S("image/jpeg"); }
+    else if (string_equals(ext, S(".jpeg"))) { result = S("image/jpeg"); }
+    else if (string_equals(ext, S(".ico")))  { result = S("image/x-icon"); }
+    else if (string_equals(ext, S(".svg")))  { result = S("image/svg+xml"); }
+    else if (string_equals(ext, S(".mp3")))  { result = S("audio/mpeg"); }
+    else if (string_equals(ext, S(".mp4")))  { result = S("audio/mp4"); }
+    else if (string_equals(ext, S(".wav")))  { result = S("audio/x-wav"); }
+    else if (string_equals(ext, S(".bin")))  { result = S("application/octet-stream"); }
+    else if (string_equals(ext, S(".exe")))  { result = S("application/octet-stream"); }
+    else if (string_equals(ext, S(".pdf")))  { result = S("application/pdf"); }
+    return result;
+}
+#endif
+
+struct Http_Server
+{
+    Socket socket;
+};
+
+Socket http_server_init(String server_url)
+{
+    Socket_Address address = socket_make_address_from_url(server_url);
+    Socket socket = socket_create_tcp_server(address);
+    return socket;
+}
+
+bool http_server_poll(Socket *socket, Socket *client, Socket_Address *client_address)
+{
+    return socket_accept(socket, client, client_address);
+}
+
+#define HTTP_REQUEST_CALLBACK(name) Http_Response name(Http_Request request)
+typedef HTTP_REQUEST_CALLBACK(Http_Request_Callback);
+
+void http_server_run(String server_url, Http_Request_Callback request_handler)
+{
+    Socket socket = http_server_init(server_url);
+    if (!socket_is_valid(socket)) return;
+
+    while (1)
+    {
+        reset_temporary_storage();
+
+        Socket client;
+        Socket_Address client_address;
+        if (http_server_poll(&socket, &client, &client_address))
+        {
+            auto raw_request = socket_recieve_entire_stream(temp_arena(), &client);
+            auto request = http_parse_request(raw_request);
+
+            auto response = request_handler(request);
+
+            if (!response.status_code) response.status_code = 500;
+            if (!response.content_type.count) response.content_type = S("text/plain");
+
+
+            auto final_response_str = sprint("HTTP/1.1 %d %S\r\n");
+
+            auto status_name = http_status_name_from_code(response.status_code);
+            String response_data = sprint("HTTP/1.0 %d %S\r\n", response.status_code, status_name);
+
+            if (response.content_type.count)
+            {
+                response_data.count += sprint("Content-Type: %S\r\n", response.content_type).count;
+            }
+
+            if (response.body.count)
+            {
+                response_data.count += sprint("Content-Length: %d\r\n", response.body.count).count;
+            }
+
+            if (response.headers.count > 0)
+            {
+                For (response.headers)
+                {
+                    response_data.count += sprint("%S: %S\r\n", it.key, it.value).count;
+                }
+            }
+
+            response_data.count += sprint("\r\n").count;
+
+            socket_send(&client, {}, response_data);
+
+            if (response.body.count)
+            {
+                socket_send(&client, {}, response.body);
+            }
+
+            socket_close(&client);
+        }
+
+        os_sleep(1);
+    }
+}
+
 #if 0
     Socket socket = socket_create_tcp_server(socket_make_address_from_url(S("127.0.0.1:3000")));
     Socket client;
