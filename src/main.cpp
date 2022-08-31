@@ -644,7 +644,7 @@ int main(int argc, char **argv)
         write(arena, "</div>\n");
 
         auto links = find_next_and_prev_pages(page_slug, posts);
-        write(arena, "<div class='content w-800 padx-64 h-64 flex-x center-y csx-32' style='margin-bottom: -4rem'>");
+        write(arena, "<div class='content w-800 padx-64 sm:padx-32 h-64 flex-x center-y csx-32' style='margin-bottom: -2rem'>");
             if (links.prev)
             {
                 write(arena, "<a class='font-bold pady-16' href='%S'>← Prev</a>", post_link(links.prev));
