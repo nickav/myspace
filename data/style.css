@@ -33,6 +33,7 @@ svg {
   --black: #000;
   --white: #fff;
   --gray:  #bbb;
+  --gray-light:  rgba(255, 255, 255, 0.25);
   --white-light: rgba(255, 255, 255, 0.05);
   --black-light: rgba(0, 0, 0, 0.05);
 
@@ -49,6 +50,7 @@ svg {
   --color: var(--black);
   --highlight: var(--black-light);
   --gray: #555;
+  --gray-light:  rgba(0, 0, 0, 0.25);
   background: var(--bg);
   color: var(--color);
 }
@@ -81,6 +83,20 @@ a:hover {
 
 p {
   margin: 0.75rem 0;
+}
+
+hr {
+  margin: 4rem 0;
+  border: 0;
+  display: flex;
+  justify-content: center;
+}
+
+hr:after {
+  content: '';
+  max-width: 100px;
+  width: 100%;
+  border: 2px solid var(--gray-light);
 }
 
 .link {
@@ -196,6 +212,10 @@ p {
 .content {
   max-width: 60rem;
   margin: 0 auto;
+}
+
+.content :is(h2, h3, h4, h5, h6) {
+  margin: 2rem 0 0.5rem 0;
 }
 
 .video {
