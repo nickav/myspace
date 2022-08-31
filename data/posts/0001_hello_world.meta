@@ -4,11 +4,18 @@ date:  "2021-11-19 10:13:03"
 image: "godrays_04.png"
 
 ```
-I am writing to inform you about this really cool post.
+This is text.
+I should get grouped with the above line!
 
-We have really amazing things to say about it!
+Here's a new p tag!
+```
 
-@link{'Amazing link', 'http://nickav.co'}
+```
+Hey what's up @link{'Amazing link', 'http://nickav.co'} and other stuff
+
+This is a test @code{"std::string"}
+
+This is another test `std::string` with some text after `a`, `b`, and...
 
 @img{'godrays_04.png'}
 ```

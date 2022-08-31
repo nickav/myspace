@@ -355,6 +355,27 @@ void run_server(String server_url, String public_path)
     }
 }
 
+String string_normalize_newlines(String input)
+{
+    String result = {};
+    u8 *data = push_array(temp_arena(), u8, input.count);
+    u8 *at = data;
+
+    for (i64 i = 0; i < input.count; i ++)
+    {
+        char it = input.data[i];
+        if (it == '\r')
+        {
+            continue;
+        }
+
+        *at = it;
+        at ++;
+    }
+
+    return make_string(data, at - data);
+}
+
 
 int main(int argc, char **argv)
 {
@@ -593,100 +614,152 @@ int main(int argc, char **argv)
                 }
 
                 //~nja: custom tags
-                auto lines = string_split(it->string, S("\n"));
+                auto text = string_normalize_newlines(it->string);
+                auto lines = string_split(text, S("\n\n"));
                 For (lines)
                 {
+                    auto line = string_trim_whitespace(it);
+                    if (!line.count) continue;
+
+
+                    bool skip_p_tag = string_starts_with(line, S("<")) && string_ends_with(line, S(">"));
+                    if (!skip_p_tag) write(arena, "<p>");
+
+                    i64 index = 0;
+                    while (index < line.count)
+                    {
+                        i64 search = string_find(line, S("@"), index);
+                        i64 next_index = search;
+
+                        // write out the string as normal
+                        auto slice = string_slice(line, index, next_index);
+                        //write(arena, "%S", slice);
+                        i64 slice_index = 0;
+                        while (slice_index < slice.count)
+                        {
+                            i64 next_slice_index = string_find(slice, S("`"), slice_index);
+                            write(arena, "%S", string_slice(slice, slice_index, next_slice_index));
+                            if (next_slice_index < slice.count)
+                            {
+                                i64 closing_backtick = string_find(slice, S("`"), next_slice_index + 1);
+                                if (closing_backtick < slice.count)
+                                {
+                                    write(arena, "<code class='inline_code'>%S</code>", string_slice(slice, next_slice_index + 1, closing_backtick));
+                                    next_slice_index = closing_backtick;
+                                }
+                            }
+                            slice_index = next_slice_index;
+                            slice_index += 1;
+                        }
+
+                        if (search < line.count)
+                        {
+                            i64 bracket_index = string_find(line, S("}"), search + 1);
+                            i64 newline_index = string_find(line, S("\n"), search + 1);
+                            i64 end_index = Min(bracket_index, newline_index);
+
+                            String tag_str = string_trim_whitespace(string_slice(line, search, end_index + 1));
+                            dump(tag_str);
+                            auto root = parse_entire_string(temp_arena(), tag_str);
+                            if (!node_is_nil(root) && !node_is_nil(root->first_child))
+                            {
+                                auto tag = root->first_child;
+                                auto tag_name = tag->string;
+                                auto args = tag->first_child;
+
+                                if (false) {}
+                                else if (string_match(tag_name, S("link"), MatchFlags_IgnoreCase))
+                                {
+                                    auto text = node_get_child(args, 0)->string;
+                                    auto href = node_get_child(args, 1)->string;
+                                    write_link(arena, text, href);
+                                }
+                                else if (string_match(tag_name, S("img"), MatchFlags_IgnoreCase))
+                                {
+                                    auto src = node_get_child(args, 0)->string;
+                                    auto alt = node_get_child(args, 1)->string;
+                                    if (!alt.count) alt = S("");
+
+                                    write_image_tag(arena, src, alt);
+                                }
+                                else if (string_match(tag_name, S("code"), MatchFlags_IgnoreCase))
+                                {
+                                    auto str = node_get_child(args, 0)->string;
+                                    write(arena, "<code class='inline_code'>%S</code>", str);
+                                }
+                                else if (string_match(tag_name, S("posts"), MatchFlags_IgnoreCase))
+                                {
+                                    //~nja: blog list
+                                    write(arena, "<div class='flex-y csy-32'>\n");
+                                    for (Each_Node(it, posts->first_child))
+                                    {
+                                        auto post_title = node_get_child(it, 0)->string;
+                                        auto post_slug  = node_get_child(it, 1)->string;
+                                        auto post_root  = node_get_child(it, 2);
+
+                                        auto post = parse_page_meta(post_root);
+                                        auto date = pretty_date(ParsePostDate(post.date));
+                                        auto link = post_link(it);
+
+                                        //~nja: article
+                                        write(arena, "<div class='flex-y bg-light'>\n");
+                                        write(arena, "<a href='%S'>\n", link);
+                                        if (post.image.count)
+                                        {
+                                        write(arena, "<div class='w-full h-256 sm:h-176'>\n");
+                                        write_image_cover(arena, post.image);
+                                        write(arena, "</div>\n");
+                                        }
+                                        write(arena, "<div class='flex-y padx-32 pady-16'><div class='font-bold'>%S</div><div style='font-size: 0.9rem;'>%S</div></div>\n", post.title, date);
+                                        write(arena, "</a>\n");
+                                        write(arena, "</div>\n");
+                                    }
+                                    write(arena, "</div>\n");
+                                }
+                                else if (string_match(tag_name, S("projects"), MatchFlags_IgnoreCase))
+                                {
+                                    write(arena, "<div class='grid marb-32'>");
+
+                                    for (Each_Node(project, site.projects))
+                                    {
+                                        auto title = node_get_child(project, 0)->string;
+                                        auto desc  = node_get_child(project, 1)->string;
+                                        auto link  = node_get_child(project, 2)->string;
+
+                                        write(arena, "<a class='flex-y center-y padx-32 pady-16 bg-light' href='%S' target='_blank'>", link);
+                                        write(arena, "<div class='flex-y'>");
+                                        write(arena, "<div class='font-bold'>%S</div>", title);
+                                        write(arena, "<div class='c-gray' style='font-size: 0.9rem;'>%S</div>", desc);
+                                        write(arena, "</div>");
+                                        write(arena, "</a>");
+                                    }
+
+                                    write(arena, "</div>\n");
+                                }
+                                else if (string_match(tag_name, S("links"), MatchFlags_IgnoreCase))
+                                {
+                                    for (Each_Node(link, site.links))
+                                    {
+                                        auto text = node_get_child(link, 0)->string;
+                                        auto href = node_get_child(link, 1)->string;
+                                        write_link(arena, text, href);
+                                    }
+                                }
+                            }
+
+                            next_index = end_index;
+                        }
+
+                        index = next_index;
+                        index += 1;
+                    }
+
+                    if (!skip_p_tag) write(arena, "</p>");
+
+                    #if 0
                     if (string_starts_with(it, S("@")))
                     {
                         auto root = parse_entire_string(temp_arena(), it);
-                        auto tag = root->first_child;
-                        if (!node_is_nil(tag))
-                        {
-                            auto tag_name = tag->string;
-                            auto args = tag->first_child;
-
-                            if (false) {}
-                            else if (string_match(tag_name, S("link"), MatchFlags_IgnoreCase))
-                            {
-                                auto text = node_get_child(args, 0)->string;
-                                auto href = node_get_child(args, 1)->string;
-                                write_link(arena, text, href);
-                                continue;
-                            }
-                            else if (string_match(tag_name, S("img"), MatchFlags_IgnoreCase))
-                            {
-                                auto src = node_get_child(args, 0)->string;
-                                auto alt = node_get_child(args, 1)->string;
-                                if (!alt.count) alt = S("");
-
-                                write_image_tag(arena, src, alt);
-                                continue;
-                            }
-                            else if (string_match(tag_name, S("posts"), MatchFlags_IgnoreCase))
-                            {
-                                //~nja: blog list
-                                write(arena, "<div class='flex-y csy-32'>\n");
-                                for (Each_Node(it, posts->first_child))
-                                {
-                                    auto post_title = node_get_child(it, 0)->string;
-                                    auto post_slug  = node_get_child(it, 1)->string;
-                                    auto post_root  = node_get_child(it, 2);
-
-                                    auto post = parse_page_meta(post_root);
-                                    auto date = pretty_date(ParsePostDate(post.date));
-                                    auto link = post_link(it);
-
-                                    //~nja: article
-                                    write(arena, "<div class='flex-y bg-light'>\n");
-                                    write(arena, "<a href='%S'>\n", link);
-                                    if (post.image.count)
-                                    {
-                                    write(arena, "<div class='w-full h-256 sm:h-176'>\n");
-                                    write_image_cover(arena, post.image);
-                                    write(arena, "</div>\n");
-                                    }
-                                    write(arena, "<div class='flex-y padx-32 pady-16'><div class='font-bold'>%S</div><div style='font-size: 0.9rem;'>%S</div></div>\n", post.title, date);
-                                    write(arena, "</a>\n");
-                                    write(arena, "</div>\n");
-                                }
-                                write(arena, "</div>\n");
-
-                                continue;
-                            }
-                            else if (string_match(tag_name, S("projects"), MatchFlags_IgnoreCase))
-                            {
-                                write(arena, "<div class='grid marb-32'>");
-
-                                for (Each_Node(project, site.projects))
-                                {
-                                    auto title = node_get_child(project, 0)->string;
-                                    auto desc  = node_get_child(project, 1)->string;
-                                    auto link  = node_get_child(project, 2)->string;
-
-                                    write(arena, "<a class='flex-y center-y padx-32 pady-16 bg-light' href='%S' target='_blank'>", link);
-                                    write(arena, "<div class='flex-y'>");
-                                    write(arena, "<div class='font-bold'>%S</div>", title);
-                                    write(arena, "<div class='c-gray' style='font-size: 0.9rem;'>%S</div>", desc);
-                                    write(arena, "</div>");
-                                    write(arena, "</a>");
-                                }
-
-                                write(arena, "</div>\n");
-
-                                continue;
-                            }
-                            else if (string_match(tag_name, S("links"), MatchFlags_IgnoreCase))
-                            {
-                                for (Each_Node(link, site.links))
-                                {
-                                    auto text = node_get_child(link, 0)->string;
-                                    auto href = node_get_child(link, 1)->string;
-                                    write_link(arena, text, href);
-                                }
-
-                                continue;
-                            }
-                        }
                     }
 
                     it = string_trim_whitespace(it);
@@ -699,6 +772,7 @@ int main(int argc, char **argv)
                     {
                         write(arena, "<p>%S</p>\n", it);
                     }
+                    #endif
                 }
             }
 
