@@ -25,3 +25,18 @@ This is another test `std::string` with some text after `a`, `b`, and...
 String string = os_read_entire_file(S("hello.txt"));
 print("%S\n", string);
 ```
+
+```
+
+## On memory management:
+
+Heap allocators are _expensive_, *especially compared to a really simple "linear allocator"* or "bump allocator".
+
+Plus you can combine that with OS virtual memory which winds up being a really nice and lean way to have lots of separate allocators. But it really depends on what you're doing. Linear allocators are great for games, for example, because they're really cheap. They also open up another cool pattern which I really like which is temporary memory.
+
+But, if all you're doing is writing some quick utility code that doesn't run that often, then definitely just malloc-ing a bunch of memory and going is a decent strategy. Virtual memory makes this a little better because you don't really "pay" for the whole gigabyte until you ask the OS to commit the memory. If performance does matter though, it's worth having more control over where your memory comes from!
+
+On temporary memory:
+
+Normally, returning arrays from a function in C is kind of cumbersome especially if you only want the data to "stick around" just after the function returns. Also, there are certain kinds of programs (e.g. games, web servers) that have really cleanly defined "frames" (it doesn't literally have to be a frame, but just a point in your application code where it makes sense to reset your temporary memory). So the idea is to create a "frame arena" which is just a linear allocator you reset every frame. Now, you can return arrays from functions for example!
+```

@@ -382,6 +382,80 @@ String string_normalize_newlines(String input)
     return make_string(data, at - data);
 }
 
+String apply_basic_markdown_styles(String text)
+{
+    // NOTE(nick): header tags
+    if (string_starts_with(text, S("#")))
+    {
+        i64 count = 0;
+        while (string_starts_with(text, S("#")))
+        {
+            string_advance(&text, 1);
+            count += 1;
+        }
+
+        if (count <= 6)
+        {
+            return sprint("<h%d>%S</h%d>", count, text, count);
+        }
+    }
+
+    // @Cleanup: figure out a better memory story here
+    i64 count = 16 * text.count;
+    u8 *data = push_array(temp_arena(), u8, count);
+    u8 *at = data;
+    u8 *end = data + count;
+
+    for (i64 i = 0; i < text.count; i ++)
+    {
+        char it = text.data[i];
+        char prev_it = i > 0 ? text.data[i - 1] : 0;
+
+        // bold, italic, and code blocks
+        if (prev_it != '\\')
+        {
+            if (it == '`')
+            {
+                i64 closing_index = string_find(text, S("`"), i + 1);
+                if (closing_index < text.count)
+                {
+                    at += print_to_memory(at, end - at, "<code class='inline_code'>%S</code>", string_slice(text, i + 1, closing_index));
+                    i = closing_index;
+                    continue;
+                }
+            }
+
+            if (it == '_')
+            {
+                i64 closing_index = string_find(text, S("_"), i + 1);
+                if (closing_index < text.count)
+                {
+                    at += print_to_memory(at, end - at, "<i>%S</i>", string_slice(text, i + 1, closing_index));
+                    i = closing_index;
+                    continue;
+                }
+            }
+
+            if (it == '*')
+            {
+                i64 closing_index = string_find(text, S("*"), i + 1);
+                if (closing_index < text.count)
+                {
+                    at += print_to_memory(at, end - at, "<b>%S</b>", string_slice(text, i + 1, closing_index));
+                    i = closing_index;
+                    continue;
+                }
+            }
+        }
+
+        *at = it;
+        at ++;
+    }
+
+    arena_pop(temp_arena(), end - at);
+    return make_string(data, at - data);
+}
+
 
 int main(int argc, char **argv)
 {
@@ -639,24 +713,8 @@ int main(int argc, char **argv)
 
                         // write out the string as normal
                         auto slice = string_slice(line, index, next_index);
-                        //write(arena, "%S", slice);
-                        i64 slice_index = 0;
-                        while (slice_index < slice.count)
-                        {
-                            i64 next_slice_index = string_find(slice, S("`"), slice_index);
-                            write(arena, "%S", string_slice(slice, slice_index, next_slice_index));
-                            if (next_slice_index < slice.count)
-                            {
-                                i64 closing_backtick = string_find(slice, S("`"), next_slice_index + 1);
-                                if (closing_backtick < slice.count)
-                                {
-                                    write(arena, "<code class='inline_code'>%S</code>", string_slice(slice, next_slice_index + 1, closing_backtick));
-                                    next_slice_index = closing_backtick;
-                                }
-                            }
-                            slice_index = next_slice_index;
-                            slice_index += 1;
-                        }
+                        slice = apply_basic_markdown_styles(slice);
+                        write(arena, "%S", slice);
 
                         if (search < line.count)
                         {
@@ -692,6 +750,11 @@ int main(int argc, char **argv)
                                 {
                                     auto str = node_get_child(args, 0)->string;
                                     write(arena, "<code class='inline_code'>%S</code>", str);
+                                }
+                                else if (string_match(tag_name, S("iframe"), MatchFlags_IgnoreCase))
+                                {
+                                    auto src = node_get_child(args, 0)->string;
+                                    write(arena, "<div class='video'><iframe src='%S' allowfullscreen='' frameborder='0'></iframe></div>", src);
                                 }
                                 else if (string_match(tag_name, S("posts"), MatchFlags_IgnoreCase))
                                 {

@@ -1723,6 +1723,18 @@ i64 print_to_string(String buffer, const char *format, ...)
     return result;
 }
 
+i64 print_to_memory(u8 *buffer, i64 limit, const char *format, ...)
+{
+    i64 result = 0;
+
+    va_list args;
+    va_start(args, format);
+    result = print_to_stringv(make_string(buffer, limit), format, args);
+    va_end(args);
+
+    return result;
+}
+
 
 void arena_write(Arena *arena, char *format, ...)
 {
