@@ -193,6 +193,7 @@ struct Http_Header
 typedef struct Http_Request Http_Request;
 struct Http_Request
 {
+    Socket_Address address;
     String method;
     String url;
 };
@@ -394,6 +395,9 @@ na_internal Url_Parts socket_parse_url(String url)
 
 bool socket_init()
 {
+    static bool initted = false;
+    if (initted) return true;
+
     #if OS_WINDOWS
     w32_socket_lib = LoadLibraryA("ws2_32.dll");
     if (w32_socket_lib == 0)
@@ -420,6 +424,7 @@ bool socket_init()
     }
     #endif // OS_WINDOWS
 
+    initted = true;
     return true;
 }
 
@@ -1031,6 +1036,7 @@ void http_update(Http_Manager *manager)
     }
 }
 
+
 Http_Request http_parse_request(String request)
 {
     Http_Request result = {};
@@ -1065,7 +1071,7 @@ Socket socket_create_tcp_server(Socket_Address address)
     if (!socket_bind(&result, address))
     {
         String url = socket_get_address_name(address);
-        print("[socket] Failed to bind to address: %S\n", url);
+        print("[socket] Failed to bind to address: %S:%d\n", url, address.port);
         socket_close(&result);
         return result;
     }
@@ -1156,7 +1162,6 @@ String http_status_name_from_code(i32 status_code)
 }
 
 // https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Common_types
-#if 0
 String http_content_type_from_extension(String ext)
 {
     String result = {};
@@ -1164,18 +1169,18 @@ String http_content_type_from_extension(String ext)
     ext = string_lower(ext);
 
     if (false) {}
-    else if (string_equals(ext, S(".txt")))  { result = S("text/plain"); }
-    else if (string_equals(ext, S(".md")))   { result = S("text/plain"); }
     else if (string_equals(ext, S(".html"))) { result = S("text/html"); }
     else if (string_equals(ext, S(".css")))  { result = S("text/css"); }
     else if (string_equals(ext, S(".js")))   { result = S("text/javascript"); }
-    else if (string_equals(ext, S(".bmp")))  { result = S("image/bmp"); }
+    else if (string_equals(ext, S(".json"))) { result = S("application/json"); }
+    else if (string_equals(ext, S(".txt")))  { result = S("text/plain"); }
+    else if (string_equals(ext, S(".md")))   { result = S("text/plain"); }
     else if (string_equals(ext, S(".bmp")))  { result = S("image/bmp"); }
     else if (string_equals(ext, S(".gif")))  { result = S("image/gif"); }
     else if (string_equals(ext, S(".png")))  { result = S("image/png"); }
-    else if (string_equals(ext, S(".jpe")))  { result = S("image/jpeg"); }
     else if (string_equals(ext, S(".jpg")))  { result = S("image/jpeg"); }
     else if (string_equals(ext, S(".jpeg"))) { result = S("image/jpeg"); }
+    else if (string_equals(ext, S(".jpe")))  { result = S("image/jpeg"); }
     else if (string_equals(ext, S(".ico")))  { result = S("image/x-icon"); }
     else if (string_equals(ext, S(".svg")))  { result = S("image/svg+xml"); }
     else if (string_equals(ext, S(".mp3")))  { result = S("audio/mpeg"); }
@@ -1186,85 +1191,116 @@ String http_content_type_from_extension(String ext)
     else if (string_equals(ext, S(".pdf")))  { result = S("application/pdf"); }
     return result;
 }
-#endif
 
 struct Http_Server
 {
     Socket socket;
 };
 
-Socket http_server_init(String server_url)
-{
-    Socket_Address address = socket_make_address_from_url(server_url);
-    Socket socket = socket_create_tcp_server(address);
-    return socket;
-}
-
-bool http_server_poll(Socket *socket, Socket *client, Socket_Address *client_address)
-{
-    return socket_accept(socket, client, client_address);
-}
-
-#define HTTP_REQUEST_CALLBACK(name) Http_Response name(Http_Request request)
+#define HTTP_REQUEST_CALLBACK(name) void name(Http_Request *request, Http_Response *response)
 typedef HTTP_REQUEST_CALLBACK(Http_Request_Callback);
+
+struct Http_Thread_Params
+{
+    Socket client;
+    Socket_Address client_address;
+    Http_Request_Callback *request_handler;
+};
+
+THREAD_PROC(http_responder_thread)
+{
+    auto params = (Http_Thread_Params *)data;
+    auto client = &params->client;
+
+    auto raw_request = socket_recieve_entire_stream(temp_arena(), client);
+    auto request = http_parse_request(raw_request);
+    request.address = params->client_address;
+
+    Http_Response response = {};
+    params->request_handler(&request, &response);
+
+    if (!response.status_code) response.status_code = (response.body.count > 0) ? 200 : 500;
+    if (!response.content_type.count) response.content_type = S("text/plain");
+
+
+    auto status_name = http_status_name_from_code(response.status_code);
+    String response_data = sprint("HTTP/1.0 %d %S\r\n", response.status_code, status_name);
+
+    if (response.content_type.count)
+    {
+        response_data.count += sprint("Content-Type: %S\r\n", response.content_type).count;
+    }
+
+    if (response.body.count)
+    {
+        response_data.count += sprint("Content-Length: %d\r\n", response.body.count).count;
+    }
+
+    if (response.headers.count > 0)
+    {
+        For (response.headers)
+        {
+            response_data.count += sprint("%S: %S\r\n", it.key, it.value).count;
+        }
+    }
+
+    response_data.count += sprint("\r\n").count;
+
+    socket_send(client, {}, response_data);
+
+    if (response.body.count)
+    {
+        socket_send(client, {}, response.body);
+    }
+
+    socket_close(client);
+    return 0;
+}
+
+Http_Server http_server_init(String server_url)
+{
+    Http_Server result =  {};
+    Socket_Address address = socket_make_address_from_url(server_url);
+    result.socket = socket_create_tcp_server(address);
+    return result;
+}
+
+bool http_server_poll(Http_Server *server, Socket *client, Socket_Address *client_address)
+{
+    return socket_accept(&server->socket, client, client_address);
+}
+
+void http_server_tick(Http_Server *server, Http_Request_Callback request_handler)
+{
+    Socket client;
+    Socket_Address client_address;
+    while (http_server_poll(server, &client, &client_address))
+    {
+        Http_Thread_Params params = {};
+        params.client = client;
+        params.client_address = client_address;
+        params.request_handler = request_handler;
+
+        Thread thread = os_create_thread_with_params(megabytes(1), http_responder_thread, &params, sizeof(Http_Thread_Params));
+        os_detatch_thread(thread);
+    }
+}
 
 void http_server_run(String server_url, Http_Request_Callback request_handler)
 {
-    Socket socket = http_server_init(server_url);
-    if (!socket_is_valid(socket)) return;
+    socket_init();
+
+    Http_Server server = http_server_init(server_url);
+    if (!socket_is_valid(server.socket))
+    {
+        print("Failed to start HTTP server at %S\n", server_url);
+        return;
+    }
 
     while (1)
     {
         reset_temporary_storage();
-
-        Socket client;
-        Socket_Address client_address;
-        if (http_server_poll(&socket, &client, &client_address))
-        {
-            auto raw_request = socket_recieve_entire_stream(temp_arena(), &client);
-            auto request = http_parse_request(raw_request);
-
-            auto response = request_handler(request);
-
-            if (!response.status_code) response.status_code = 500;
-            if (!response.content_type.count) response.content_type = S("text/plain");
-
-
-            auto final_response_str = sprint("HTTP/1.1 %d %S\r\n");
-
-            auto status_name = http_status_name_from_code(response.status_code);
-            String response_data = sprint("HTTP/1.0 %d %S\r\n", response.status_code, status_name);
-
-            if (response.content_type.count)
-            {
-                response_data.count += sprint("Content-Type: %S\r\n", response.content_type).count;
-            }
-
-            if (response.body.count)
-            {
-                response_data.count += sprint("Content-Length: %d\r\n", response.body.count).count;
-            }
-
-            if (response.headers.count > 0)
-            {
-                For (response.headers)
-                {
-                    response_data.count += sprint("%S: %S\r\n", it.key, it.value).count;
-                }
-            }
-
-            response_data.count += sprint("\r\n").count;
-
-            socket_send(&client, {}, response_data);
-
-            if (response.body.count)
-            {
-                socket_send(&client, {}, response.body);
-            }
-
-            socket_close(&client);
-        }
-
+        http_server_tick(&server, request_handler);
         os_sleep(1);
     }
 }

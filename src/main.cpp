@@ -198,23 +198,6 @@ Nav_Links find_next_and_prev_pages(String page_slug, Node *posts)
         }
     }
 
-    #if 0
-    for (Each_Node(post, posts->first_child))
-    {
-        auto post_slug = node_get_child(post, 1)->string;
-        u64 post_id = ParsePostID(post_slug);
-        if (post_id == next_id)
-        {
-            result.next = post;
-        }
-
-        if (post_id == prev_id)
-        {
-            result.prev = post;
-        }
-    }
-    #endif
-
     return result;
 }
 
@@ -295,69 +278,45 @@ void write_code_block(Arena *arena, String code)
     write(arena, "</pre>");
 }
 
+static String global_public_path = {};
+
+HTTP_REQUEST_CALLBACK(request_callback)
+{
+    auto start_time = os_time_in_miliseconds();
+
+    auto file = request->url;
+    if (string_equals(file, S("/"))) file = S("index.html");
+    if (string_ends_with(file, S("/"))) file = string_slice(file, 0, file.count - 1);
+
+    auto ext = path_get_extension(file);
+    if (!ext.count) {
+        file = string_concat(file, S(".html"));
+        ext = S(".html");
+    }
+
+    auto file_path = path_join(global_public_path, file);
+    auto contents = os_read_entire_file(file_path);
+
+    if (!contents.data)
+    {
+        response->status_code = 404;
+        return;
+    }
+
+    response->status_code = 200;
+    response->body = contents;
+    response->content_type = http_content_type_from_extension(ext);
+
+    auto end_time = os_time_in_miliseconds();
+    print("%S %S -> %d (%.2fms)\n", request->method, request->url, response->status_code, end_time - start_time);
+}
+
 void run_server(String server_url, String public_path)
 {
     socket_init();
-
-    Socket_Address address = socket_make_address_from_url(server_url);
-    print("Server listening on http://%S:%d...\n", socket_get_address_name(address), address.port);
-    Socket socket = socket_create_tcp_server(address);
-
-    while (1)
-    {
-        reset_temporary_storage();
-
-        Socket client;
-        Socket_Address client_address;
-        if (socket_accept(&socket, &client, &client_address))
-        {
-            print("Got request from %S:%d\n", socket_get_address_name(client_address), client_address.port);
-
-            auto start_time = os_time_in_miliseconds();
-
-            auto request = socket_recieve_entire_stream(temp_arena(), &client);
-            auto req = http_parse_request(request);
-            dump(req.method);
-            dump(req.url);
-
-            auto file = req.url;
-            if (string_equals(file, S("/"))) file = S("index.html");
-            if (string_ends_with(file, S("/"))) file = string_slice(file, 0, file.count - 1);
-
-            auto ext = path_get_extension(file);
-            if (!ext.count) {
-                file = string_concat(file, S(".html"));
-                ext = S(".html");
-            }
-
-            auto file_path = path_join(public_path, file);
-            auto contents = os_read_entire_file(file_path);
-
-            if (!contents.data)
-            {
-                auto resp = sprint("HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\n\r\n%S", S("Not Found"));
-                socket_send(&client, {}, resp);
-                socket_close(&client);
-            }
-
-            auto content_type = S("text/plain");
-            if (false) {}
-            else if (string_equals(ext, S(".html"))) { content_type = S("text/html"); }
-            else if (string_equals(ext, S(".png")))  { content_type = S("image/png"); }
-            else if (string_equals(ext, S(".jpg")))  { content_type = S("image/jpeg"); }
-            else if (string_equals(ext, S(".jpeg"))) { content_type = S("image/jpeg"); }
-            else if (string_equals(ext, S(".ico")))  { content_type = S("image/x-icon"); }
-
-            auto resp = sprint("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n%S", contents);
-            socket_send(&client, {}, resp);
-            socket_close(&client);
-
-            auto end_time = os_time_in_miliseconds();
-            print("Responded in %.2fms\n", end_time - start_time);
-        }
-
-        os_sleep(1);
-    }
+    
+    global_public_path = public_path;
+    http_server_run(server_url, request_callback);
 }
 
 String string_normalize_newlines(String input)
@@ -691,6 +650,13 @@ int main(int argc, char **argv)
                     continue;
                 }
 
+                if (node_has_tag(it, S("quote")))
+                {
+                    auto str = string_trim_whitespace(it->string);
+                    write(arena, "<blockquote class='code' style='white-space:pre-line'>%S</blockquote>", str);
+                    continue;
+                }
+
                 //~nja: custom tags
                 auto text = string_normalize_newlines(it->string);
                 auto lines = string_split(text, S("\n\n"));
@@ -720,8 +686,8 @@ int main(int argc, char **argv)
                             i64 newline_index = string_find(line, S("\n"), search + 1);
                             i64 end_index = Min(bracket_index, newline_index);
 
+                            //~nja: output tags
                             String tag_str = string_trim_whitespace(string_slice(line, search, end_index + 1));
-                            dump(tag_str);
                             auto root = parse_entire_string(temp_arena(), tag_str);
                             if (!node_is_nil(root) && !node_is_nil(root->first_child))
                             {
@@ -753,6 +719,11 @@ int main(int argc, char **argv)
                                 {
                                     auto src = node_get_child(args, 0)->string;
                                     write(arena, "<div class='video'><iframe src='%S' allowfullscreen='' frameborder='0'></iframe></div>", src);
+                                }
+                                else if (string_match(tag_name, S("hr"), MatchFlags_IgnoreCase))
+                                {
+                                    auto str = node_get_child(args, 0)->string;
+                                    write(arena, "<hr/>", str);
                                 }
                                 else if (string_match(tag_name, S("posts"), MatchFlags_IgnoreCase))
                                 {

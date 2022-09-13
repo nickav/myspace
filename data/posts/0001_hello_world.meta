@@ -4,6 +4,15 @@ date:  "2021-11-19 10:13:03"
 image: "godrays_04.png"
 author: "Nick Aversano"
 
+@quote
+```
+It is well known the drunken sailor who staggers to the left or right with n independent random steps will, on the average, end up about sqrt(n) steps from the origin. But if there is a pretty girl in one direction, then his steps will tend to go in that direction and he will go a distance proportional to n. In a lifetime of many, many independent choices, small and large, a career with a vision will get you a distance proportional to n, while no vision will get you only the distance sqrt(n). In a sense, the main difference between those who go far and those who do not is some people have a vision and the others do not and therefore can only react to the current events as they happen.
+
+I am preaching the message that, with apparently only one life to live on this earth, you ought to try to make significant contributions to humanity rather than just get along through life comfortably — that the life of trying to achieve excellence in some area is in itself a worthy goal for your life. It has often been observed the true gain is in the struggle and not in the achievement — a life without a struggle on your part to make yourself excellent is hardly a life worth living. This, it must be observed, is an opinion and not a fact, but it is based on observing many people’s lives and speculating on their total happiness rather than the moment to moment pleasures they enjoyed. Again, this opinion of their happiness must be my own interpretation as no one can know another’s life. Many reports by people who have written about the “good life” agree with the above opinion. Notice I leave it to you to pick your goals of excellence, but claim only a life without such a goal is not really living but it is merely existing—in my opinion. In ancient Greece Socrates (469–399) said: The unexamined life is not worth living.
+
+- Richard Hamming, The Art of Doing Science and Engineering
+```
+
 ```
 This is text.
 I should get grouped with the above line!
@@ -29,15 +38,251 @@ print("%S\n", string);
 
 ```
 
-## On memory management:
+<hr/>
 
-Heap allocators are _expensive_, *especially compared to a really simple "linear allocator"* or "bump allocator".
+Compilers And So Can You
 
-Plus you can combine that with OS virtual memory which winds up being a really nice and lean way to have lots of separate allocators. But it really depends on what you're doing. Linear allocators are great for games, for example, because they're really cheap. They also open up another cool pattern which I really like which is temporary memory.
+Eh, there's a lot of stuff on this already. Idk if I can really add more than what's already there
 
-But, if all you're doing is writing some quick utility code that doesn't run that often, then definitely just malloc-ing a bunch of memory and going is a decent strategy. Virtual memory makes this a little better because you don't really "pay" for the whole gigabyte until you ask the OS to commit the memory. If performance does matter though, it's worth having more control over where your memory comes from!
 
-On temporary memory:
+- Roll Your Own C Standard Library
 
-Normally, returning arrays from a function in C is kind of cumbersome especially if you only want the data to "stick around" just after the function returns. Also, there are certain kinds of programs (e.g. games, web servers) that have really cleanly defined "frames" (it doesn't literally have to be a frame, but just a point in your application code where it makes sense to reset your temporary memory). So the idea is to create a "frame arena" which is just a linear allocator you reset every frame. Now, you can return arrays from functions for example!
+- Game Engines: A 10,000 Foot View
+
+- The Memory Allocation Story
+
+- Text Rendering
+
+- On Staying Productive in C
+
+- The Joys of Writing C
+
+- The Pain of Writing C
+
+- Networking
+
+- CPU vs. GPU - Graphics Pipeline
+
+- UI Engines: Interfaces of the Future
+
+
 ```
+
+```
+
+# The handmade-ethos
+
+Quality, even if it hurts.
+
+
+<hr/>
+
+
+# The way I want software to work
+
+
+<hr/>
+
+
+# Local-First Software: Putting Ownership Back in the Hands of Users
+
+<hr/>
+
+
+# CPUs vs. GPUs
+
+How your computer actually works.
+
+How the CPU works
+How the GPU works
+
+
+<hr/>
+
+# Immediate-Mode UIs
+
+<hr/>
+
+# The State of Software Today
+
+<hr/>
+
+# UI Engines: Interfaces of the Future
+
+Outline:
+- Software Keeps Getting Slower!
+- Dependencies keep going up!
+
+- Users have come to expect software to be slow and buggy
+
+- The Web was built for newspapers
+- Websites have evolved more and more to resemble "single-page applications" with "modern frontned frameworks"
+- Well... that's kind of not that different from desktop applications
+
+- BUT! They add lots of stuff: the DOM, JavaScript -> slowness!
+- I know a window should be able to start up fast!
+
+- Online-first software -- egregious violations of users time:
+- Gmail
+- Spotify
+- Figma
+
+But does it have to be this way?
+Could we reduce our reliance on browsers?
+
+What browsers got right:
+- sandboxing
+- good cross-platform support
+- easy to get started
+- high-quality font rendering
+- OS-level Accessibility
+
+What browsers got wrong:
+- slow!
+- retained-mode UI
+- weren't really designed to build applications!
+
+WASM is the answer? Maybe. But there are some problems with the WASM story. Not to mention you pay a 4x slowdown.
+
+What can we do about it?
+
+
+
+
+
+It is well-known that software keeps getting slower and slower. Many people have spoken about this.
+The old saying of Andy giveth and Bill taketh stil rings true to this day.
+
+But we have become used to it!
+
+
+There is an increasing trend on the web to build "single-page applications".
+Not only do these applications have to add tens of thousands of dependencies to get anything done at all, but working in them feels difficult.
+
+Not to mention they struggle at really trivial problems: for example, rendering 10k+ items in a list.
+Then you have to introduce a "virtual list" which handles "recycling" the DOM elements just to get more or less back to exactly what your computer is already doing: rendering frames at 60Hz!
+
+Modern web applications are starting to resemble actual desktop applications more and more, but the users pay a large
+cost (in terms of time!) for using them.
+
+The outright disrespect (whether implicit or explicit) for users is downright wrong. We can do better. We, as creators, should not put this slowness and burdens on the users.
+
+The burnen should be on us to _fully understand what we are building_, and to do whatever necessary to build the highest-quality experience.
+Otherwise, our users pay with their time.
+
+
+On Windows, you can open a window and start drawing in less than 16ms. But, web applications we use take many seconds to open before you can even get started.
+
+
+The things the web browser got right:
+- good cross-platform support
+- easy to get started
+- high-quality font rendering
+- OS-level Accessibility
+
+The things the web browser got wrong:
+- slow!
+- retained-mode UI
+
+
+On both sides of the equation there are egregious examples of terrible--and outright malicious--behavior!
+
+Egregious examples of this include:
+
+Gmail: 2s+ page load times for pretty much the whole time I've used it! How exactly is this experience better than a local-first mail client?
+
+Spotify: You can't even use the desktop client anymore without an Internet connection! It prompts 
+
+
+## Local-First Software
+
+
+## The Web
+
+The Web was designed to make newspapers online.
+
+JavaScript was initially made in a couple of weeks.
+
+Now, increasingly, we are using "modern frontend frameworks" to build interfaces that more closesly resemble desktop software.
+
+
+## The Sandboxing Story
+
+Some have said the web browser has succeeded because the operating system has failed. In some ways, that rings true.
+
+It has been speculated that better process sandboxing would dramatically increase the amount of OS
+
+There are lots of legacy OS APIs that you have to fight through to get anything done, and it's even worse because they all have slightly different and overlapping for example decent controller input on Windows.
+
+
+## The ideal
+
+
+
+---
+
+
+Today's software keeps getting slower and slower. Users have come to expect slow and buggy experiences as the norm, not the exception.
+
+So what exactly happened?
+
+It's no surprise that in addition software keeps getting built with increasingly more dependencies.
+
+Increasingly people have stopped caring about the users experience and have decided that they want them to pay with their time by using these slow products.
+Espeiciall web applications.
+
+So, the web was originally built to display newspapers on online with HTML and CSS. And everyone knows JavaScript was written in 10 days.
+
+So, nowadays, people use, these quote, modern front and frameworks to create quote, single page applications.Now, this actually is sort of interesting because it's starting to resemble desktop software, more and more, but the problem with building stuff as the browser, as your first layer of abstraction is you accept a lot of crust.
+
+And slowness from the start For example, Chrome is slow and bloated because of all of the various features that has to support and your foundations are shaky building a UI in the Dom with HTML and CSS and JavaScript.There's just a limit on how fast that can be.Now, modern front end frameworks like react have sort of brought some of this immediate mode UI thinking to the web, which I would argue has made a good difference on thinking about applications, but a net bad slow outcome on most common cases, I know a window on Windows, should be able to start up fast. 
+
+So when I download web first electron-based products and they take multiple seconds to open.For example, Spotify before I can even start using the interface and it's even worse because a lot of desktop software is built to be online.First, and the most egregious examples of this are Gmail. 
+
+When I open it, it takes two or more seconds to even load the page.Meanwhile, Google likes to tout how fast their search results are. Spotify takes also about two seconds ships with an entire copy of the chrome browser, which is about 150 megabytes, and I can't even use Spotify anymore.
+
+If I don't have an internet connection, Now Figma is an interesting example because Figma is largely built on the canvas API with WebAssembly, which is good because it actually shows it's one of the fastest web applications I've used, but they're definitely a little bit shady because they don't even let you use their desktop software without logging into a Figma account.
+
+So, I make my living making designs. All of my designs are owned by Figma because they don't live on my computer.I should really do a separate article on local first software, but alas, but does it have to be this way?Do we have to rely on slow browsers?
+
+As the only way to get anything done and do we have to keep incurring this cost as users of these interfaces and putting up with the craft the jankiness.So to speak.Well, let's look first at what the web browser got, right?So it produces a pretty well sandboxed environment, which is something operating system should take more seriously and provide APIs for developers to do.
+
+So if you look at okay good cross-platform support so I know if I ship a website it will run on almost every device there might be minor differences but mostly it'll work.All right. Easy to get started. While I do kind of hate HTML and CSS and JavaScript.It is relatively easy for beginners to get started. 
+
+High quality font rendering. So this is a big plus getting font rendering to work decently well across all devices is tricky.There are libraries that do this like free type, but integrating them is not triple and finally OS.Level accessibility.Meaning the operating system actually knows how to read out these text elements on the page to screen readers.
+
+So, all those things are very solid foundation, but like I said, you pay a large cost for using the browser. There's so much complexity that goes into it.It's really hard to figure out what actually is the slow part of an application and not to mention.There's lots of shaky foundations, for how you have to build your interface.
+
+For example, the Dom CSS HTML and JavaScript
+
+But what it browsers, get wrong.Well, they're slow for one because of all of these dependencies they are primarily or retained mode UI. Which if you're building, a newspaper is a reasonable thing.But if you're building, for example, an application, where lots of things are going to be interactive, you're going to have dynamic animations.
+
+Actually you want your API to be an immediate mode UI linked to KC moratorium immediate mode UI here and overall they just weren't really designed to build these applications. So is wasn't the answer maybe but there are still some problems with was them.For example, you can only have one continuous chunk of memory and you cannot have virtual memory which is an extremely useful way of organizing memory on an operating system. 
+
+And once you've expanded memory, there's no way for you to tell wise them that you don't need it anymore.So the memory story on Wazeman is busted and you pay about a 4X, slow down, not to mention that, you can't do Sydney.So really more like 16x slowdown for a lot of stuff.
+
+But nevertheless, you pay about a forex slow down on all code that has to get interpreted because it's not actually running on the CPU anymore.Well, what can we do about this?
+
+Well, for one, we as developers can start by understanding folding, our problem before writing, any code, and being extremely careful about choosing what foundation we build on top of.For example, if we're building a cross platform desktop application, maybe SDL 2 is a better choice than electron as you're foundation.
+
+Now, there are some things that become a little bit more complicated, if you've just got frames to draw all the time, namely the UI framework. And so what I'm going to call here, a UI engine is basically a game engine. That's custom tailored to building user interfaces.So it would include some sort of immediate mode UI with some ability to draw fonts and images and text and be able to rotate stuff.
+
+Bonuses would be things like box, shadow, borders, rounded corners, which all of that you can do link to Ryan Flurries UI thing here.So increasingly, I've been being becoming convinced that UI engines as a foundation for building high quality cross platform.User interfaces is a very compelling story for a number of reasons as we've already talked about the web is kind of busted and the story on mobile development is kind of similar in a lot of ways.
+
+But worse, compared to web development.Lots of retain mode, stuff simple things become relatively difficult.And Hey look, I just want to draw some texts on the screen and move on with my life. So there are quote on quotes solutions, like react native or like flutter. And what's interesting about flutter is, I think the underlying tech is good relatively good, but the user interface, the API is awful. 
+
+They give you this terrible language like dart and it basically just looks like a retained mode mess, which is more or less. What Android development already looks like.So okay great.I can use the principles, I'm used to with Android and builds cross platform applications.But that's only for, that's only if I adopt this retained mode cost. 
+
+So we should really talk about retained mode versus immediate mode.And the mental gymnastics your brain has to go through to manage a retained mode interface in a game.It is trivial to just say, don't go down this path and now start going down this other path and that's how you build, for example, menus and interfaces like that, if I'm in the menu state, draw the menu, if I'm in the game state draw the game.
+
+Um but having to think about pushing and popping contexts is not really the way you want to be thinking about your application.So, for a lot of reasons, that's why I also sort of have said, you know, reacts brought a compelling, immediate modes style API to the web, which is I why? 
+
+I think it's been so popular. Now, the pitfalls with react are where you kind of. Can't forget that. There's a dom there anymore in cases.That should be trivial for today's computers, for example, rendering a virtual list of 10,000 elements gets extremely slow.So that's a medium mode versus retained mode.
+
+Maybe that even deserves another article on its own. Now popping back up a stack to UI engines.What would a UI engine have to do to be compelling? Well it would have to support modern operating systems.Meaning Windows, Mac, Linux and Android.And iOS, you would want one code base to be able to run on all of these. 
+
+Meaning, I shrink my window on Windows and that's exactly the same window.I would see on Android if it were the same size as that display, it would have to handle text rendering extremely well.So similar to browsers, but it could use something like, free type to get started.
+
+It would have to interface with all of the operating systems calls, for example, to get new memory, to read and write from the system clipboard, etc.It would also have to do accessibility pretty well, which is to say tell the operating system that there are these text widgets at certain positions that screen readers can read out. 
+
+But honestly, that's probably the last tuning detail to this whole system at its core.It means.

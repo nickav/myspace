@@ -28,7 +28,7 @@ links: [
 
 projects: [
     ("na.h", "My Single-File Header Libraries", "https://github.com/nickav/nja")
-    ("myspace", "This website! Written in C", "https://github.com/nickav/myspace")
+    ("myspace", "This website written in C", "https://github.com/nickav/myspace")
     ("Harley-Davidson Ride-Planner Web", "Freelance Project", "https://maps.harley-davidson.com")
     ("DRONEPOLLOCK", "Internet-of-Things painting", "https://news.mlh.io/the-making-of-drone-pollock-03-10-2016")
 ]

@@ -3112,6 +3112,21 @@ Thread os_create_thread(u64 stack_size, Thread_Proc *proc, void *data) {
     return result;
 }
 
+Thread os_create_thread_with_params(u64 stack_size, Thread_Proc *proc, void *data, u64 copy_size) {
+    Thread_Params *params = (Thread_Params *)os_alloc(sizeof(Thread_Params) + copy_size);
+    params->proc = proc;
+    params->data = params + sizeof(Thread_Params);
+    memory_copy(data, params->data, copy_size);
+
+    DWORD thread_id;
+    HANDLE handle = CreateThread(0, stack_size, win32_thread_proc, params, 0, &thread_id);
+
+    Thread result = {};
+    result.handle = handle;
+    result.id = thread_id;
+    return result;
+}
+
 void os_detatch_thread(Thread thread) {
     HANDLE handle = (HANDLE)thread.handle;
     CloseHandle(handle);
