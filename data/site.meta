@@ -8,9 +8,9 @@ og_type:        "website"
 theme_color:    "#000000"
 
 social_icons: [
-    (Twitch,  "twitch.svg",  "https://twitch.tv/naversano")
-    (Twitter, "twitter.svg", "https://www.twitter.com/nickaversano")
-    (Github,  "github.svg",  "https://www.github.com/nickav")
+    (Twitch,  "icons/twitch.svg",  "https://twitch.tv/naversano")
+    (Twitter, "icons/twitter.svg", "https://www.twitter.com/nickaversano")
+    (Github,  "icons/github.svg",  "https://www.github.com/nickav")
 ]
 
 pages: [
@@ -27,7 +27,7 @@ links: [
 ]
 
 projects: [
-    ("na.h", "My Single-File Header Libraries", "https://github.com/nickav/nja")
+    ("na.h", "My Single-File Header Libraries", "https://github.com/nickav/na")
     ("myspace", "This website written in C", "https://github.com/nickav/myspace")
     ("Harley-Davidson Ride-Planner Web", "Freelance Project", "https://maps.harley-davidson.com")
     ("DRONEPOLLOCK", "Internet-of-Things painting", "https://news.mlh.io/the-making-of-drone-pollock-03-10-2016")

@@ -416,7 +416,6 @@ String apply_basic_markdown_styles(String text)
     return make_string(data, at - data);
 }
 
-
 int main(int argc, char **argv)
 {
     os_init();
@@ -437,17 +436,39 @@ int main(int argc, char **argv)
     auto data_dir   = path_resolve(exe_dir, string_from_cstr(arg1));
     auto output_dir = path_resolve(exe_dir, string_from_cstr(arg2));
 
+    os_make_directory(output_dir);
+
     //~nja: parse site meta
     auto site_root = parse_entire_file(temp_arena(), path_join(data_dir, S("site.meta")));
 
     auto site = parse_site_info(site_root);
     if (!site.image.count) site.image = site.icon;
 
+    // TODO(nick): we can go wide here and read all the files in parallel
+
     auto css = os_read_entire_file(path_join(data_dir, S("style.css")));
     css = minify_css(css);
 
     auto js = os_read_entire_file(path_join(data_dir, S("script.js")));
     js = minify_js(js);
+
+    //~nja: static assets
+    print("[before assets] %.2fms\n", os_time_in_miliseconds());
+    {
+        auto public_dir = path_join(data_dir, S("public"));
+        auto files = os_scan_files_recursive(public_dir);
+        Forp (files)
+        {
+            auto from_path = path_join(public_dir, it->name);
+            auto to_path = path_join(output_dir, it->name);
+            auto contents = os_read_entire_file(from_path);
+
+            os_make_directory_recursive(path_dirname(to_path));
+
+            os_write_entire_file(to_path, contents);
+        }
+    }
+    print("[after assets] %.2fms\n", os_time_in_miliseconds());
 
     //~nja: site pages
     auto output_pages = empty_node();
@@ -598,7 +619,7 @@ int main(int argc, char **argv)
                 auto image = node_get_child(it, 1)->string;
                 auto url   = node_get_child(it, 2)->string;
 
-                auto content = os_read_entire_file(path_join(data_dir, S("icons"), image));
+                auto content = os_read_entire_file(path_join(data_dir, image));
 
                 write(arena, "<a title='%S' href='%S' target='_blank' class='inline-flex center pad-8'><div class='inline-block size-24'>%S</div></a>\n", name, url, content);
             }
@@ -837,6 +858,7 @@ int main(int argc, char **argv)
 
         write(arena, "</html>\n");
 
+        // TODO(nick): we can go wide here and write all the files in parallel
         auto html = arena_to_string(arena);
         os_write_entire_file(path_join(output_dir, sprint("%S.html", page_slug)), html);
     }

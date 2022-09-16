@@ -1,3 +1,20 @@
+/*
+    na_net.h - v0.01
+    Nick Aversano's C++ networking library
+===========================================================================
+
+LICENSE
+    This software is dual-licensed to the public domain and under the following
+    license: you are granted a perpetual, irrevocable license to copy, modify,
+    publish, and distribute this file as you see fit.
+
+CREDITS
+    Written by Nick Aversano
+
+VERSION HISTORY
+    0.01  - Initial release
+*/
+
 #ifndef NA_NET_H
 #define NA_NET_H
 
@@ -5,7 +22,6 @@
 // TODO(nick):
 // - handle chunked responses
 // - replace `select` calls with Linux epoll / win32 / MacOS kqueue solution
-// - implement HTTP server
 //
 
 #ifdef __cplusplus
@@ -1281,6 +1297,7 @@ void http_server_tick(Http_Server *server, Http_Request_Callback request_handler
         params.client_address = client_address;
         params.request_handler = request_handler;
 
+        // TODO(nick): we should spin up a bunch of threads ahead of time
         Thread thread = os_create_thread_with_params(megabytes(1), http_responder_thread, &params, sizeof(Http_Thread_Params));
         os_detatch_thread(thread);
     }

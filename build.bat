@@ -13,9 +13,6 @@ pushd %project_root%
     IF %errorlevel% NEQ 0 (popd && goto end)
 
     rmdir /s /q bin
-    mkdir bin
-
-    xcopy /s /i /q /y ..\public bin\
 
     .\%exe_name% ..\data bin
   popd
