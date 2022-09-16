@@ -40,10 +40,9 @@ print("%S\n", string);
 
 <hr/>
 
-Compilers And So Can You
+- Compilers And So Can You
 
-Eh, there's a lot of stuff on this already. Idk if I can really add more than what's already there
-
+- Understanding the entire stack
 
 - Roll Your Own C Standard Library
 
@@ -65,45 +64,18 @@ Eh, there's a lot of stuff on this already. Idk if I can really add more than wh
 
 - UI Engines: Interfaces of the Future
 
+- The way I want software to work
 
-```
+- Local-First Software: Putting Ownership Back in the Hands of Users
 
-```
+- Your Life's Work
 
-# The handmade-ethos
+- Immediate-Mode UIs
 
-Quality, even if it hurts.
+- The State of Software Today
 
+- UI Engines: Interfaces of the Future
 
-<hr/>
-
-
-# The way I want software to work
-
-
-<hr/>
-
-
-# Local-First Software: Putting Ownership Back in the Hands of Users
-
-<hr/>
-
-
-# CPUs vs. GPUs
-
-How your computer actually works.
-
-How the CPU works
-How the GPU works
-
-
-<hr/>
-
-# Immediate-Mode UIs
-
-<hr/>
-
-# The State of Software Today
 
 <hr/>
 
@@ -227,9 +199,8 @@ Today's software keeps getting slower and slower. Users have come to expect slow
 So what exactly happened?
 
 It's no surprise that in addition software keeps getting built with increasingly more dependencies.
-
 Increasingly people have stopped caring about the users experience and have decided that they want them to pay with their time by using these slow products.
-Espeiciall web applications.
+Espeicially web applications.
 
 So, the web was originally built to display newspapers on online with HTML and CSS. And everyone knows JavaScript was written in 10 days.
 

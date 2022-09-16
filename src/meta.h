@@ -854,6 +854,15 @@ Node *find_by_name(Node *start, String name)
     return result;
 }
 
+String node_to_string(Node *node) { return node->string; }
+
+bool node_to_bool(Node *node) {
+    if (string_equals(node->string, S("true")) || string_equals(node->string, S("1"))) {
+        return true;
+    }
+    return false;
+}
+
 #if 0
 void meta_test(String text)
 {

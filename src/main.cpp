@@ -43,6 +43,7 @@ struct Page_Meta
     String url;
     String date;
     String author;
+    bool draft;
 };
 
 struct Nav_Links
@@ -99,6 +100,7 @@ Page_Meta parse_page_meta(Node *root)
         else if (string_equals(key, S("desc")) || string_equals(key, S("description"))) { result.description = value; }
         else if (string_equals(key, S("date")))        { result.date = value; }
         else if (string_equals(key, S("author")))         { result.author = value; }
+        else if (string_equals(key, S("draft")))          { result.draft = node_to_bool(it->first_child); }
     }
     return result;
 }
@@ -457,8 +459,12 @@ int main(int argc, char **argv)
         auto meta_file = path_join(data_dir, sprint("%S.meta", page_slug->string));
         auto page_root = parse_entire_file(temp_arena(), meta_file);
 
-        auto array = make_array_node(page_title, page_slug, page_root);
-        node_push_child(output_pages, array);
+        auto meta = parse_page_meta(page_root);
+        if (!meta.draft)
+        {
+            auto array = make_array_node(page_title, page_slug, page_root);
+            node_push_child(output_pages, array);
+        }
     }
 
     //~nja: parse posts
@@ -477,13 +483,17 @@ int main(int argc, char **argv)
             if (!node_is_nil(post_root))
             {
                 auto meta = parse_page_meta(post_root);
-                auto title = meta.title;
-                auto slug = path_strip_extension(path_join(S("posts"), it->name));
-                post_root->string = slug;
 
-                auto array = make_array_node(node_from_string(title), node_from_string(slug), post_root);
-                node_push_child(output_pages, array);
-                node_push_child(posts, array);
+                if (!meta.draft)
+                {
+                    auto title = meta.title;
+                    auto slug = path_strip_extension(path_join(S("posts"), it->name));
+                    post_root->string = slug;
+
+                    auto array = make_array_node(node_from_string(title), node_from_string(slug), post_root);
+                    node_push_child(output_pages, array);
+                    node_push_child(posts, array);
+                }
             }
         }
     }
@@ -603,7 +613,7 @@ int main(int argc, char **argv)
         write(arena, "</div>\n");
 
         auto links = find_next_and_prev_pages(page_slug, posts);
-        write(arena, "<div class='content w-800 padx-64 sm:padx-32 h-64 flex-x center-y csx-32' style='margin-bottom: -2rem'>");
+        write(arena, "<div class='content padx-64 sm:padx-32 h-64 flex-x center-y csx-32' style='margin-bottom: -2rem'>");
             if (links.prev)
             {
                 write(arena, "<a class='font-bold pady-16' href='%S'>← Prev</a>", post_link(links.prev));
@@ -617,7 +627,7 @@ int main(int argc, char **argv)
         }
 
         //~nja: page content
-        write(arena, "<div class='content pad-64 w-800 sm:pad-32'>\n");
+        write(arena, "<div class='content pad-64 sm:pad-32'>\n");
 
             //~nja: page header
             if (page.title.count || page.date.count)
