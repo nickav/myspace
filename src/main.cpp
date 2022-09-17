@@ -284,8 +284,6 @@ static String global_public_path = {};
 
 HTTP_REQUEST_CALLBACK(request_callback)
 {
-    auto start_time = os_time_in_miliseconds();
-
     auto file = request->url;
     if (string_equals(file, S("/"))) file = S("index.html");
     if (string_ends_with(file, S("/"))) file = string_slice(file, 0, file.count - 1);
@@ -308,9 +306,6 @@ HTTP_REQUEST_CALLBACK(request_callback)
     response->status_code = 200;
     response->body = contents;
     response->content_type = http_content_type_from_extension(ext);
-
-    auto end_time = os_time_in_miliseconds();
-    print("%S %S -> %d (%.2fms)\n", request->method, request->url, response->status_code, end_time - start_time);
 }
 
 void run_server(String server_url, String public_path)

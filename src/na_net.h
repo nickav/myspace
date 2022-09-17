@@ -22,6 +22,11 @@ VERSION HISTORY
 // TODO(nick):
 // - handle chunked responses
 // - replace `select` calls with Linux epoll / win32 / MacOS kqueue solution
+// - make this library standalone
+// - make sure it compiles on Linux / Mac
+// - support C compilers
+// - add API documentation
+// - support IPV6 addresses
 //
 
 #ifdef __cplusplus
@@ -40,9 +45,11 @@ VERSION HISTORY
 // Simple HTTP Example:
 //
 #if 0
+void simple_http_example()
+{
     socket_init();
 
-    auto r = http_get(S("http://nickav.co/"));
+    Http r = http_get(S("http://nickav.co/"));
 
     while (r.status == HttpStatus_Pending) {
         reset_temporary_storage();
@@ -56,25 +63,28 @@ VERSION HISTORY
         dump(r.status_code);
         dump(r.content_type);
 
-        auto headers = http_parse_headers(r.response_headers);
+        Http headers = http_parse_headers(r.response_headers);
         For (headers) {
             print("%S = %S\n", it.key, it.value);
         }
 
         dump(r.response_body);
     }
+}
 #endif
 
 //
 // HTTP Request Manager Example:
 //
 #if 0
+void http_request_manager_example()
+{
     socket_init();
 
-    auto r1 = http_get(S("http://nickav.co/"));
+    Http r1 = http_get(S("http://nickav.co/"));
     http_add(&man, r1);
 
-    auto r2 = http_get(S("http://nickav.co/images/dronepollock.jpg"));
+    Http r2 = http_get(S("http://nickav.co/images/dronepollock.jpg"));
     http_add(&man, r2);
 
     while (man.requests.count > 0)
@@ -92,12 +102,15 @@ VERSION HISTORY
 
         os_sleep(1.0f);
     }
+}
 #endif
 
 //
 // UDP Client/Server Example
 //
 #if 0
+void udp_client_server_example()
+{
     socket_init();
 
     Socket_Address server_address = socket_make_address_from_url(S("127.0.0.1:9999"));
@@ -139,14 +152,9 @@ VERSION HISTORY
     }
 
     return 0;
+}
 #endif
 
-
-//
-// Portability:
-// @Incomplete: define fixed-sized integers
-// @Incomplete: what to do about string functions?
-//
 
 typedef u32 Socket_Type;
 enum
@@ -212,6 +220,15 @@ struct Http_Request
     Socket_Address address;
     String method;
     String url;
+};
+
+typedef struct Http_Response Http_Response;
+struct Http_Response
+{
+    i32 status_code;
+    Array<Http_Header> headers;
+    String content_type;
+    String body;
 };
 
 typedef struct Http_Manager Http_Manager;
@@ -326,7 +343,7 @@ static WSACleanup_Func *W32_WSACleanup;
 #endif // _WIN32
 
 
-struct Url_Parts
+struct URL_Parts
 {
     String protocol; // http or https
     String host;     // nickav.co
@@ -370,9 +387,9 @@ Socket_Address socket_make_address(const char *host, u16 port)
     return result;
 }
 
-na_internal Url_Parts socket_parse_url(String url)
+na_internal URL_Parts socket_parse_url(String url)
 {
-    Url_Parts result = {};
+    URL_Parts result = {};
 
     i64 index;
 
@@ -557,16 +574,16 @@ bool socket_connect(Socket *socket, Socket_Address address)
     addr.sin_addr.s_addr = address.host;
     addr.sin_port        = htons(address.port);
 
-    int result = connect(socket->handle, (sockaddr *)&addr, sizeof(addr));
+    int result = connect(socket->handle, (struct sockaddr *)&addr, sizeof(addr));
     if (result == SOCKET_ERROR)
     {
         #ifdef _WIN32
-            if ( WSAGetLastError() != WSAEWOULDBLOCK && WSAGetLastError() != WSAEINPROGRESS )
+            if (WSAGetLastError() != WSAEWOULDBLOCK && WSAGetLastError() != WSAEINPROGRESS)
             {
                 return false;
             }
         #else
-            if ( errno != EWOULDBLOCK && errno != EINPROGRESS && errno != EAGAIN )
+            if (errno != EWOULDBLOCK && errno != EINPROGRESS && errno != EAGAIN)
             {
                 return false;
             }
@@ -726,7 +743,7 @@ String socket_recieve_entire_stream(Arena *arena, Socket *socket)
 
         bytes_received += count;
         at += count;
-        buffer_size *= 2;
+        buffer_size += 4096;
         assert(arena_push(arena, buffer_size));
     }
 
@@ -769,7 +786,7 @@ bool socket_is_valid(Socket socket)
 
 Socket_Address socket_make_address_from_url(String url)
 {
-    auto parts = socket_parse_url(url);
+    URL_Parts parts = socket_parse_url(url);
     return socket_make_address(string_to_cstr(parts.host), parts.port);
 }
 
@@ -806,11 +823,31 @@ Socket socket_create_udp_client(Socket_Address address)
 }
 
 
+Http http_get(String url)
+{
+    return http_request(S("GET"), url, {}, {});
+}
+
+Http http_post(String url, String data)
+{
+    return http_request(S("POST"), url, {}, data);
+}
+
+Http http_put(String url, String data)
+{
+    return http_request(S("PUT"), url, {}, data);
+}
+
+Http http_delete(String url)
+{
+    return http_request(S("DELETE"), url, {}, {});
+}
+
 Http http_request(String verb, String url, String headers, String data)
 {
     Http result = {};
 
-    auto parts = socket_parse_url(url);
+    URL_Parts parts = socket_parse_url(url);
     if (!parts.path.count)
     {
         parts.path = S("/");
@@ -846,6 +883,7 @@ Http http_request(String verb, String url, String headers, String data)
     // @Robustness: we need a better string building story
     // If you print anything at all into temp_arena() during this section, then you
     // will mess up the request!
+    // :StringTempMemorySituation
 
     String request_data = sprint("%S %S HTTP/1.0\r\nHost: %S:%d\r\n", verb, parts.path, parts.host, parts.port);
 
@@ -872,41 +910,21 @@ Http http_request(String verb, String url, String headers, String data)
     return result;
 }
 
-Http http_get(String url)
-{
-    return http_request(S("GET"), url, {}, {});
-}
-
-Http http_post(String url, String data)
-{
-    return http_request(S("POST"), url, {}, data);
-}
-
-Http http_put(String url, String data)
-{
-    return http_request(S("PUT"), url, {}, data);
-}
-
-Http http_delete(String url)
-{
-    return http_request(S("DELETE"), url, {}, {});
-}
-
 Array<Http_Header> http_parse_headers(String headers)
 {
     Array<Http_Header> results = {};
     results.allocator = temp_allocator();
 
-    auto lines = string_split(headers, S("\r\n"));
+    Array<String> lines = string_split(headers, S("\r\n"));
     array_init_from_allocator(&results, temp_allocator(), lines.count);
 
     for (i64 i = 0; i < lines.count; i += 1)
     {
-        auto line = lines[i];
+        String line = lines[i];
         i64 index = string_find(line, S(":"));
         if (index < line.count)
         {
-            auto it   = array_push(&results);
+            Http_Header *it = array_push(&results);
             it->key   = string_slice(line, 0, index);
             it->value = string_trim_whitespace(string_slice(line, index + 1));
         }
@@ -977,14 +995,15 @@ void http_process(Http *http)
 
         arena_pop(arena, buffer_size - bytes_received);
 
-        auto response_data = make_string(buffer, bytes_received);
+        String response_data = make_string(buffer, bytes_received);
 
         i64 index = string_find(response_data, S("\r\n"));
         if (index < response_data.count)
         {
-            auto first = string_slice(response_data, 0, index);
-            auto first_parts = string_split(first, S(" "));
+            String first = string_slice(response_data, 0, index);
 
+            // @Cleanup: be less lazy here:
+            Array<String> first_parts = string_split(first, S(" "));
             i64 status_code = string_to_i64(first_parts[1]);
             if (!(status_code > 0 && status_code < 1000))
             {
@@ -1038,7 +1057,7 @@ void http_update(Http_Manager *manager)
 {
     For_Index (manager->requests)
     {
-        auto it = &manager->requests[index];
+        Http *it = &manager->requests[index];
         if (it->status != HttpStatus_Pending)
         {
             array_remove_ordered(&manager->requests, index);
@@ -1101,15 +1120,6 @@ Socket socket_create_tcp_server(Socket_Address address)
 
     return result;
 }
-
-typedef struct Http_Response Http_Response;
-struct Http_Response
-{
-    i32 status_code;
-    Array<Http_Header> headers;
-    String content_type;
-    String body;
-};
 
 // https://developer.mozilla.org/en-US/docs/Web/HTTP/Status
 String http_status_name_from_code(i32 status_code)
@@ -1225,11 +1235,11 @@ struct Http_Thread_Params
 
 THREAD_PROC(http_responder_thread)
 {
-    auto params = (Http_Thread_Params *)data;
-    auto client = &params->client;
+    Http_Thread_Params *params = (Http_Thread_Params *)data;
+    Socket *client = &params->client;
 
-    auto raw_request = socket_recieve_entire_stream(temp_arena(), client);
-    auto request = http_parse_request(raw_request);
+    String raw_request = socket_recieve_entire_stream(temp_arena(), client);
+    Http_Request request = http_parse_request(raw_request);
     request.address = params->client_address;
 
     Http_Response response = {};
@@ -1239,8 +1249,9 @@ THREAD_PROC(http_responder_thread)
     if (!response.content_type.count) response.content_type = S("text/plain");
 
 
-    auto status_name = http_status_name_from_code(response.status_code);
+    String status_name = http_status_name_from_code(response.status_code);
     String response_data = sprint("HTTP/1.0 %d %S\r\n", response.status_code, status_name);
+    // :StringTempMemorySituation
 
     if (response.content_type.count)
     {
@@ -1336,7 +1347,7 @@ void http_server_run(String server_url, Http_Request_Callback request_handler)
         {
             print("Got request from %S:%d\n", socket_get_address_name(client_address), client_address.port);
             
-            auto request = socket_recieve_entire_stream(temp_arena(), &client);
+            String request = socket_recieve_entire_stream(temp_arena(), &client);
             socket_send(&client, {}, S("HTTP/1.1 200 OK\r\n\r\nHello, World!\r\n\r\n"));
             socket_close(&client);
         }
