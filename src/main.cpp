@@ -337,6 +337,23 @@ String string_normalize_newlines(String input)
     return make_string(data, at - data);
 }
 
+i64 string_word_count(String str)
+{
+    i64 result = 0;
+    while (str.count > 0)
+    {
+        string_eat_whitespace(&str);
+        
+        result += 1;
+
+        while (str.count > 0 && !char_is_whitespace(str.data[0]))
+        {
+            string_advance(&str, 1);
+        }
+    }
+    return result;
+}
+
 String apply_basic_markdown_styles(String text)
 {
     // NOTE(nick): header tags
@@ -401,7 +418,25 @@ String apply_basic_markdown_styles(String text)
                     continue;
                 }
             }
+
+            if (it == '-' && text.data[i + 1] == '-')
+            {
+                at += print_to_memory(at, end-at, "—");
+                i += 1;
+                continue;
+            }
         }
+
+        #if 0
+        if (it == 'h')
+        {
+            auto str = string_skip(text, i);
+            if (string_starts_with(str, S("http://")) || string_starts_with(str, S("https://")))
+            {
+                print("LINK!!!!!!\n");
+            }
+        }
+        #endif
 
         *at = it;
         at ++;
@@ -726,6 +761,9 @@ int main(int argc, char **argv)
                                 {
                                     auto text = node_get_child(args, 0)->string;
                                     auto href = node_get_child(args, 1)->string;
+
+                                    if (!href.count) href = text;
+
                                     write_link(arena, text, href);
                                 }
                                 else if (string_match(tag_name, S("img"), MatchFlags_IgnoreCase))

@@ -4,6 +4,74 @@ date:  "2021-11-19 10:13:03"
 image: "godrays_04.png"
 author: "Nick Aversano"
 
+
+```
+
+Hello! This is my first post on my brand new website. This website was written from scratch in C using some libraries I've developed over the past year.
+Please, take off your shoes and make yourself comfortable. I hope you enjoy your stay.
+
+I want to share some thoughts on my journey so far and where I think I'm heading.
+Maybe this will help you, or maybe not. Take everything I say with a grain of salt.
+
+## The Beginning
+
+I got started programming when I was 10 because I wanted to make games.
+I remember playing Super Mario 64 on the Nintendo 64: my first game on my first console.
+I thought to myself: "how does someone make this game?"
+It was a simple thought in my 8 yo brain. But at the time, I couldn't even imagine what went on behind the scenes. The endearing polygon art was one hint. You could kind of tell that everything was made out of triangles.
+
+I am happy to say that I can finally answer that question, but it's been a long journey.
+
+I remember vidly when my friend told me about this program called Game Maker which allowed you to make games without any programming knowledge.
+
+So I asked my dad for a computer, and he asked me "what do you want I computer for?". I told him I wanted to make and sell games on the internet.
+He said "we can get you a computer, Nick.".
+I am fortunate that my parents were able to get me a PC at the time.
+
+My first computer was a Dell tower with a whopping 40Gb of memory.
+
+I remember the first feeling of starting Game Maker staring at a blank white screen and being so excited to start making things.
+I had no idea what I was doing.
+
+I started learning how to make games by looking at tutorials and using these drag-and-drop blocks.
+I would look at free examples people posted on the Game Maker Forums, ask questions when I got stuck.
+It wasn't until a little later when I discovered that actually all of these blocks had one line of code you could type into this special block called a "Code Block".
+I almost learned programming accidently.
+
+## Freelancing 101
+
+I got started freelancing in high school. My first gig was making a website for my dad's friends band.
+I made a bunch of small websites for random people.
+
+## First Job
+
+My first programming job was at a local real-estate company.
+I was working as an intern there building out various features on their website.
+I learned a lot of things there: vim, git, tmux, bash.
+
+## The Internship
+
+I got an internship at CBSNews my freshman summer during college. I remember the exhausting 3 hour commute every day into NYC. I would pretty much get home and fall asleep, then wake up the next day and do it all over again.
+Luckily this only lasted for 3 months and everyone I worked with was super nice.
+But I hated commuting.
+
+## LinkedIn Internship
+
+I got an internship at LinkedIn during junior year summer.
+This was my first time going out West.
+I remember they said attire was "buisness casual" so I dressed like NYC business casual. And everyone wore jeans, t-shirts and even sandals.
+
+It was a lot of fun, I instantly became great friends with my roommates, and we travelled all around California.
+I really didn't enjoy the work all that much. I was working as an Android
+
+## Freelancing ()
+
+## The Present
+
+I really love this quote:
+
+```
+
 @quote
 ```
 It is well known the drunken sailor who staggers to the left or right with n independent random steps will, on the average, end up about sqrt(n) steps from the origin. But if there is a pretty girl in one direction, then his steps will tend to go in that direction and he will go a distance proportional to n. In a lifetime of many, many independent choices, small and large, a career with a vision will get you a distance proportional to n, while no vision will get you only the distance sqrt(n). In a sense, the main difference between those who go far and those who do not is some people have a vision and the others do not and therefore can only react to the current events as they happen.
@@ -14,140 +82,21 @@ I am preaching the message that, with apparently only one life to live on this e
 ```
 
 ```
-This is text.
-I should get grouped with the above line!
-
-Here's a new p tag!
-```
-
-```
-Hey what's up @link{'Amazing link', 'http://nickav.co'} and other stuff
-
-This is a test @code{"std::string"}
-
-This is another test `std::string` with some text after `a`, `b`, and...
-
-@img{'godrays_04.png'}
-```
-
-@code
-```
-String string = os_read_entire_file(S("hello.txt"));
-print("%S\n", string);
-```
-
-```
-
-<hr/>
+This resonates with me in a lot of ways.
 
 
-# UI Engines: Interfaces of the Future
+## Gradient descent as a way to live
 
-Outline:
-- Software Keeps Getting Slower!
-- Dependencies keep going up!
+Following your immediate interests may lead you down weird rabbit holes, but it is possibly the only way forward.
+Given your situation, what is the most interesting thing you could be working on.
 
-- Users have come to expect software to be slow and buggy
+Many people chase money, prestiege, .... But I want to work on things that are interesting to me.
+Too much of web work is largely uninspiring.
 
-- The Web was built for newspapers
-- Websites have evolved more and more to resemble "single-page applications" with "modern frontned frameworks"
-- Well... that's kind of not that different from desktop applications
+Browsers are this incredible mess of complexity.
+The speed of light is more like the speed of sound.
 
-- BUT! They add lots of stuff: the DOM, JavaScript -> slowness!
-- I know a window should be able to start up fast!
+Well, this is to the new me.
+To the me who commits to working on what's interesting, not what's profitable.
 
-- Online-first software -- egregious violations of users time:
-- Gmail
-- Spotify
-- Figma
-
-But does it have to be this way?
-Could we reduce our reliance on browsers?
-
-What browsers got right:
-- sandboxing
-- good cross-platform support
-- easy to get started
-- high-quality font rendering
-- OS-level Accessibility
-
-What browsers got wrong:
-- slow!
-- retained-mode UI
-- weren't really designed to build applications!
-
-WASM is the answer? Maybe. But there are some problems with the WASM story. Not to mention you pay a 4x slowdown.
-
-What can we do about it?
-
-
-
-
-
-It is well-known that software keeps getting slower and slower. Many people have spoken about this.
-The old saying of Andy giveth and Bill taketh stil rings true to this day.
-
-But we have become used to it!
-
-
-There is an increasing trend on the web to build "single-page applications".
-Not only do these applications have to add tens of thousands of dependencies to get anything done at all, but working in them feels difficult.
-
-Not to mention they struggle at really trivial problems: for example, rendering 10k+ items in a list.
-Then you have to introduce a "virtual list" which handles "recycling" the DOM elements just to get more or less back to exactly what your computer is already doing: rendering frames at 60Hz!
-
-Modern web applications are starting to resemble actual desktop applications more and more, but the users pay a large
-cost (in terms of time!) for using them.
-
-The outright disrespect (whether implicit or explicit) for users is downright wrong. We can do better. We, as creators, should not put this slowness and burdens on the users.
-
-The burnen should be on us to _fully understand what we are building_, and to do whatever necessary to build the highest-quality experience.
-Otherwise, our users pay with their time.
-
-
-On Windows, you can open a window and start drawing in less than 16ms. But, web applications we use take many seconds to open before you can even get started.
-
-
-The things the web browser got right:
-- good cross-platform support
-- easy to get started
-- high-quality font rendering
-- OS-level Accessibility
-
-The things the web browser got wrong:
-- slow!
-- retained-mode UI
-
-
-On both sides of the equation there are egregious examples of terrible--and outright malicious--behavior!
-
-Egregious examples of this include:
-
-Gmail: 2s+ page load times for pretty much the whole time I've used it! How exactly is this experience better than a local-first mail client?
-
-Spotify: You can't even use the desktop client anymore without an Internet connection! It prompts 
-
-
-## Local-First Software
-
-
-## The Web
-
-The Web was designed to make newspapers online.
-
-JavaScript was initially made in a couple of weeks.
-
-Now, increasingly, we are using "modern frontend frameworks" to build interfaces that more closesly resemble desktop software.
-
-
-## The Sandboxing Story
-
-Some have said the web browser has succeeded because the operating system has failed. In some ways, that rings true.
-
-It has been speculated that better process sandboxing would dramatically increase the amount of OS
-
-There are lots of legacy OS APIs that you have to fight through to get anything done, and it's even worse because they all have slightly different and overlapping for example decent controller input on Windows.
-
-
-## The ideal
 
