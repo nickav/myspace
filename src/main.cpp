@@ -243,7 +243,7 @@ void write_link(Arena *arena, String text, String href)
     }
 
     auto target = is_external ? S("_blank") : S("");
-    write(arena, "<a class='link' href='%S' target='%S'>%S</a>\n", href, target, text);
+    write(arena, "<a class='link' href='%S' target='%S'>%S</a>", href, target, text);
 }
 
 void write_code_block(Arena *arena, String code)
@@ -388,12 +388,26 @@ String apply_basic_markdown_styles(String text)
         {
             if (it == '`')
             {
-                i64 closing_index = string_find(text, S("`"), i + 1);
-                if (closing_index < text.count)
+                bool is_triple = i < text.count - 3 && text.data[i + 1] == '`' && text.data[i + 2] == '`';
+                if (is_triple)
                 {
-                    at += print_to_memory(at, end - at, "<code class='inline_code'>%S</code>", string_slice(text, i + 1, closing_index));
-                    i = closing_index;
-                    continue;
+                    i64 closing_index = string_find(text, S("```"), i + 3);
+                    if (closing_index < text.count)
+                    {
+                        at += print_to_memory(at, end - at, "<pre class='code'>%S</pre>", string_slice(text, i + 3, closing_index));
+                        i = closing_index + 3;
+                        continue;
+                    }
+                }
+                else
+                {
+                    i64 closing_index = string_find(text, S("`"), i + 1);
+                    if (closing_index < text.count)
+                    {
+                        at += print_to_memory(at, end - at, "<code class='inline_code'>%S</code>", string_slice(text, i + 1, closing_index));
+                        i = closing_index;
+                        continue;
+                    }
                 }
             }
 
@@ -743,18 +757,33 @@ int main(int argc, char **argv)
 
                         if (search < line.count)
                         {
-                            i64 bracket_index = string_find(line, S("}"), search + 1);
+                            // @Incomplete: we should really do a "parse one node" kind of a thing here
                             i64 newline_index = string_find(line, S("\n"), search + 1);
-                            i64 end_index = Min(bracket_index, newline_index);
+                            String single_line = string_slice(line, 0, newline_index);
+
+                            i64 bracket_index = string_find(single_line, S("}"), search + 1);
+                            bracket_index = Min(bracket_index, string_find(single_line, S(")"), search + 1));
+                            bracket_index = Min(bracket_index, string_find(single_line, S("]"), search + 1));
+
+                            i64 end_index = bracket_index;
+                            if (bracket_index >= single_line.count)
+                            {
+                                i64 double_newline_index = string_find(line, S("\n\n"), search + 1);
+                                end_index = double_newline_index;
+                            }
 
                             //~nja: output tags
                             String tag_str = string_trim_whitespace(string_slice(line, search, end_index + 1));
                             auto root = parse_entire_string(temp_arena(), tag_str);
+
                             if (!node_is_nil(root) && !node_is_nil(root->first_child))
                             {
-                                auto tag = root->first_child;
-                                auto tag_name = tag->string;
-                                auto args = tag->first_child;
+                                auto fc = root->first_child;
+                                auto tag_name = fc->first_tag->string;
+                                if (!tag_name.count) {
+                                    tag_name = fc->string;
+                                }
+                                auto args = fc->first_child;
 
                                 if (false) {}
                                 else if (string_match(tag_name, S("link"), MatchFlags_IgnoreCase))
@@ -777,7 +806,20 @@ int main(int argc, char **argv)
                                 else if (string_match(tag_name, S("code"), MatchFlags_IgnoreCase))
                                 {
                                     auto str = node_get_child(args, 0)->string;
-                                    write(arena, "<code class='inline_code'>%S</code>", str);
+                                    if (str.count)
+                                    {
+                                        write(arena, "<code class='inline_code'>%S</code>", str);
+                                    }
+                                    else
+                                    {
+                                        write_code_block(arena, fc->string);
+                                    }
+                                }
+                                else if (string_match(tag_name, S("quote"), MatchFlags_IgnoreCase))
+                                {
+                                    auto str = node_get_child(args, 0)->string;
+                                    str = string_trim_whitespace(str);
+                                    write(arena, "<blockquote class='code' style='white-space:pre-line'>%S</blockquote>", str);
                                 }
                                 else if (string_match(tag_name, S("iframe"), MatchFlags_IgnoreCase))
                                 {

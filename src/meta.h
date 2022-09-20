@@ -332,6 +332,7 @@ Array<Token> tokenize(String text)
 
         print("[tokenize] Unhandled token: '%c'\n", it);
         i ++;
+        break;
     }
 
     return tokens;
@@ -723,6 +724,29 @@ Node *parse(Arena *arena, Array<Token> tokens)
 
     return root;
 }
+
+#if 0
+Node *parse_one_node(Arena *arena, String text)
+{
+    // @Incomplete: do some sort of smart slicing here
+    auto tokens = tokenize(text);
+
+    Parser state = {};
+    state.tokens = tokens;
+    state.index = 0;
+    state.arena = arena;
+
+    Node *root = make_node(state.arena, NodeType_Root, S("<root>"), NULL);
+    Node *result = parse_expression(&state);
+    root->raw_string = text; // @Incomplete: slice text
+    if (result)
+    {
+        node_push_child(root, result);
+    }
+
+    return root;
+}
+#endif
 
 Node *parse_entire_string(Arena *arena, String text)
 {

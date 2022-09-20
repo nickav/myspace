@@ -2,18 +2,18 @@
 <div class='csy-64'>
 
 <div class='csx-8'>
-@links
+@links()
 </div>
 
 <div class='csy-32'>
 <h2>Featured Work</h2>
-@projects
+@projects()
 </div>
 
 <div class='csy-32'>
 <h2>Recent Posts</h2>
-@posts{5}
-@link{"← View All Posts", "/posts"}
+@posts(5)
+@link("← View All Posts", "/posts")
 </div>
 
 </div>

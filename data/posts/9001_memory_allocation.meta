@@ -4,7 +4,7 @@ date:  "2021-11-19 10:13:03"
 image: "godrays_04.png"
 author: "Nick Aversano"
 
-```
+"""
 When writing high-performance software, thinking about memory can result in dramatic speed improvements.
 General purpose solutions will often leave a lot of performance on the table.
 While you don't always need to do the most optimal thing, memory acess can definitely be a runtime bound on your program's execution time.
@@ -18,13 +18,9 @@ As such, heap allocators are really bad for cache locality.
 In addition, they can have fragmentation problems.
 
 ```
-
-@code
-```
 // Insert benchmark here
 ```
 
-```
 In non-trival programs this actually starts to really slow down your code.
 
 
@@ -34,18 +30,15 @@ So if heap allocators are too slow, what else is there that you can use?
 ## Static Allocation
 
 Well, for starters, there's the classic static allocation. Meaning, just declare the thing to be as big as you possibly could ever want it to be:
-```
 
-@code
 ```
-struct App_Memory
+struct Game_Memory
 {
     Entity entities[2048]; // 2048 should be enough for anybody
     i64    count;
 };
 ```
 
-```
 The drawbacks to this approach should be obvious, but there are some good properties worth talking about:
 For one, you know exactly what your worst possible case scenario is and you can make sure your program runs smoothly at the limit.
 This has knock-on effects with algorithmic runtime complexity.
@@ -71,7 +64,6 @@ One of the tricky things with this approach is there's not really a natural way 
 For this reaon, it's often useful to allow the `Arena` to provide `push` and `pop` methods.
 
 This allows you to do some nice scratch memory kind of stuff. For example:
-```
 
 @code
 ```
@@ -81,13 +73,12 @@ if (data)
 {
     // do something that requires an unknown amount of memory ahead of time...
     // here's another comment
-
+    
     u64 used_size = 512;
     arena_pop((i64)(size - used_size));
 }
 ```
 
-```
 But, sometimes you need to free things out of order. In that case, this approach doesn't really work so well. Or does it?
 Well, one thing you can do is to have multiple arena allocators that serve different purposes.
 
