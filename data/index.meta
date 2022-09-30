@@ -1,10 +1,6 @@
 ```
 <div class='csy-64'>
 
-<div class='csx-8'>
-@links()
-</div>
-
 <div class='csy-32'>
 <h2>Featured Work</h2>
 @projects()

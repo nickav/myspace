@@ -208,6 +208,7 @@ String escape_html(String text)
     if (string_contains(text, S("<")) || string_contains(text, S(">")))
     {
         // NOTE(nick): crazy inefficient!
+        // :StringReplaceHack
         auto parts = string_split(text, S("<"));
         text = string_join(parts, S("&lt;"));
         parts = string_split(text, S(">"));
@@ -224,13 +225,6 @@ void write_image(Arena *arena, String src, String alt, String rest = {})
 
 void write_image_cover(Arena *arena, String src)
 {
-    String style = {};
-    write_image(arena, src, S(""), S("class='cover'"));
-}
-
-void write_image_tag(Arena *arena, String src, String alt)
-{
-    write_image(arena, src, alt);
 }
 
 void write_link(Arena *arena, String text, String href)
@@ -278,6 +272,20 @@ void write_code_block(Arena *arena, String code)
     }
 
     write(arena, "</pre>");
+}
+
+void write_quote(Arena *arena, String quote)
+{
+    quote = string_trim_whitespace(quote);
+
+    // @Incomplete: special handling for the citation line (last line starting with a "-")
+
+    // NOTE(nick): sort of inefficient
+    // :StringReplaceHack
+    auto parts = string_split(quote, S("--"));
+    quote = string_join(parts, S("—"));
+
+    write(arena, "<blockquote class='quote'>%S</blockquote>", quote);
 }
 
 static String global_public_path = {};
@@ -674,7 +682,7 @@ int main(int argc, char **argv)
         if (page.image.count)
         {
         write(arena, "<div class='w-full h-320 xl:h-480 bg-light'>\n");
-            write_image_cover(arena, page.image);
+            write_image(arena, page.image, S(""), S("class='cover'"));
         write(arena, "</div>\n");
 
         auto links = find_next_and_prev_pages(page_slug, posts);
@@ -727,8 +735,7 @@ int main(int argc, char **argv)
 
                 if (node_has_tag(it, S("quote")))
                 {
-                    auto str = string_trim_whitespace(it->string);
-                    write(arena, "<blockquote class='code' style='white-space:pre-line'>%S</blockquote>", str);
+                    write_quote(arena, it->string);
                     continue;
                 }
 
@@ -801,7 +808,7 @@ int main(int argc, char **argv)
                                     auto alt = node_get_child(args, 1)->string;
                                     if (!alt.count) alt = S("");
 
-                                    write_image_tag(arena, src, alt);
+                                    write_image(arena, src, alt);
                                 }
                                 else if (string_match(tag_name, S("code"), MatchFlags_IgnoreCase))
                                 {
@@ -818,8 +825,7 @@ int main(int argc, char **argv)
                                 else if (string_match(tag_name, S("quote"), MatchFlags_IgnoreCase))
                                 {
                                     auto str = node_get_child(args, 0)->string;
-                                    str = string_trim_whitespace(str);
-                                    write(arena, "<blockquote class='code' style='white-space:pre-line'>%S</blockquote>", str);
+                                    write_quote(arena, str);
                                 }
                                 else if (string_match(tag_name, S("iframe"), MatchFlags_IgnoreCase))
                                 {
@@ -834,7 +840,7 @@ int main(int argc, char **argv)
                                 else if (string_match(tag_name, S("posts"), MatchFlags_IgnoreCase))
                                 {
                                     //~nja: blog list
-                                    write(arena, "<div class='flex-y csy-32'>\n");
+                                    write(arena, "<div class='flex-y csy-16'>\n");
                                     for (Each_Node(it, posts->first_child))
                                     {
                                         auto post_title = node_get_child(it, 0)->string;
@@ -846,17 +852,38 @@ int main(int argc, char **argv)
                                         auto link = post_link(it);
 
                                         //~nja: article
-                                        write(arena, "<div class='flex-y bg-light'>\n");
-                                        write(arena, "<a href='%S'>\n", link);
+                                        write(arena, "<a class='no-hover' href='%S'>\n", link);
+                                        write(arena, "<div class='flex-1 flex-y center-y h-128' style='position:relative'>\n");
                                         if (post.image.count)
                                         {
-                                        write(arena, "<div class='w-full h-200 sm:h-176'>\n");
-                                        write_image_cover(arena, post.image);
-                                        write(arena, "</div>\n");
+                                        write_image(arena, post.image, S(""), S("class='bg bg-light cover'"));
                                         }
-                                        write(arena, "<div class='flex-y padx-32 pady-16'><div class='font-bold'>%S</div><div class='c-gray' style='font-size: 0.8rem;'>%S</div></div>\n", post.title, date);
-                                        write(arena, "</a>\n");
+                                        write(arena, "<div class='flex-y padx-32 pady-16'><div class='font-bold'>%S</div><div class='c-gray' style='font-size: 0.8rem;'>%S</div></div>\n", post.title, post.description);
                                         write(arena, "</div>\n");
+                                        write(arena, "</a>\n");
+                                    }
+                                    write(arena, "</div>\n");
+                                }
+                                else if (string_match(tag_name, S("post_links"), MatchFlags_IgnoreCase))
+                                {
+                                    //~nja: blog list
+                                    write(arena, "<div class='flex-y csy-16'>\n");
+                                    for (Each_Node(it, posts->first_child))
+                                    {
+                                        auto post_title = node_get_child(it, 0)->string;
+                                        auto post_slug  = node_get_child(it, 1)->string;
+                                        auto post_root  = node_get_child(it, 2);
+
+                                        auto post = parse_page_meta(post_root);
+                                        auto date = pretty_date(ParsePostDate(post.date));
+                                        auto link = post_link(it);
+
+                                        //~nja: article
+                                        write(arena, "<a href='%S'>\n", link);
+                                        write(arena, "<div class='flex-1 flex-y center-y' style='position:relative'>\n");
+                                        write(arena, "<div class='flex-y'><div class='font-bold'>%S</div><div class='c-gray' style='font-size: 0.8rem;'>%S</div></div>\n", post.title, post.description);
+                                        write(arena, "</div>\n");
+                                        write(arena, "</a>\n");
                                     }
                                     write(arena, "</div>\n");
                                 }
