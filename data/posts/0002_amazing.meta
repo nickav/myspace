@@ -1,9 +1,28 @@
-title: "Another amazing blog article"
-desc:  "You've really never seen anything like it"
+title: "On Custom Game Engines"
+desc:  "My journey writing a custom game engine in C"
 date:  "2022-11-23 10:13:03"
 image: "journey_01_pixel.png"
 author: "Nick Aversano"
 
-```
+"""
 
+<img width="576" height="576" src="/r/journey_01_pixel.png" alt="" style="image-rendering:pixelated;" />
 
+One of the most common criticisms I hear is: "Why re-invent the wheel?"
+
+Well, for starters there is no such thing as a wheel.
+Also, if you truly want to learn about a thing, what better way that to write everything from scratch?
+
+It's often said that writing helps you solidify your own understanding of a topic.
+I think writing code is much the same.
+
+At a high-level a game engine is just a glorified REPL.
+
+A rough outline of things an engine needs to handle:
+
+<ul>
+<li>Setup</li>
+<li>Assets</li>
+<li>Input (Keyboard, Mouse, Controllers)</li>
+<li>Output (Graphics, Audio)</li>
+</ul>

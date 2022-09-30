@@ -389,6 +389,12 @@ String apply_basic_markdown_styles(String text)
         }
     }
 
+    bool is_html_tag = string_starts_with(text, S("<")) && string_ends_with(text, S(">"));
+    if (is_html_tag)
+    {
+        return text;
+    }
+
     // @Cleanup: figure out a better memory story here
     i64 count = 16 * text.count;
     u8 *data = push_array(temp_arena(), u8, count);
@@ -690,7 +696,7 @@ int main(int argc, char **argv)
         //~nja: image header / banner
         if (page.image.count)
         {
-        write(arena, "<div class='w-full h-320 xl:h-480 bg-light'>\n");
+        write(arena, "<div class='w-full h-320 sm:h-240 xl:h-480 bg-light'>\n");
             write_image(arena, page.image, S(""), S("class='cover'"));
         write(arena, "</div>\n");
 
@@ -840,6 +846,10 @@ int main(int argc, char **argv)
                                 else if (string_match(tag_name, S("quote"), MatchFlags_IgnoreCase))
                                 {
                                     auto str = node_get_child(args, 0)->string;
+                                    if (!str.count)
+                                    {
+                                        str = fc->string;
+                                    }
                                     write_quote(arena, str);
                                 }
                                 else if (string_match(tag_name, S("iframe"), MatchFlags_IgnoreCase))
