@@ -2,8 +2,10 @@ title: "DRONEPOLLOCK"
 desc:  "Internet-of-Things painting"
 date:  "2015-11-23"
 image: "dronepollock.jpg"
+author: "Nick Aversano"
 
 ```
+
 @img{"dronepollock.jpg"}
 
 Created a Drone-powered Internet-of-Things Jackson Pollock splatter-painting where 200 people left their mark on a 15 ft canvas. Live-streamed to Technica, University of Maryland’s all-ladies hackathon.

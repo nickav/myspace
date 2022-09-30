@@ -26,6 +26,10 @@ links: [
     (Posts, "posts"),
 ]
 
+author_links: [
+    ("Nick Aversano", "/"),
+]
+
 projects: [
     ("na.h", "My Single-File Header Libraries", "https://github.com/nickav/na")
     ("myspace", "This website written in C", "https://github.com/nickav/myspace")

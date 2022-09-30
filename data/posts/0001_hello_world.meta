@@ -17,15 +17,16 @@ I want to share some thoughts on my journey so far and where I think I'm heading
 I got started programming when I was 10 because I wanted to make games.
 I remember playing Super Mario 64 on the Nintendo 64: my first game on my first console.
 I thought to myself: "how does someone make this game?"
-It was a simple thought in my 8yo brain. But at the time, I couldn't imagine what went on behind the scenes. The endearing polygon art was one hint. You could kind of tell that everything was made out of triangles.
+It was a simple thought in my 8yo brain. At the time, I couldn't imagine what went on behind the scenes. The endearing polygon art was a hint. You could kind of tell that everything was made out of triangles.
 I am happy to say that I can finally answer that question, but it's been a long journey.
 
-I remember vidly when my friend told me about this program called Game Maker which allowed you to make games without any programming knowledge.
+I remember vidly when my friend told me about this program called Game Maker which you could make games without any programming knowledge.
 So I asked my dad for a computer, and he asked me "what do you want I computer for?". I told him I wanted to make and sell games on the internet.
 He said "sure, we can get you a computer, Nick.".
 I am fortunate that my parents were able to get me a PC at the time.
 
 My first computer was a Dell tower with a whopping 40Gb of memory.
+I downloaded Game Maker and started it up.
 Staring at the blank white Game Maker screen I was so excited to start making things and had no idea what I was supposed to do.
 My head was full of possibilities.
 
@@ -55,7 +56,7 @@ But I hated commuting.
 I felt like I was watching my life slowly dissapear on every bus ride.
 I knew I never wanted to do that for a living.
 
-## LinkedIn Internship
+## LinkedIn
 
 I got an internship at LinkedIn during junior year summer.
 It was my first time going out West.
@@ -102,10 +103,13 @@ But after a while it started to get stale.
 I wasn't really enjoying it anymore.
 
 But what I really loved about freelancing is:
-- you get to work on small teams of highly productive people
-- you get to build things from scratch
-- you have a voice with design (and the whole product)
-- you can work from anywhere
+
+<ul>
+<li>you get to work on small teams of highly productive people</li>
+<li>you get to build things from scratch</li>
+<li>you have a voice with design (and the whole product)</li>
+<li>you can work from anywhere</li>
+</ul>
 
 In some ways, it felt like the film industry. You would get a team together, work on something, them go your separate ways.
 Then sometime later someone from an old project would think of you to help out with a new one.

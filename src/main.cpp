@@ -223,10 +223,6 @@ void write_image(Arena *arena, String src, String alt, String rest = {})
     write(arena, "<img src='%S' alt='%S' %S/>\n", res_url(src), alt, rest);
 }
 
-void write_image_cover(Arena *arena, String src)
-{
-}
-
 void write_link(Arena *arena, String text, String href)
 {
     bool is_external = string_find(href, S("://"), 0, 0) < href.count;
@@ -345,7 +341,7 @@ String string_normalize_newlines(String input)
     return make_string(data, at - data);
 }
 
-i64 string_word_count(String str)
+i64 string_count_words(String str)
 {
     i64 result = 0;
     while (str.count > 0)
@@ -360,6 +356,19 @@ i64 string_word_count(String str)
         }
     }
     return result;
+}
+
+// @Robustness: this is a little bit off because we don't exclude: html tags, @tags
+i64 page_count_estimated_words(Node *page_root)
+{
+    i64 count = 0;
+    for (Each_Node(it, page_root->first_child))
+    {
+        // NOTE(nick): only emit "loose" nodes
+        if (node_has_children(it)) continue;
+        count += string_count_words(it->string);
+    }
+    return count;
 }
 
 String apply_basic_markdown_styles(String text)
@@ -706,6 +715,12 @@ int main(int argc, char **argv)
             if (page.title.count || page.date.count)
             {
             write(arena, "<div class='marb-32'>\n", page.title);
+                if (true)
+                {
+                    i64 words = page_count_estimated_words(page_root);
+                    i64 avg_read_time_mins = (i64)((words / 300.0f) + 0.5f);
+                    write(arena, "<div class='c-gray' style='font-size:0.8rem'>%d min read</div>\n", avg_read_time_mins);
+                }
                 if (page.title.count)
                 {
                     write(arena, "<h1>%S</h1>\n", page.title);
@@ -926,24 +941,6 @@ int main(int argc, char **argv)
                     }
 
                     if (!skip_p_tag) write(arena, "</p>");
-
-                    #if 0
-                    if (string_starts_with(it, S("@")))
-                    {
-                        auto root = parse_entire_string(temp_arena(), it);
-                    }
-
-                    it = string_trim_whitespace(it);
-                    if (!it.count) continue;
-                    if (string_starts_with(it, S("<")) && string_ends_with(it, S(">")))
-                    {
-                        write(arena, "%S\n", it);
-                    }
-                    else
-                    {
-                        write(arena, "<p>%S</p>\n", it);
-                    }
-                    #endif
                 }
             }
 

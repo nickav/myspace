@@ -20,7 +20,7 @@ input, button, textarea, select {
   font: inherit;
 }
 
-h1, h2, h3, h4, h5, h6, p, ol, ul {
+h1, h2, h3, h4, h5, h6, p {
   padding: 0;
   overflow-wrap: break-word;
 }
