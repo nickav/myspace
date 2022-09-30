@@ -652,7 +652,7 @@ int main(int argc, char **argv)
         //~nja: header
         write(arena, "<div class='content flex-x pad-64  md:flex-y sm:csy-8 sm:pad-32'>\n");
             write(arena, "<div class='csx-16 flex-1 flex-x center-y'>\n");
-                write(arena, "<span class='font-32 font-bold'><a href='%S'>%S</a></span>\n", S("/"), site.name);
+                write(arena, "<span class='font-24 font-bold'><a href='%S'>%S</a></span>\n", S("/"), site.name);
             write(arena, "</div>\n");
 
             write(arena, "<div class='csx-16 flex-x'>\n");
@@ -665,7 +665,7 @@ int main(int argc, char **argv)
 
                 auto content = os_read_entire_file(path_join(data_dir, image));
 
-                write(arena, "<a title='%S' href='%S' target='_blank' class='inline-flex center pad-8'><div class='inline-block size-24'>%S</div></a>\n", name, url, content);
+                write(arena, "<a title='%S' href='%S' target='_blank' class='inline-flex center pad-8'><div class='inline-block size-20'>%S</div></a>\n", name, url, content);
             }
             write(arena, "</div>\n");
         write(arena, "</div>\n");
@@ -850,11 +850,11 @@ int main(int argc, char **argv)
                                         write(arena, "<a href='%S'>\n", link);
                                         if (post.image.count)
                                         {
-                                        write(arena, "<div class='w-full h-256 sm:h-176'>\n");
+                                        write(arena, "<div class='w-full h-200 sm:h-176'>\n");
                                         write_image_cover(arena, post.image);
                                         write(arena, "</div>\n");
                                         }
-                                        write(arena, "<div class='flex-y padx-32 pady-16'><div class='font-bold'>%S</div><div style='font-size: 0.9rem;'>%S</div></div>\n", post.title, date);
+                                        write(arena, "<div class='flex-y padx-32 pady-16'><div class='font-bold'>%S</div><div class='c-gray' style='font-size: 0.8rem;'>%S</div></div>\n", post.title, date);
                                         write(arena, "</a>\n");
                                         write(arena, "</div>\n");
                                     }
@@ -873,7 +873,7 @@ int main(int argc, char **argv)
                                         write(arena, "<a class='flex-y center-y padx-32 pady-16 bg-light' href='%S' target='_blank'>", link);
                                         write(arena, "<div class='flex-y'>");
                                         write(arena, "<div class='font-bold'>%S</div>", title);
-                                        write(arena, "<div class='c-gray' style='font-size: 0.9rem;'>%S</div>", desc);
+                                        write(arena, "<div class='c-gray' style='font-size: 0.8rem;'>%S</div>", desc);
                                         write(arena, "</div>");
                                         write(arena, "</a>");
                                     }

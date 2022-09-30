@@ -31,6 +31,7 @@ So if heap allocators are too slow, what else is there that you can use?
 
 Well, for starters, there's the classic static allocation. Meaning, just declare the thing to be as big as you possibly could ever want it to be:
 
+@code
 ```
 struct Game_Memory
 {
@@ -44,20 +45,34 @@ For one, you know exactly what your worst possible case scenario is and you can 
 This has knock-on effects with algorithmic runtime complexity.
 Another benefit is that you know if your program starts at all, then it already has enough memory to run.
 
-NOTE(nick): where does this memory actually come from?
+Depending on your usage, this memory can be stored in a few different places: the stack, the heap, or the data segment.
+In fact, the data segment is not any more special than program memory.
+When your program is started, the OS loads it into memory somewhere and marks it as read-only.
+The only difference is the data segment has both read-write and read-only areas. Whereas program code is read-only.
 
 
 ## Arena Allocators
 
-Enter one my favorite memory strategies. It's so simple you'll fall out of your chair.
-The concept is: grab a large block of memory to sub-allocate from. Whenever you need more memory, just bump the pointer forward and return a pointer into that block.
+Enter one my favorite memory strategies. It's so simple you'll fall out of your chair:
+
+@code
+```
+struct Arena
+{
+    u8 *data;
+    u64 offset;
+    u64 size;
+};
+```
+
+The concept is simple: grab a large block of memory to sub-allocate from. Whenever you need more memory, just bump the `offset` forward and return a pointer into that block.
 You can also trivially align the resulting pointers.
 
 I first learned about this approach from watching Handmade Hero.
 
-The pros of this approach is it's dead simple. And as a result, extremely fast.
+The pros of this approach is it's dead simple. And it's extremely fast.
 
-One really nice property of this approach is it's trival to free the entire block. All you do is move the pointer back to the start.
+It's also trival to free the entire block. All you do is set `offset` to zero.
 
 One of the tricky things with this approach is there's not really a natural way to "free" anything. Unless you happen to be in the happy case where the thing you were trying to free was the last operation you did in the block.
 
@@ -72,8 +87,6 @@ void *data = arena_push(arena, size);
 if (data)
 {
     // do something that requires an unknown amount of memory ahead of time...
-    // here's another comment
-    
     u64 used_size = 512;
     arena_pop((i64)(size - used_size));
 }

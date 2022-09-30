@@ -55,15 +55,18 @@ svg {
   color: var(--color);
 }
 
+html {
+  font-size: 16px;
+
+  font-weight: 400;
+  font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen-Sans,Ubuntu,Cantarell,"Helvetica Neue",sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
 body {
   background: var(--bg);
   color: var(--color);
-
-  font-weight: 400;
-  font-size: 16px;
-  font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen-Sans,Ubuntu,Cantarell,"Helvetica Neue",sans-serif;
-  line-height: 1.6;
-  -webkit-font-smoothing: antialiased;
   min-width: 320px;
 }
 
@@ -82,7 +85,7 @@ a:hover {
 }
 
 p {
-  margin: 1.25rem 0;
+  margin: 1rem 0;
 }
 
 hr {
@@ -111,6 +114,7 @@ hr:after {
 .font-bold   { font-weight: 700; }
 
 .font-16 { font-size: 1rem; }
+.font-24 { font-size: 1.5rem; }
 .font-32 { font-size: 2rem; }
 
 
@@ -160,6 +164,7 @@ hr:after {
 }
 
 .size-16 { width: 1rem; height: 1rem; }
+.size-20 { width: 1.25rem; height: 1.25rem; }
 .size-24 { width: 1.5rem; height: 1.5rem; }
 .size-32 { width: 2rem; height: 2rem; }
 
@@ -188,7 +193,7 @@ hr:after {
 .h-full { height: 100%; }
 .h-64   { height: 4rem; }
 .h-128  { height: 8rem; }
-.h-256  { height: 16rem; }
+.h-200  { height: 12.5rem; }
 .h-320  { height: 20rem; }
 
 .csx-8  > *:not(:last-child) { margin-right: 0.5rem; }
@@ -208,7 +213,7 @@ hr:after {
 }
 
 .content {
-  max-width: 60rem;
+  max-width: 42rem;
   margin: 0 auto;
   width: 100%;
 }
@@ -279,21 +284,21 @@ hr:after {
 
 @media screen and (max-width: 640px)
 {
-  body {
+  html {
     font-size: 16px;
   }
 }
 
 @media screen and (min-width: 961px)
 {
-  body {
+  html {
     font-size: 18px;
   }
 }
 
 @media screen and (min-width: 1441px)
 {
-  body {
+  html {
     font-size: 20px;
   }
 
