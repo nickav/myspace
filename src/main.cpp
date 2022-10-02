@@ -721,7 +721,7 @@ int main(int argc, char **argv)
             if (page.title.count || page.date.count)
             {
             write(arena, "<div class='marb-32'>\n", page.title);
-                if (true)
+                if (string_includes(page_slug, S("posts/")))
                 {
                     i64 words = page_count_estimated_words(page_root);
                     i64 avg_read_time_mins = (i64)((words / 300.0f) + 0.5f);

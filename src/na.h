@@ -1393,6 +1393,11 @@ i64 string_find(String str, String search, i64 start_index = 0, Match_Flags flag
     return result;
 }
 
+bool string_includes(String str, String search, i64 start_index = 0, Match_Flags flags = 0)
+{
+    return string_find(str, search, start_index, flags) < str.count;
+}
+
 i64 string_index(String str, String search, i64 start_index = 0) {
     for (i64 i = start_index; i < str.count; i += 1) {
         if (memory_equals(str.data + i, search.data, search.count)) {

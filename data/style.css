@@ -72,7 +72,7 @@ body {
 }
 
 .load * {
-  transition: all 200ms;
+  transition: opacity 200ms, background 200ms, color 200ms;
 }
 
 a {
