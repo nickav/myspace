@@ -638,6 +638,8 @@ bool socket_can_write(Socket *socket)
     return false;
 }
 
+// @Cleanup @Incomplete: socket_is_ready should really be socket_is_ready_to_write
+// Also merge this with socket_can_write if possible??
 bool socket_is_ready(Socket *socket)
 {
     if (!socket) return false;
@@ -667,6 +669,12 @@ bool socket_send(Socket *socket, Socket_Address address, String message)
         addr.sin_port        = htons(address.port);
 
         int sent_bytes = sendto(socket->handle, (char *)message.data, message.count, 0, (sockaddr *)&addr, sizeof(addr));
+        if (sent_bytes < 0)
+        {
+            return false;
+        }
+
+        // @Incomplete: should this send the message in chunks?
         if (sent_bytes != message.count)
         {
             //return zed_net__error("Failed to send data");
@@ -680,10 +688,25 @@ bool socket_send(Socket *socket, Socket_Address address, String message)
         // @Incomplete: non-blocking TCP
 
         int sent_bytes = send(socket->handle, (char *)message.data, message.count, 0);
+        if (sent_bytes < 0)
+        {
+            return false;
+        }
+
         if (sent_bytes != message.count)
         {
-            //return zed_net__error("Failed to send data");
-            return false;
+            u8 *data = message.data + sent_bytes;
+            while (sent_bytes < message.count)
+            {
+                i64 bytes_remaining = message.count - sent_bytes;
+                i64 s = send(socket->handle, (char *)(message.data + sent_bytes), bytes_remaining, 0);
+                if (s > 0)
+                {
+                    sent_bytes += s;
+                }
+            }
+
+            return true;
         }
 
         return true;
@@ -746,7 +769,12 @@ String socket_recieve_entire_stream(Arena *arena, Socket *socket)
     for (;;)
     {
         i64 count = socket_recieve_bytes(socket, at, buffer_size, NULL);
-        if (count <= 0) break;
+        if (count <= 0)
+        {
+            // @Incomplete: test this?
+            if (bytes_received > 0) break;
+            else continue;
+        }
 
         bytes_received += count;
         at += count;
@@ -1284,7 +1312,9 @@ THREAD_PROC(http_responder_thread)
 
     if (response.body.count)
     {
-        socket_send(client, {}, response.body);
+        while (!socket_send(client, {}, response.body))
+        {
+        }
     }
 
     socket_close(client);
