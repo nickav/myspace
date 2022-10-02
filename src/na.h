@@ -3845,14 +3845,18 @@ void os_file_close(File *file) {
 }
 
 String os_read_entire_file(Allocator allocator, String path) {
-    auto file = os_file_open(path, FILE_MODE_READ);
-    auto size = os_file_get_size(&file);
-
     String result = {};
-    result.data = cast(u8 *)allocator_alloc(allocator, size);
-    result.count = size;
 
-    os_file_read(&file, 0, size, result.data);
+    auto file = os_file_open(path, FILE_MODE_READ);
+    if (!file.has_errors)
+    {
+        auto size = os_file_get_size(&file);
+        result.data = cast(u8 *)allocator_alloc(allocator, size);
+        result.count = size;
+        
+        os_file_read(&file, 0, size, result.data);
+    }
+
     os_file_close(&file);
 
     return result;
