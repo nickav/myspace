@@ -2,24 +2,19 @@
 
 set -e # exit on error
 
-# Setup
-script_path="$(cd "$(dirname "$0")" && pwd -P)"
-project_root=$script_path
-
-# Config
-build_folder="$project_root/build"
-bin_folder="$project_root/bin"
-src_file="$project_root/src/main.cpp"
+project_root="$(cd "$(dirname "$0")" && pwd -P)"
 exe_name="myspace"
-
 flags="-std=c++11 -Wno-deprecated-declarations -Wno-int-to-void-pointer-cast -Wno-writable-strings -Wno-dangling-else -Wno-switch -Wno-undefined-internal"
-libs=""
+libs="-framework Cocoa"
 
-mkdir -p $build_folder
+pushd $project_root
+  mkdir -p build
 
-# Build executable
-pushd $build_folder
-  rm -rf cyan*
-  time g++ $flags $libs -I$project_root/deps/ -D DEBUG $src_file -o $exe_name
-  ./$exe_name
+  pushd build
+    rm -rf cyan*
+    time g++ $flags $libs -D DEBUG ../src/main.cpp -o $exe_name
+
+    rm -rf bin
+    ./$exe_name ../data bin
+  popd
 popd

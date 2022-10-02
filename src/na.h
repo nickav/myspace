@@ -122,6 +122,7 @@ VERSION HISTORY
     #include <intrin.h>
 #elif OS_MACOS
     #include <xmmintrin.h>
+    #include <immintrin.h>
 #endif
 
 #if defined(STB_SPRINTF_IMPLEMENTATION) && !defined(print)
@@ -3098,10 +3099,16 @@ DWORD WINAPI win32_thread_proc(LPVOID lpParameter) {
     return result;
 }
 
-Thread os_create_thread(u64 stack_size, Thread_Proc *proc, void *data) {
-    Thread_Params *params = (Thread_Params *)os_alloc(sizeof(Thread_Params));
+Thread os_create_thread_with_params(u64 stack_size, Thread_Proc *proc, void *data, u64 copy_size) {
+    Thread_Params *params = (Thread_Params *)os_alloc(sizeof(Thread_Params) + copy_size);
     params->proc = proc;
     params->data = data;
+
+    if (copy_size > 0)
+    {
+        params->data = params + sizeof(Thread_Params);
+        memory_copy(data, params->data, copy_size);
+    }
 
     DWORD thread_id;
     HANDLE handle = CreateThread(0, stack_size, win32_thread_proc, params, 0, &thread_id);
@@ -3112,19 +3119,8 @@ Thread os_create_thread(u64 stack_size, Thread_Proc *proc, void *data) {
     return result;
 }
 
-Thread os_create_thread_with_params(u64 stack_size, Thread_Proc *proc, void *data, u64 copy_size) {
-    Thread_Params *params = (Thread_Params *)os_alloc(sizeof(Thread_Params) + copy_size);
-    params->proc = proc;
-    params->data = params + sizeof(Thread_Params);
-    memory_copy(data, params->data, copy_size);
-
-    DWORD thread_id;
-    HANDLE handle = CreateThread(0, stack_size, win32_thread_proc, params, 0, &thread_id);
-
-    Thread result = {};
-    result.handle = handle;
-    result.id = thread_id;
-    return result;
+Thread os_create_thread(u64 stack_size, Thread_Proc *proc, void *data) {
+    return os_create_thread_with_params(stack_size, proc, data, 0);
 }
 
 void os_detatch_thread(Thread thread) {
@@ -3428,6 +3424,11 @@ bool os_init() {
 f64 os_time_in_miliseconds() {
     f64 now = mach_absolute_time();
     return (now - macos_perf_counter) / macos_perf_frequency;
+}
+
+Date_Time os_get_current_time_in_utc() {
+    // @Incomplete
+    return {};
 }
 
 // @Incomplete: is this correct?
@@ -3959,7 +3960,7 @@ void *unix_thread_proc(void *data) {
     return (void *)result;
 }
 
-Thread os_create_thread(u64 stack_size, Thread_Proc *proc, void *data) {
+Thread os_create_thread_with_params(u64 stack_size, Thread_Proc *proc, void *data, u64 copy_size) {
     pthread_attr_t attr;
     if (pthread_attr_init(&attr) != 0) {
         return {};
@@ -3971,9 +3972,15 @@ Thread os_create_thread(u64 stack_size, Thread_Proc *proc, void *data) {
         }
     }
 
-    Thread_Params *params = (Thread_Params *)os_alloc(sizeof(Thread_Params));
+    Thread_Params *params = (Thread_Params *)os_alloc(sizeof(Thread_Params) + copy_size);
     params->proc = proc;
     params->data = data;
+
+    if (copy_size > 0)
+    {
+        params->data = params + sizeof(Thread_Params);
+        memory_copy(data, params->data, copy_size);
+    }
 
     pthread_t thread_id;
     pthread_create(&thread_id, &attr, unix_thread_proc, params);
@@ -3981,6 +3988,10 @@ Thread os_create_thread(u64 stack_size, Thread_Proc *proc, void *data) {
     Thread result = {};
     result.handle = (void *)thread_id;
     return result;
+}
+
+Thread os_create_thread(u64 stack_size, Thread_Proc *proc, void *data) {
+    return os_create_thread_with_params(stack_size, proc, data, 0);
 }
 
 void os_detatch_thread(Thread thread) {

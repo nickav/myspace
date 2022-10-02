@@ -976,7 +976,7 @@ int main(int argc, char **argv)
 
     //os_exit(0);
 
-    os_shell_execute(S("firefox.exe"), S("http://localhost:3000"));
+    //os_shell_execute(S("firefox.exe"), S("http://localhost:3000"));
     
     auto public_path = string_alloc(os_allocator(), output_dir);
     run_server(S("127.0.0.1:3000"), public_path);

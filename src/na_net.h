@@ -342,6 +342,13 @@ static WSACleanup_Func *W32_WSACleanup;
 
 #endif // _WIN32
 
+#if defined(__APPLE__)
+#include <arpa/inet.h>
+
+#define TIMEVAL timeval
+#define SOCKADDR_IN sockaddr_in
+#endif
+
 
 struct URL_Parts
 {
@@ -542,7 +549,7 @@ bool socket_accept(Socket *socket, Socket *from_socket, Socket_Address *from_add
     struct sockaddr_in from;
     int addr_len = sizeof(from);
 
-    i64 sock = accept(socket->handle, (sockaddr *)&from, &addr_len);
+    i64 sock = accept(socket->handle, (sockaddr *)&from, (socklen_t *)&addr_len);
 
     if (sock != INVALID_SOCKET)
     {
@@ -700,7 +707,7 @@ i64 socket_recieve_bytes(Socket *socket, u8 *data, u64 count, Socket_Address *ad
 
         int bytes_received = recvfrom(
             socket->handle,
-            (char *)data, count, 0, (sockaddr *)&from, &from_size
+            (char *)data, count, 0, (sockaddr *)&from, (socklen_t *)&from_size
         );
 
         if (address != NULL)
