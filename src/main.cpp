@@ -673,7 +673,7 @@ int main(int argc, char **argv)
         write(arena, "<body>\n");
 
         //~nja: header
-        write(arena, "<div class='content flex-x pad-64  md:flex-y sm:csy-8 sm:pad-32'>\n");
+        write(arena, "<div class='content flex-x pad-64  xs:flex-y sm:csy-8 sm:pad-32'>\n");
             write(arena, "<div class='csx-16 flex-1 flex-x center-y'>\n");
                 write(arena, "<span class='font-24 font-bold'><a href='%S'>%S</a></span>\n", S("/"), site.name);
             write(arena, "</div>\n");

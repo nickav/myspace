@@ -371,3 +371,11 @@ a:hover .bg {
     grid-template-columns: repeat(1, 1fr);
   }
 }
+
+@media screen and (max-width: 480px)
+{
+  .xs\:flex-y {
+    display: flex;
+    flex-direction: column;
+  }
+}

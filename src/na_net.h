@@ -693,6 +693,8 @@ bool socket_send(Socket *socket, Socket_Address address, String message)
             return false;
         }
 
+        // @Incomplete: check errno == EAGAIN or errno == EWOULDBLOCK
+        // and use select to determine when we can send again?
         if (sent_bytes != message.count)
         {
             u8 *data = message.data + sent_bytes;
