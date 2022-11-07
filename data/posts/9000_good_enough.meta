@@ -15,6 +15,7 @@ https://www.youtube.com/watch?v=JjDsP5n2kSM
 Casey Muratori
 https://twitter.com/Nothke/status/1246613901015486466
 
+> "A writer is somebody for whom writing is more difficult than it is for other people." - Thomas Mann
 
 Often, doing what is good enough for now is good enough to ship.
 You can always go back and optimize the thing, but most of the time you probably won't because computers are so fucking fast these days.
@@ -29,3 +30,12 @@ Of course, you don't literally have to make your code as fast as it possibly can
 Casey Muratori talks about writing code that is "non-pessimized": https://www.youtube.com/watch?v=7YpFGkG-u1w
 
 Sometimes, having an intuition about what kinds of things will be fast can reap large benefits.
+
+
+Deliberate Practice
+
+If you're struggling then that means you're growing. Doing what's uncomfortable.
+Go down rabbit holes that are interesting.
+
+But make sure to surface and actually just ship the fucking website.
+

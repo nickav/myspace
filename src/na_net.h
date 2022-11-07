@@ -27,6 +27,7 @@ VERSION HISTORY
 // - support C compilers
 // - add API documentation
 // - support IPV6 addresses
+// - fix HTTP server slowness on Chrome/Windows?
 //
 
 #ifdef __cplusplus

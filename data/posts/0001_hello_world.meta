@@ -7,10 +7,14 @@ author: "Nick Aversano"
 
 ```
 
-Hello! This is my first post on my brand new website. This website was written from scratch in C using some libraries I've developed over the past year.
+Hello! This is my first post on my new website. This website was written from scratch in C using some libraries I've developed over the past year.
+It's been a long journey and I'm hoping to use this space as a place to collect my thoughts and learnings.
+
 Please, take off your shoes and make yourself comfortable. I hope you enjoy your stay.
 
-I want to share some thoughts on my journey so far and where I think I'm heading.
+I want to share some thoughts on my journey so far and where I think I'm heading:
+
+---
 
 ## The Beginning
 
@@ -18,10 +22,10 @@ I got started programming when I was 10 because I wanted to make games.
 I remember playing Super Mario 64 on the Nintendo 64: my first game on my first console.
 I thought to myself, "how does someone make this game?"
 It was a simple thought in my 8yo brain. At the time, I couldn't imagine what went on behind the scenes. The endearing polygon art was one hint. You could kind of tell that everything was made out of triangles.
-I am happy to say that I can finally answer that question, but it's been a long journey.
+I am happy to say that I can finally answer that question, but it's been a _long_ journey.
 
 I remember vidly when my friend told me about this program called Game Maker which you could make games without any programming knowledge.
-So I asked my dad for a computer, and he asked me what I wanted a computer for. I told him I wanted to make and sell games on the internet.
+So I asked my dad for a computer. I told him I wanted to make and sell games on the internet.
 He said, "sure, we can get you a computer, Nick.".
 I am fortunate that my parents were able to get me a PC at the time.
 
@@ -66,7 +70,7 @@ I remember they said attire was "buisness casual" so I dressed like NYC business
 Being in California was a lot of fun, I instantly became great friends with my roommates, and we travelled all around California.
 I really didn't enjoy the work all that much. I was working as an Android Developer.
 
-Well, not really knowing what I wanted to do after college, I signed up to go back to LinkedIn.
+Not having any idea what I wanted to do after college, I signed the return offer to go back to LinkedIn full-time.
 I knew I wanted to go back to California, but I wasn't sure I would want to stay in coorporate America.
 After 2 months I knew I needed to quit.
 I wasn't going to continue to improve as a developer.
@@ -84,11 +88,11 @@ I thought the product was solving the wrong problems.
 
 ## Back to Freelancing
 
-I went back to freelacing after that. My friend / downstairs roommate Josh Taylor was freelancing on this platform called Gigster.
+I went back to freelacing after that. My friend / downstairs roommate @link("Josh Taylor", "http://joshtaylor.io/") was freelancing on this platform called Gigster.
 I decided to try it out for a couple of months.
 Worst case, I'd be out a couple of months of rent.
 
-Well, it was much better than I thought it would be.
+Freelancing turned out to be much better than I thought it would be.
 You actually could make enough money to live off of doing it.
 It led me down a long path of doing lots of different jobs for various companies.
 Some big, some small.
@@ -96,7 +100,7 @@ One time I worked for a porn company.
 One time I worked for the federal government.
 
 I tried to always be on greenfield projects. I really liked building things from scratch on small teams.
-I think I learned that lesson repeatedly.
+I think I have learned that lesson repeatedly.
 
 Then there's the meta-game of being able to start new projects quickly. Carry over patterns that worked from past projects.
 But after a while it started to get stale.

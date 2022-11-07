@@ -458,8 +458,18 @@ String apply_basic_markdown_styles(String text)
 
             if (it == '-' && text.data[i + 1] == '-')
             {
-                at += print_to_memory(at, end-at, "—");
-                i += 1;
+                // @Incomplete: idk we probably need bounds checks here??
+                if (text.data[i + 2] == '-')
+                {
+                    at += print_to_memory(at, end-at, "<hr/>");
+                    i += 2;
+                }
+                else
+                {
+                    at += print_to_memory(at, end-at, "—");
+                    i += 1;
+                }
+
                 continue;
             }
         }
@@ -976,7 +986,7 @@ int main(int argc, char **argv)
 
     //os_exit(0);
 
-    //os_shell_execute(S("firefox.exe"), S("http://localhost:3000"));
+    os_shell_execute(S("firefox.exe"), S("http://localhost:3000"));
     
     auto public_path = string_alloc(os_allocator(), output_dir);
     run_server(S("127.0.0.1:3000"), public_path);
