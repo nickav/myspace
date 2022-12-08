@@ -395,7 +395,7 @@ Socket_Address socket_make_address(const char *host, u16 port)
     return result;
 }
 
-na_internal URL_Parts socket_parse_url(String url)
+static URL_Parts socket_parse_url(String url)
 {
     URL_Parts result = {};
 
@@ -766,7 +766,7 @@ String socket_recieve_entire_stream(Arena *arena, Socket *socket)
 {
     i64 bytes_received = 0;
     i64 buffer_size = 4096;
-    u8 *buffer = push_array(arena, u8, buffer_size);
+    u8 *buffer = PushArray(arena, u8, buffer_size);
     u8 *at = buffer;
 
     for (;;)
@@ -1017,7 +1017,7 @@ void http_process(Http *http)
 
         i64 bytes_received = 0;
         i64 buffer_size = 4096;
-        u8 *buffer = push_array(arena, u8, buffer_size);
+        u8 *buffer = PushArray(arena, u8, buffer_size);
         u8 *at = buffer;
 
         for (;;)

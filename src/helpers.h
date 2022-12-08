@@ -1,6 +1,6 @@
 String minify_css(String str)
 {
-    u8 *data = push_array(temp_arena(), u8, str.count);
+    u8 *data = PushArray(temp_arena(), u8, str.count);
     u8 *at = data;
     u8 *end = data + str.count;
 
@@ -119,7 +119,7 @@ String minify_css(String str)
 
 String minify_js(String str)
 {
-    u8 *data = push_array(temp_arena(), u8, str.count);
+    u8 *data = PushArray(temp_arena(), u8, str.count);
     u8 *at = data;
     u8 *end = data + str.count;
 

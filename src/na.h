@@ -1,5 +1,5 @@
 /*
-    na.h - v0.02
+    na.h - v0.03
     Nick Aversano's C++ helper library
 
     This is a single header file with a bunch of useful stuff
@@ -15,6 +15,7 @@ CREDITS
     Written by Nick Aversano
 
 VERSION HISTORY
+    0.03  - arena improvements
     0.02  - replace nja with na, arena and thread clean up
     0.01  - Initial version
 */
@@ -106,13 +107,6 @@ VERSION HISTORY
 // Print
 //
 
-//
-// NOTE(nick): usage:
-/*
-#define STB_SPRINTF_IMPLEMENTATION
-#include "stb_sprintf.h"
-#include "na.h"
-*/
 #if OS_WINDOWS
     #define WIN32_LEAN_AND_MEAN
     #define VC_EXTRALEAN
@@ -122,7 +116,6 @@ VERSION HISTORY
     #include <intrin.h>
 #elif OS_MACOS
     #include <xmmintrin.h>
-    #include <immintrin.h>
 #endif
 
 #if defined(STB_SPRINTF_IMPLEMENTATION) && !defined(print)
@@ -181,25 +174,25 @@ VERSION HISTORY
 #endif
 
 #if DEBUG
-#ifndef debug_breakpoint
+#ifndef DebugBreakpoint
     #if defined(_MSC_VER)
         #if _MSC_VER < 1300
-        #define debug_breakpoint() __asm int 3 /* Trap to debugger! */
+        #define DebugBreakpoint() __asm int 3 /* Trap to debugger! */
         #else
-        #define debug_breakpoint() __debugbreak()
+        #define DebugBreakpoint() __debugbreak()
         #endif
     #else
-        #define debug_breakpoint() __builtin_trap()
+        #define DebugBreakpoint() __builtin_trap()
     #endif
 #endif
 #else
-    #define debug_breakpoint()
+    #define DebugBreakpoint()
 #endif
 
 #ifndef assert
 #ifdef DEBUG
-    #ifndef assert_break
-    #define assert_break debug_breakpoint
+    #ifndef AssertBreak
+    #define AssertBreak DebugBreakpoint
     #endif
 
     void na_assert_handler(const char *prefix, const char *expr, const char *file, long int line, char *msg) {
@@ -213,7 +206,7 @@ VERSION HISTORY
         print("\n");
     }
 
-    #define assert(expr) do { if (!(expr)) { na_assert_handler("Assertion Failed", #expr, __FILE__, __LINE__, NULL); assert_break(); } } while (0)
+    #define assert(expr) do { if (!(expr)) { na_assert_handler("Assertion Failed", #expr, __FILE__, __LINE__, NULL); AssertBreak(); } } while (0)
 #else
     #define assert(...)
 #endif
@@ -231,15 +224,15 @@ VERSION HISTORY
 #define StaticAssert(expr) static_assert(expr, "")
 #endif
 
-#ifndef na_inline
+#ifndef force_inline
     #if defined(__GNUC__) && (__GNUC__ >= 4)
-        #define na_inline __attribute__((always_inline)) inline
+        #define force_inline __attribute__((always_inline)) inline
     #elif defined(__llvm__)
-        #define na_inline __attribute__((always_inline)) inline
+        #define force_inline __attribute__((always_inline)) inline
     #elif defined(_MSC_VER)
-        #define na_inline __forceinline
+        #define force_inline __forceinline
     #else
-        #define na_inline inline
+        #define force_inline inline
     #endif
 #endif
 
@@ -247,13 +240,13 @@ VERSION HISTORY
     #define na_extern extern "C"
 #endif
 
-#ifndef na_dll_export
+#ifndef dll_export
 #if defined(_WIN32)
-    #define na_dll_export na_extern __declspec(dllexport)
-    #define na_dll_import na_extern __declspec(dllimport)
+    #define dll_export na_extern __declspec(dllexport)
+    #define dll_import na_extern __declspec(dllimport)
 #else
-    #define na_dll_export na_extern __attribute__((visibility("default")))
-    #define na_dll_import na_extern
+    #define dll_export na_extern __attribute__((visibility("default")))
+    #define dll_import na_extern
 #endif
 #endif
 
@@ -291,17 +284,10 @@ VERSION HISTORY
 #define align_of(Type) ((isize)alignof(Type))
 #endif
 
-#ifndef na_global
-#define na_global        static // Global variables
-#define na_internal      static // Internal linkage
-#define na_local_persist static // Local Persisting variables
-#endif
-
 #ifndef global
 #define global        static // Global variables
-// @Cleanup: this causes problems on MacOS
-// #define internal      static // Internal linkage
-#define local_persist static // Local Persisting variables
+#define local         static // Local Persisting variables
+#define function      static // Internal linkage
 #endif
 
 #define fallthrough
@@ -314,9 +300,8 @@ VERSION HISTORY
 #define read_only
 #endif
 
-#ifndef FOUR_CC
-#define FOUR_CC(a, b, c, d) \
-    (((u32)(a) << 0) | ((u32)(b) << 8) | ((u32)(c) << 16) | ((u32)(d) << 24))
+#ifndef FourCC
+#define FourCC(a, b, c, d) (((u32)(a) << 0) | ((u32)(b) << 8) | ((u32)(c) << 16) | ((u32)(d) << 24))
 #endif
 
 #define Swap(Type, a, b) do { Type tmp = (a); (a) = (b); (b) = tmp; } while (0)
@@ -352,21 +337,8 @@ public:
 #define defer const auto& CONCAT(defer__, __LINE__) = ExitScopeHelp() + [&]()
 #endif
 
-#ifndef set_flag
-#define set_flag(flags, mask, enable) do { if (enable) { flags |= (mask); } else { flags &= ~(mask); } } while(0)
-#endif
-
-//
-// Build Constants
-// @Cleanup: move these elsewhere? :0
-//
-
-#ifndef DEBUG
-#define DEBUG 0
-#endif
-
-#ifndef SHIP_MODE
-#define SHIP_MODE 0
+#ifndef SetFlag
+#define SetFlag(flags, mask, enable) do { if (enable) { flags |= (mask); } else { flags &= ~(mask); } } while(0)
 #endif
 
 //
@@ -442,6 +414,48 @@ StaticAssert(sizeof(u8)  == 1);
 StaticAssert(sizeof(u16) == 2);
 StaticAssert(sizeof(u32) == 4);
 StaticAssert(sizeof(u64) == 8);
+
+//
+// Linked List Helpers
+//
+
+#define CheckNull(p) ((p)==0)
+#define SetNull(p) ((p)=0)
+
+#define QueuePush_NZ(f,l,n,next,zchk,zset) (zchk(f)?\
+(((f)=(l)=(n)), zset((n)->next)):\
+((l)->next=(n),(l)=(n),zset((n)->next)))
+#define QueuePushFront_NZ(f,l,n,next,zchk,zset) (zchk(f) ? (((f) = (l) = (n)), zset((n)->next)) :\
+((n)->next = (f)), ((f) = (n)))
+#define QueuePop_NZ(f,l,next,zset) ((f)==(l)?\
+(zset(f),zset(l)):\
+(f)=(f)->next)
+#define StackPush_N(f,n,next) ((n)->next=(f),(f)=(n))
+#define StackPop_NZ(f,next,zchk) (zchk(f)?0:((f)=(f)->next))
+
+#define DLLInsert_NPZ(f,l,p,n,next,prev,zchk,zset) \
+(zchk(f) ? (((f) = (l) = (n)), zset((n)->next), zset((n)->prev)) :\
+zchk(p) ? (zset((n)->prev), (n)->next = (f), (zchk(f) ? (0) : ((f)->prev = (n))), (f) = (n)) :\
+((zchk((p)->next) ? (0) : (((p)->next->prev) = (n))), (n)->next = (p)->next, (n)->prev = (p), (p)->next = (n),\
+((p) == (l) ? (l) = (n) : (0))))
+#define DLLPushBack_NPZ(f,l,n,next,prev,zchk,zset) DLLInsert_NPZ(f,l,l,n,next,prev,zchk,zset)
+#define DLLRemove_NPZ(f,l,n,next,prev,zchk,zset) (((f)==(n))?\
+((f)=(f)->next, (zchk(f) ? (zset(l)) : zset((f)->prev))):\
+((l)==(n))?\
+((l)=(l)->prev, (zchk(l) ? (zset(f)) : zset((l)->next))):\
+((zchk((n)->next) ? (0) : ((n)->next->prev=(n)->prev)),\
+(zchk((n)->prev) ? (0) : ((n)->prev->next=(n)->next))))
+
+
+#define QueuePush(f,l,n)         QueuePush_NZ(f,l,n,next,CheckNull,SetNull)
+#define QueuePushFront(f,l,n)    QueuePushFront_NZ(f,l,n,next,CheckNull,SetNull)
+#define QueuePop(f,l)            QueuePop_NZ(f,l,next,SetNull)
+#define StackPush(f,n)           StackPush_N(f,n,next)
+#define StackPop(f)              StackPop_NZ(f,next,CheckNull)
+#define DLLPushBack(f,l,n)       DLLPushBack_NPZ(f,l,n,next,prev,CheckNull,SetNull)
+#define DLLPushFront(f,l,n)      DLLPushBack_NPZ(l,f,n,prev,next,CheckNull,SetNull)
+#define DLLInsert(f,l,p,n)       DLLInsert_NPZ(f,l,p,n,next,prev,CheckNull,SetNull)
+#define DLLRemove(f,l,n)         DLLRemove_NPZ(f,l,n,next,prev,CheckNull,SetNull)
 
 //
 // Helpers
@@ -771,8 +785,12 @@ bool os_release(void *ptr, u64 size);
 #define DEFAULT_MEMORY_ALIGNMENT 16
 #endif
 
-#ifndef ARENA_BLOCK_SIZE
-#define ARENA_BLOCK_SIZE kilobytes(4)
+#ifndef ARENA_COMMIT_BLOCK_SIZE
+#define ARENA_COMMIT_BLOCK_SIZE megabytes(4)
+#endif
+
+#ifndef ARENA_INITIAL_COMMIT_SIZE
+#define ARENA_INITIAL_COMMIT_SIZE kilobytes(4)
 #endif
 
 #ifndef ARENA_RESERVE
@@ -791,14 +809,13 @@ bool os_release(void *ptr, u64 size);
 #define ARENA_RELEASE os_release
 #endif
 
+#define arena_has_virtual_backing(arena) ((arena)->commit_position < U64_MAX)
+
 struct Arena {
     u8 *data;
     u64 offset;
     u64 size;
-
     u64 commit_position;
-
-    bool has_backing;
 };
 
 struct Arena_Mark {
@@ -816,24 +833,24 @@ void arena_init(Arena *arena, u8 *data, u64 size) {
     *arena = {};
     arena->data = data;
     arena->size = size;
-    arena->has_backing = false;
+    arena->commit_position = U64_MAX;
 }
 
-void arena_init_from_memory(Arena *arena, u64 size) {
-    *arena = {};
+Arena *arena_alloc_from_memory(u64 size) {
+    Arena *result = 0;
 
-    u8 *data = cast(u8 *)ARENA_RESERVE(size);
-    if (data)
-    {
-        arena->has_backing = true;
-        arena->data = data;
-        arena->size = size;
+    if (size >= ARENA_INITIAL_COMMIT_SIZE) {
+        u8 *data = cast(u8 *)ARENA_RESERVE(size);
+        if (data && ARENA_COMMIT(data, ARENA_INITIAL_COMMIT_SIZE)) {
+            result = (Arena *)data;
+            result->data = data;
+            result->size = size;
+            result->offset = AlignUpPow2(sizeof(Arena), 64);
+            result->commit_position = ARENA_INITIAL_COMMIT_SIZE;
+        }
     }
-}
 
-Arena arena_make_from_memory(u64 size) {
-    Arena result = {};
-    arena_init_from_memory(&result, size);
+    assert(result != 0);
     return result;
 }
 
@@ -845,41 +862,40 @@ void arena_free(Arena *arena) {
 }
 
 void *arena_push(Arena *arena, u64 size) {
-    assert(arena->has_backing);
     void *result = NULL;
 
-    if (arena->offset + size < arena->size) {
-        result = &arena->data[arena->offset];
-        arena->offset += size;
+    if (arena->offset + size <= arena->size) {
+        void *result_on_success = arena->data + arena->offset;
 
-        if (arena->offset > arena->commit_position)
+        u64 p = arena->offset + size;
+        u64 commit_p = arena->commit_position;
+
+        if (arena->commit_position < U64_MAX && p > commit_p)
         {
-            u64 commit_size = AlignUpPow2(arena->offset - arena->commit_position, ARENA_BLOCK_SIZE);
-            u64 bytes_remaining = arena->size - arena->offset;
-            commit_size = ClampTop(commit_size, bytes_remaining);
+            u64 p_aligned = AlignUpPow2(p, ARENA_COMMIT_BLOCK_SIZE);
+            u64 next_commit_position = ClampTop(p_aligned, arena->size);
+            u64 commit_size = next_commit_position - commit_p;
 
             if (ARENA_COMMIT(arena->data + arena->commit_position, commit_size)) {
-                arena->commit_position += commit_size;
-            } else {
-                result = NULL;
+                commit_p = next_commit_position;
+                arena->commit_position = next_commit_position;
             }
         }
-    }
 
-    if (result)
-    {
-        memory_zero(result, size);
+        if (p <= commit_p) {
+            result = result_on_success;
+            arena->offset = p;
+        }
     }
 
     return result;
 }
 
-bool arena_write(Arena *arena, u8 *data, u64 size) {
-    bool result = false;
-    u8 *buffer = (u8 *)arena_push(arena, size);
-    if (buffer != NULL) {
-        memory_copy(data, buffer, size);
-        result = true;
+void *arena_push_zero(Arena *arena, u64 size) {
+    void *result = arena_push(arena, size);
+    if (result != NULL)
+    {
+        memory_zero(result, size);
     }
     return result;
 }
@@ -888,61 +904,88 @@ void arena_pop_to(Arena *arena, u64 pos) {
     if (pos < arena->offset) {
         arena->offset = pos;
 
-        u64 prev_commit_position = arena->commit_position;
-        u64 next_commit_position = AlignUpPow2(arena->offset, ARENA_BLOCK_SIZE);
+        // NOTE(nick): if arena has virtual backing
+        if (arena->commit_position < U64_MAX)
+        {
+            u64 prev_commit_position = arena->commit_position;
+            u64 next_commit_position = AlignUpPow2(arena->offset, ARENA_COMMIT_BLOCK_SIZE);
+            next_commit_position = ClampTop(next_commit_position, arena->size);
 
-        if (next_commit_position < prev_commit_position) {
-            u64 decommit_size = prev_commit_position - next_commit_position;
+            if (next_commit_position < prev_commit_position) {
+                u64 decommit_size = prev_commit_position - next_commit_position;
 
-            if (ARENA_DECOMMIT(arena->data + next_commit_position, decommit_size)) {
-                arena->commit_position = next_commit_position;
+                if (ARENA_DECOMMIT(arena->data + next_commit_position, decommit_size)) {
+                    arena->commit_position = next_commit_position;
+                }
             }
         }
     }
 }
 
 void arena_pop(Arena *arena, u64 size) {
-    assert(size <= arena->offset);
-    arena_pop_to(arena, arena->offset - size);
+    if (size < arena->offset) {
+        arena_pop_to(arena, arena->offset - size);
+    } else {
+        arena_pop_to(arena, 0);
+    }
 }
 
 void arena_reset(Arena *arena) {
-    arena->offset = 0;
+    // NOTE(nick): if arena has virtual backing
+    if (arena->commit_position < U64_MAX) {
+        if (arena->commit_position > ARENA_INITIAL_COMMIT_SIZE) {
+            // @Incomplete: do we want to decommit on reset?
+            u64 decommit_size = arena->commit_position - ARENA_INITIAL_COMMIT_SIZE;
+            ARENA_DECOMMIT(arena->data + ARENA_INITIAL_COMMIT_SIZE, decommit_size);
+            arena->commit_position = ARENA_INITIAL_COMMIT_SIZE;
+        }
 
-    if (arena->commit_position > 0) {
-        ARENA_DECOMMIT(arena->data, arena->commit_position);
-        arena->commit_position = 0;
+        arena->offset = AlignUpPow2(sizeof(Arena), 64);
+    } else {
+        arena->offset = 0;
     }
 }
 
-void arena_set_alignment(Arena *arena, u64 alignment) {
-    u64 align_offset = na_align_offset(arena->data + arena->offset, alignment);
-    if (align_offset > 0) {
-        arena_push(arena, align_offset);
-
-        // NOTE(nick): make sure our data is aligned properly
-        assert((u64)(arena->data + arena->offset) % alignment == 0);
+void arena_align(Arena *arena, u64 pow2_align) {
+    u64 p = arena->offset;
+    u64 p_aligned = AlignUpPow2(p, pow2_align);
+    u64 z = p_aligned - p;
+    if (z > 0) {
+        arena_push(arena, z);
     }
 }
 
-void *arena_alloc_aligned(Arena *arena, u64 size, u64 alignment) {
-    arena_set_alignment(arena, alignment);
-    return arena_push(arena, size);
+void *arena_push_aligned(Arena *arena, u64 size, u64 pow2_align) {
+    arena_align(arena, pow2_align);
+    return arena_push_zero(arena, size);
 }
 
 void *arena_alloc(Arena *arena, u64 size) {
-    return arena_alloc_aligned(arena, size, DEFAULT_MEMORY_ALIGNMENT);
+    return arena_push_aligned(arena, size, DEFAULT_MEMORY_ALIGNMENT);
 }
 
 bool arena_contains_pointer(Arena *arena, void *ptr) {
     return ptr >= arena->data && ptr < arena->data + arena->size;
 }
 
-#define push_struct(arena, Struct) (Struct *)arena_push(arena, sizeof(Struct))
+bool arena_write(Arena *arena, u8 *data, u64 size) {
+    bool result = false;
 
-#define push_array(arena, Struct, count) (Struct *)arena_push(arena, (count) * sizeof(Struct))
+    u8 *buffer = (u8 *)arena_push(arena, size);
+    if (buffer != NULL) {
+        memory_copy(data, buffer, size);
+        result = true;
+    }
 
-#define push_array_zero(arena, Struct, count) push_array(arena, Struct, count)
+    return result;
+}
+
+
+#define PushStruct(arena, Struct) (Struct *)arena_push_zero(arena, sizeof(Struct))
+
+#define PushArray(arena, Struct, count) (Struct *)arena_push_zero(arena, (count) * sizeof(Struct))
+
+#define PushArrayZero(arena, Struct, count) PushArray(arena, Struct, count)
 
 Arena_Mark arena_get_position(Arena *arena) {
     Arena_Mark result = {};
@@ -1065,7 +1108,6 @@ inline u32 thread_get_id() {
     u32 result;
 
 #if OS_WINDOWS
-
     u8 *ThreadLocalStorage = (u8 *)__readgsqword(0x30);
     result = *(u32 *)(ThreadLocalStorage + 0x48);
 #elif OS_MACOS
@@ -1135,18 +1177,18 @@ inline u64 atomic_add_u64(u64 volatile *value, u64 Addend) {
 }
 #endif // COMPILER_MSVC
 
-static thread_local Arena thread_temporary_storage = {};
+static thread_local Arena *thread_temporary_storage;
 
 void thread_context_init(u64 temporary_storage_size) {
-    arena_init_from_memory(&thread_temporary_storage, temporary_storage_size);
+    thread_temporary_storage = arena_alloc_from_memory(temporary_storage_size);
 }
 
 void thread_context_free() {
-    arena_free(&thread_temporary_storage);
+    arena_free(thread_temporary_storage);
 }
 
 Arena *temp_arena() {
-    return &thread_temporary_storage;
+    return thread_temporary_storage;
 }
 
 void *talloc(u64 size) {
@@ -1209,31 +1251,31 @@ enum
 
 #define LIT(str) (int)str.count, (char *)str.data
 
-na_inline bool char_is_alpha(char ch) {
+force_inline bool char_is_alpha(char ch) {
     return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z');
 }
 
-na_inline bool char_is_digit(char ch) {
+force_inline bool char_is_digit(char ch) {
     return ch >= '0' && ch <= '9';
 }
 
-na_inline bool char_is_whitespace(char ch) {
+force_inline bool char_is_whitespace(char ch) {
     return ch == ' ' || ch == '\n' || ch == '\t' || ch == '\r';
 }
 
-na_inline bool char_is_lower(char ch) {
+force_inline bool char_is_lower(char ch) {
     return ch >= 'a' && ch <= 'z';
 }
 
-na_inline bool char_is_upper(char ch) {
+force_inline bool char_is_upper(char ch) {
     return ch >= 'A' && ch <= 'Z';
 }
 
-na_inline char char_to_upper(char ch) {
+force_inline char char_to_upper(char ch) {
     return ch >= 'a' && ch <= 'z' ? ch - ('a' - 'A') : ch;
 }
 
-na_inline char char_to_lower(char ch) {
+force_inline char char_to_lower(char ch) {
     return ch >= 'A' && ch <= 'Z' ? ch + ('a' - 'A') : ch;
 }
 
@@ -1250,7 +1292,7 @@ char *string_to_cstr(Arena *arena, String str) {
         return NULL;
     }
 
-    char *result = push_array(arena, char, str.count + 1); // size for null character
+    char *result = PushArray(arena, char, str.count + 1); // size for null character
     memory_copy(str.data, result, str.count);
     result[str.count] = 0;
     return result;
@@ -1393,11 +1435,6 @@ i64 string_find(String str, String search, i64 start_index = 0, Match_Flags flag
     return result;
 }
 
-bool string_includes(String str, String search, i64 start_index = 0, Match_Flags flags = 0)
-{
-    return string_find(str, search, start_index, flags) < str.count;
-}
-
 i64 string_index(String str, String search, i64 start_index = 0) {
     for (i64 i = start_index; i < str.count; i += 1) {
         if (memory_equals(str.data + i, search.data, search.count)) {
@@ -1440,11 +1477,11 @@ i64 string_count_occurances(String str, String search, i64 start_index = 0) {
     return result;
 }
 
-#define push_string_copy string_copy
+#define PushStringCopy string_copy
 
 String string_copy(Arena *arena, String other) {
     String copy = {};
-    u8 *data = push_array(arena, u8, other.count);
+    u8 *data = PushArray(arena, u8, other.count);
 
     if (data) {
         copy = make_string(data, other.count);
@@ -1477,7 +1514,7 @@ String string_write(String str, u8 *buffer, u64 limit) {
 
 String string_push(Arena *arena, i64 count)
 {
-    u8 *buffer = push_array(arena, u8, count);
+    u8 *buffer = PushArray(arena, u8, count);
     return make_string(buffer, count);
 }
 
@@ -1503,7 +1540,7 @@ void string_free(Allocator allocator, String *string) {
 
 String string_concat(Arena *arena, String a, String b) {
     u64 count = a.count + b.count;
-    u8 *data = push_array(arena, u8, count);
+    u8 *data = PushArray(arena, u8, count);
 
     if (data) {
         memory_copy(a.data, data + 0,       a.count);
@@ -1515,7 +1552,7 @@ String string_concat(Arena *arena, String a, String b) {
 
 String string_concat(Arena *arena, String a, String b, String c) {
     u64 count = a.count + b.count + c.count;
-    u8 *data = push_array(arena, u8, count);
+    u8 *data = PushArray(arena, u8, count);
 
     if (data) {
         memory_copy(a.data, data + 0,                 a.count);
@@ -1528,7 +1565,7 @@ String string_concat(Arena *arena, String a, String b, String c) {
 
 String string_concat(Arena *arena, String a, String b, String c, String d) {
     u64 count = a.count + b.count + c.count + d.count;
-    u8 *data = push_array(arena, u8, count);
+    u8 *data = PushArray(arena, u8, count);
 
     if (data) {
         memory_copy(a.data, data + 0,                           a.count);
@@ -1623,22 +1660,6 @@ String string_eat_until_newline(String *str)
     return string_eat_until(str, S("\n"));
 }
 
-void string_strip_nulls(String *str) {
-    for (i64 i = 0; i < str->count; i ++)
-    {
-        if (str->data[i] == '\0')
-        {
-            i64 run_count = 1;
-            while(str->data[i + run_count] == '\0') {
-                run_count += 1;
-            }
-
-            memory_move(str->data + i + run_count, str->data + i, str->count - (i + run_count));
-            str->count -= run_count;
-        }
-    }
-}
-
 String string_printv(Arena *arena, const char *format, va_list args) {
     String result = {};
     
@@ -1647,7 +1668,7 @@ String string_printv(Arena *arena, const char *format, va_list args) {
     va_copy(args2, args);
 
     i64 buffer_size = 1024;
-    u8 *buffer = push_array(arena, u8, buffer_size);
+    u8 *buffer = PushArray(arena, u8, buffer_size);
 
     if (buffer != NULL)
     {
@@ -1665,7 +1686,7 @@ String string_printv(Arena *arena, const char *format, va_list args) {
             else
             {
                 arena_pop(arena, buffer_size);
-                u8 *fixed_buffer = push_array(arena, u8, actual_size);
+                u8 *fixed_buffer = PushArray(arena, u8, actual_size);
 
                 if (fixed_buffer != NULL)
                 {
@@ -1742,7 +1763,7 @@ i64 print_to_memory(u8 *buffer, i64 limit, const char *format, ...)
 }
 
 
-void arena_write(Arena *arena, char *format, ...)
+void arena_print(Arena *arena, char *format, ...)
 {
     va_list args;
     va_start(args, format);
@@ -1756,6 +1777,12 @@ void arena_write(Arena *arena, String string)
 }
 
 String arena_to_string(Arena *arena) {
+    if (arena->commit_position < U64_MAX)
+    {
+        u64 offset = AlignUpPow2(sizeof(Arena), 64);
+        return make_string(arena->data + offset, arena->offset - offset);
+    }
+
     return make_string(arena->data, arena->offset);
 }
 
@@ -1860,7 +1887,7 @@ String path_join(Arena *arena, String path1, String path2) {
     return string_print(arena, "%.*s/%.*s", path1.count, path1.data, path2.count, path2.data);
 }
 
-na_inline String path_join(String path1, String path2) {
+force_inline String path_join(String path1, String path2) {
     return path_join(temp_arena(), path1, path2);
 }
 
@@ -1875,7 +1902,7 @@ String path_join(Arena *arena, String path1, String path2, String path3) {
     return string_print(arena, "%.*s/%.*s/%.*s", path1.count, path1.data, path2.count, path2.data, path3.count, path3.data);
 }
 
-na_inline String path_join(String path1, String path2, String path3) {
+force_inline String path_join(String path1, String path2, String path3) {
     return path_join(temp_arena(), path1, path2, path3);
 }
 
@@ -2177,7 +2204,7 @@ u32 string_encode_utf16(u16 *dest, u32 codepoint) {
 }
 
 String32 string32_from_string(Arena *arena, String str) {
-    u32 *memory = push_array(arena, u32, str.count);
+    u32 *memory = PushArray(arena, u32, str.count);
 
     u32 *at = memory;
     u8 *p0 = str.data;
@@ -2202,7 +2229,7 @@ String32 string32_from_string(Arena *arena, String str) {
 }
 
 String string_from_string32(Arena *arena, String32 str) {
-    u8 *memory = push_array(arena, u8, str.count * 4);
+    u8 *memory = PushArray(arena, u8, str.count * 4);
 
     u32 *p0 = str.data;
     u32 *p1 = str.data + str.count;
@@ -2226,8 +2253,8 @@ String string_from_string32(Arena *arena, String32 str) {
 }
 
 String16 string16_from_string(Arena *arena, String str) {
-    arena_set_alignment(arena, sizeof(u16));
-    u16 *data = push_array(arena, u16, str.count * 2 + 1);
+    arena_align(arena, sizeof(u16));
+    u16 *data = PushArray(arena, u16, str.count * 2 + 1);
 
     u16 *at = data;
     u8 *p0 = str.data;
@@ -2255,7 +2282,7 @@ String16 string16_from_string(Arena *arena, String str) {
 
 String string_from_string16(Arena *arena, String16 str) {
     String result = {};
-    result.data = push_array(arena, u8, str.count * 3 + 1);
+    result.data = PushArray(arena, u8, str.count * 3 + 1);
 
     u16 *p0 = str.data;
     u16 *p1 = str.data + str.count;
@@ -2572,7 +2599,7 @@ struct File_Lister {
     WIN32_FIND_DATAW data;
 };
 
-na_internal Date_Time win32_date_time_from_system_time(SYSTEMTIME *in) {
+function Date_Time win32_date_time_from_system_time(SYSTEMTIME *in) {
     Date_Time result = {};
 
     result.year = in->wYear;
@@ -2586,7 +2613,7 @@ na_internal Date_Time win32_date_time_from_system_time(SYSTEMTIME *in) {
     return result;
 }
 
-na_internal SYSTEMTIME win32_system_time_from_date_time(Date_Time *in) {
+function SYSTEMTIME win32_system_time_from_date_time(Date_Time *in) {
     SYSTEMTIME result = {};
 
     result.wYear = in->year;
@@ -2600,7 +2627,7 @@ na_internal SYSTEMTIME win32_system_time_from_date_time(Date_Time *in) {
     return result;
 }
 
-na_internal Dense_Time win32_dense_time_from_file_time(FILETIME *file_time) {
+function Dense_Time win32_dense_time_from_file_time(FILETIME *file_time) {
     SYSTEMTIME system_time = {};
     FileTimeToSystemTime(file_time, &system_time);
     Date_Time date_time = win32_date_time_from_system_time(&system_time);
@@ -2608,34 +2635,44 @@ na_internal Dense_Time win32_dense_time_from_file_time(FILETIME *file_time) {
     return result;
 }
 
-static u64 win32_ticks_per_second = 0;
-static u64 win32_counter_offset = 0;
-
 bool os_init() {
     thread_context_init(gigabytes(1));
-
-    LARGE_INTEGER perf_frequency = {};
-    if (QueryPerformanceFrequency(&perf_frequency)) {
-        win32_ticks_per_second = perf_frequency.QuadPart;
-    }
-    LARGE_INTEGER perf_counter = {};
-    if (QueryPerformanceCounter(&perf_counter)) {
-        win32_counter_offset = perf_counter.QuadPart;
-    }
-
+    f64 os_time();
+    os_time();
     return true;
 }
 
-f64 os_time_in_miliseconds() {
+f64 os_time() {
+    static u64 win32_ticks_per_second = 0;
+    static u64 win32_counter_offset = 0;
+
+    if (win32_ticks_per_second == 0)
+    {
+        LARGE_INTEGER perf_frequency = {};
+        if (QueryPerformanceFrequency(&perf_frequency)) {
+            win32_ticks_per_second = perf_frequency.QuadPart;
+        }
+        LARGE_INTEGER perf_counter = {};
+        if (QueryPerformanceCounter(&perf_counter)) {
+            win32_counter_offset = perf_counter.QuadPart;
+        }
+
+        assert(win32_ticks_per_second != 0);
+    }
+
     f64 result = 0;
 
     LARGE_INTEGER perf_counter;
     if (QueryPerformanceCounter(&perf_counter)) {
         perf_counter.QuadPart -= win32_counter_offset;
-        result = (f64)(perf_counter.QuadPart * 1000) / win32_ticks_per_second;
+        result = (f64)(perf_counter.QuadPart) / win32_ticks_per_second;
     }
 
     return result;
+}
+
+f64 os_time_in_miliseconds() {
+    return os_time() * 1000;
 }
 
 Date_Time os_get_current_time_in_utc() {
@@ -2973,7 +3010,7 @@ String string_from_wstr(Arena *arena, WCHAR *wstr) {
 }
 
 
-na_internal u32 win32_flags_from_attributes(DWORD attributes) {
+function u32 win32_flags_from_attributes(DWORD attributes) {
     u32 result = 0;
 
     if (attributes & FILE_ATTRIBUTE_DIRECTORY) {
@@ -2991,7 +3028,7 @@ na_internal u32 win32_flags_from_attributes(DWORD attributes) {
     return result;
 }
 
-na_internal u32 win32_access_from_attributes(DWORD attributes) {
+function u32 win32_access_from_attributes(DWORD attributes) {
     u32 result = FileAccess_Read | FileAccess_Execute;
 
     if (!(attributes & FILE_ATTRIBUTE_READONLY)) {
@@ -3104,16 +3141,10 @@ DWORD WINAPI win32_thread_proc(LPVOID lpParameter) {
     return result;
 }
 
-Thread os_create_thread_with_params(u64 stack_size, Thread_Proc *proc, void *data, u64 copy_size) {
-    Thread_Params *params = (Thread_Params *)os_alloc(sizeof(Thread_Params) + copy_size);
+Thread os_create_thread(u64 stack_size, Thread_Proc *proc, void *data) {
+    Thread_Params *params = (Thread_Params *)os_alloc(sizeof(Thread_Params));
     params->proc = proc;
     params->data = data;
-
-    if (copy_size > 0)
-    {
-        params->data = params + sizeof(Thread_Params);
-        memory_copy(data, params->data, copy_size);
-    }
 
     DWORD thread_id;
     HANDLE handle = CreateThread(0, stack_size, win32_thread_proc, params, 0, &thread_id);
@@ -3124,8 +3155,19 @@ Thread os_create_thread_with_params(u64 stack_size, Thread_Proc *proc, void *dat
     return result;
 }
 
-Thread os_create_thread(u64 stack_size, Thread_Proc *proc, void *data) {
-    return os_create_thread_with_params(stack_size, proc, data, 0);
+Thread os_create_thread_with_params(u64 stack_size, Thread_Proc *proc, void *data, u64 copy_size) {
+    Thread_Params *params = (Thread_Params *)os_alloc(sizeof(Thread_Params) + copy_size);
+    params->proc = proc;
+    params->data = params + sizeof(Thread_Params);
+    memory_copy(data, params->data, copy_size);
+
+    DWORD thread_id;
+    HANDLE handle = CreateThread(0, stack_size, win32_thread_proc, params, 0, &thread_id);
+
+    Thread result = {};
+    result.handle = handle;
+    result.id = thread_id;
+    return result;
 }
 
 void os_detatch_thread(Thread thread) {
@@ -3158,7 +3200,7 @@ String os_get_executable_path() {
     Arena *arena = temp_arena();
 
     u64 buffer_size = 2048;
-    WCHAR *buffer = push_array(arena, WCHAR, buffer_size);
+    WCHAR *buffer = PushArray(arena, WCHAR, buffer_size);
 
     DWORD length = GetModuleFileNameW(NULL, buffer, buffer_size);
     if (length == 0) {
@@ -3172,7 +3214,7 @@ String os_get_executable_path() {
             arena_pop(arena, buffer_size * sizeof(WCHAR));
 
             buffer_size *= 2;
-            buffer = push_array(arena, WCHAR, buffer_size);
+            buffer = PushArray(arena, WCHAR, buffer_size);
             length = GetModuleFileNameW(NULL, buffer, buffer_size);
 
             if (!(length == buffer_size && GetLastError() == ERROR_INSUFFICIENT_BUFFER)) {
@@ -3202,7 +3244,7 @@ String os_get_current_directory() {
         return {};
     }
 
-    WCHAR *buffer = push_array(arena, WCHAR, length);
+    WCHAR *buffer = PushArray(arena, WCHAR, length);
     DWORD bytes_written = GetCurrentDirectoryW(length, buffer);
     if (bytes_written + 1 != length) {
         return {};
@@ -3214,7 +3256,7 @@ String os_get_current_directory() {
     return result;
 }
 
-na_internal char * win32_UTF8FromUTF16(Arena *arena, WCHAR *buffer)
+function char * win32_UTF8FromUTF16(Arena *arena, WCHAR *buffer)
 {
     int size = WideCharToMultiByte(CP_UTF8, 0, buffer, -1, NULL, 0, NULL, NULL);
     if (!size)
@@ -3233,7 +3275,7 @@ na_internal char * win32_UTF8FromUTF16(Arena *arena, WCHAR *buffer)
     return result;
 }
 
-na_internal WCHAR * win32_UTF16FromUTF8(Arena *arena, char *buffer)
+function WCHAR * win32_UTF16FromUTF8(Arena *arena, char *buffer)
 {
     int count = MultiByteToWideChar(CP_UTF8, 0, buffer, -1, NULL, 0);
     if (!count)
@@ -3241,7 +3283,7 @@ na_internal WCHAR * win32_UTF16FromUTF8(Arena *arena, char *buffer)
         return NULL;
     }
 
-    arena_set_alignment(arena, sizeof(WCHAR));
+    arena_align(arena, sizeof(WCHAR));
     WCHAR *result = cast(WCHAR *)arena_push(arena, count * sizeof(WCHAR));
 
     if (!MultiByteToWideChar(CP_UTF8, 0, buffer, -1, result, count))
@@ -3407,33 +3449,39 @@ void os_exit(i32 code)
 
 #define PATH_MAX 1024 // #include <sys/syslimits.h>
 
-static f64 macos_perf_frequency = 0;
-static f64 macos_perf_counter = 0;
-
 static pthread_key_t macos_thread_local_key;
 
+f64 os_time();
+
 bool os_init() {
-    mach_timebase_info_data_t rate_nsec;
-    mach_timebase_info(&rate_nsec);
-
-    macos_perf_frequency = 1000000LL * rate_nsec.numer / rate_nsec.denom;
-    macos_perf_counter = mach_absolute_time();
-
     pthread_key_create(&macos_thread_local_key, NULL);
 
     thread_context_init(gigabytes(1));
 
+    os_time();
+
     return true;
 }
 
-f64 os_time_in_miliseconds() {
+f64 os_time() {
+    static f64 macos_perf_frequency = 0;
+    static f64 macos_perf_counter = 0;
+
+    if (macos_perf_counter == 0)
+    {
+        mach_timebase_info_data_t rate_nsec;
+        mach_timebase_info(&rate_nsec);
+
+        macos_perf_frequency = 1000000000LL * rate_nsec.numer / rate_nsec.denom;
+        macos_perf_counter = mach_absolute_time();
+    }
+
     f64 now = mach_absolute_time();
     return (now - macos_perf_counter) / macos_perf_frequency;
 }
 
-Date_Time os_get_current_time_in_utc() {
-    // @Incomplete
-    return {};
+f64 os_time_in_miliseconds() {
+    return os_time() * 1000;
 }
 
 // @Incomplete: is this correct?
@@ -3675,12 +3723,12 @@ bool os_file_rename(String from, String to) {
     return rename(from_cstr, to_cstr) == 0;
 }
 
-na_internal u64 unix_date_from_time(time_t time) {
+function u64 unix_date_from_time(time_t time) {
     // @Incomplete
     return cast(u64)time;
 }
 
-na_internal u32 unix_flags_from_mode(mode_t mode, String name) {
+function u32 unix_flags_from_mode(mode_t mode, String name) {
     u32 result = 0;
 
     if (S_ISDIR(mode)) {
@@ -3701,7 +3749,7 @@ na_internal u32 unix_flags_from_mode(mode_t mode, String name) {
     return result;
 }
 
-na_internal u32 unix_access_from_mode(mode_t mode) {
+function u32 unix_access_from_mode(mode_t mode) {
     u32 result = FileAccess_Read | FileAccess_Execute;
 
     // @Incomplete
@@ -3719,19 +3767,20 @@ File_Info os_get_file_info(Arena *arena, String path) {
 
     char *cpath = string_to_cstr(scratch.arena, path);
 
-    struct stat64 stat_info;
-    bool file_exists = stat64(cpath, &stat_info) == 0;
+    struct stat64 st;
+    bool file_exists = stat64(cpath, &st) == 0;
 
     File_Info info = {};
 
     if (file_exists) {
         info.name             = path_filename(path);
-        info.last_accessed_at = unix_date_from_time(stat_info.st_atime);
-        info.updated_at       = unix_date_from_time(stat_info.st_mtime);
+        info.size             = st.st_size;
+        info.last_accessed_at = unix_date_from_time(st.st_atime);
+        info.updated_at       = unix_date_from_time(st.st_mtime);
          // NOTE(nick): not really created time, but UNIX doesn't have this concept
-        info.created_at       = unix_date_from_time(stat_info.st_ctime);
-        info.flags            = unix_flags_from_mode(stat_info.st_mode, info.name);
-        info.access           = unix_access_from_mode(stat_info.st_mode);
+        info.created_at       = unix_date_from_time(st.st_ctime);
+        info.flags            = unix_flags_from_mode(st.st_mode, info.name);
+        info.access           = unix_access_from_mode(st.st_mode);
     }
 
     end_scratch_memory(scratch);
@@ -3845,18 +3894,14 @@ void os_file_close(File *file) {
 }
 
 String os_read_entire_file(Allocator allocator, String path) {
-    String result = {};
-
     auto file = os_file_open(path, FILE_MODE_READ);
-    if (!file.has_errors)
-    {
-        auto size = os_file_get_size(&file);
-        result.data = cast(u8 *)allocator_alloc(allocator, size);
-        result.count = size;
-        
-        os_file_read(&file, 0, size, result.data);
-    }
+    auto size = os_file_get_size(&file);
 
+    String result = {};
+    result.data = cast(u8 *)allocator_alloc(allocator, size);
+    result.count = size;
+
+    os_file_read(&file, 0, size, result.data);
     os_file_close(&file);
 
     return result;
@@ -3969,7 +4014,7 @@ void *unix_thread_proc(void *data) {
     return (void *)result;
 }
 
-Thread os_create_thread_with_params(u64 stack_size, Thread_Proc *proc, void *data, u64 copy_size) {
+Thread os_create_thread(u64 stack_size, Thread_Proc *proc, void *data) {
     pthread_attr_t attr;
     if (pthread_attr_init(&attr) != 0) {
         return {};
@@ -3981,15 +4026,9 @@ Thread os_create_thread_with_params(u64 stack_size, Thread_Proc *proc, void *dat
         }
     }
 
-    Thread_Params *params = (Thread_Params *)os_alloc(sizeof(Thread_Params) + copy_size);
+    Thread_Params *params = (Thread_Params *)os_alloc(sizeof(Thread_Params));
     params->proc = proc;
     params->data = data;
-
-    if (copy_size > 0)
-    {
-        params->data = params + sizeof(Thread_Params);
-        memory_copy(data, params->data, copy_size);
-    }
 
     pthread_t thread_id;
     pthread_create(&thread_id, &attr, unix_thread_proc, params);
@@ -3997,10 +4036,6 @@ Thread os_create_thread_with_params(u64 stack_size, Thread_Proc *proc, void *dat
     Thread result = {};
     result.handle = (void *)thread_id;
     return result;
-}
-
-Thread os_create_thread(u64 stack_size, Thread_Proc *proc, void *data) {
-    return os_create_thread_with_params(stack_size, proc, data, 0);
 }
 
 void os_detatch_thread(Thread thread) {
@@ -4208,7 +4243,7 @@ ALLOCATOR_PROC(arena_allocator_proc) {
 
     switch (mode) {
         case ALLOCATOR_MODE_ALLOC: {
-            return arena_alloc_aligned(arena, requested_size, alignment);
+            return arena_push_aligned(arena, requested_size, alignment);
         }
 
         // @Speed: make this check pointer locations and potentially just extend previous allocation?
@@ -4216,7 +4251,7 @@ ALLOCATOR_PROC(arena_allocator_proc) {
         case ALLOCATOR_MODE_RESIZE: {
             u64 actual_size = requested_size + na_align_offset(0, alignment);
 
-            void *result = arena_alloc_aligned(arena, actual_size, alignment);
+            void *result = arena_push_aligned(arena, actual_size, alignment);
 
             if (result && old_memory_pointer && mode == ALLOCATOR_MODE_RESIZE) {
                 memory_copy(old_memory_pointer, result, Min(requested_size, old_size));
@@ -5003,20 +5038,30 @@ void os_file_append(File *file, String str) {
     file->offset += str.count;
 }
 
+void os_file_print(File *file, char *format, ...) {
+    va_list args;
+
+    va_start(args, format);
+    String result = string_printv(temp_arena(), format, args);
+    va_end(args);
+
+    os_file_append(file, result);
+}
+
 String os_get_executable_directory() {
     String result = os_get_executable_path();
     return path_dirname(result);
 }
 
-na_inline bool file_exists(File_Info info) { return info.name.count > 0; }
+force_inline bool file_exists(File_Info info) { return info.name.count > 0; }
 
-na_inline bool file_is_directory(File_Info info) { return (info.flags & File_IsDirectory) != 0; }
-na_inline bool file_is_hidden(File_Info info)    { return (info.flags & File_IsHidden) != 0; }
-na_inline bool file_is_system(File_Info info)    { return (info.flags & File_IsSystem) != 0; }
+force_inline bool file_is_directory(File_Info info) { return (info.flags & File_IsDirectory) != 0; }
+force_inline bool file_is_hidden(File_Info info)    { return (info.flags & File_IsHidden) != 0; }
+force_inline bool file_is_system(File_Info info)    { return (info.flags & File_IsSystem) != 0; }
 
-na_inline bool file_is_directory(File_Info *info) { return (info->flags & File_IsDirectory) != 0; }
-na_inline bool file_is_hidden(File_Info *info)    { return (info->flags & File_IsHidden) != 0; }
-na_inline bool file_is_system(File_Info *info)    { return (info->flags & File_IsSystem) != 0; }
+force_inline bool file_is_directory(File_Info *info) { return (info->flags & File_IsDirectory) != 0; }
+force_inline bool file_is_hidden(File_Info *info)    { return (info->flags & File_IsHidden) != 0; }
+force_inline bool file_is_system(File_Info *info)    { return (info->flags & File_IsSystem) != 0; }
 
 
 bool os_delete_entire_directory(String path) {
@@ -5096,11 +5141,14 @@ i64 os_count_directory(String path) {
     char *cpath = string_to_cstr(arena, path);
 
     DIR *handle = opendir(cpath);
-    struct dirent *data = readdir(handle);
+    if (handle != NULL)
+    {
+        struct dirent *data = readdir(handle);
 
-    while (data) {
-        result += 1;
-        data = readdir(handle);
+        while (data) {
+            result += 1;
+            data = readdir(handle);
+        }
     }
     #endif
 
@@ -5112,17 +5160,20 @@ Array<File_Info> os_scan_directory(Allocator allocator, Arena *string_memory, St
     i64 count = os_count_directory(path);
 
     Array<File_Info> result = {};
-    array_init_from_allocator(&result, allocator, count);
+    if (count > 0)
+    {
+        array_init_from_allocator(&result, allocator, count);
 
-    auto handle = os_file_list_begin(path); // @Memory @Cleanup: implicit temp arena
+        auto handle = os_file_list_begin(path); // @Memory @Cleanup: implicit temp arena
 
-    File_Info info = {};
-    while (os_file_list_next(&handle, &info)) {
-        auto it = array_push(&result, info);
-        it->name = string_copy(string_memory, it->name);
+        File_Info info = {};
+        while (os_file_list_next(&handle, &info)) {
+            auto it = array_push(&result, info);
+            it->name = string_copy(string_memory, it->name);
+        }
+
+        os_file_list_end(&handle);
     }
-
-    os_file_list_end(&handle);
 
     return result;
 }
@@ -5131,17 +5182,20 @@ Array<File_Info> os_scan_directory(Allocator allocator, String path) {
     i64 count = os_count_directory(path);
 
     Array<File_Info> result = {};
-    array_init_from_allocator(&result, allocator, count);
+    if (count > 0)
+    {
+        array_init_from_allocator(&result, allocator, count);
 
-    auto handle = os_file_list_begin(path); // @Memory @Cleanup: implicit temp arena
+        auto handle = os_file_list_begin(path); // @Memory @Cleanup: implicit temp arena
 
-    File_Info info = {};
-    while (os_file_list_next(&handle, &info)) {
-        auto it = array_push(&result, info);
-        it->name = string_alloc(allocator, it->name);
+        File_Info info = {};
+        while (os_file_list_next(&handle, &info)) {
+            auto it = array_push(&result, info);
+            it->name = string_alloc(allocator, it->name);
+        }
+
+        os_file_list_end(&handle);
     }
-
-    os_file_list_end(&handle);
 
     return result;
 }
@@ -5202,12 +5256,12 @@ bool os_copy_entire_file(String from, String to)
 
         if (!result)
         {
-            print("[file] Copy failed to write entire file: %S\n", to);
+            print("[file] Copy failed to write entire file: %.*s\n", LIT(to));
         }
     }
     else
     {
-        print("[file] Copy failed to read entire file: %S\n", from);
+        print("[file] Copy failed to read entire file: %.*s\n", LIT(from));
     }
     
     return result;
@@ -5483,7 +5537,7 @@ void mutex_destroy(Mutex *mutex) {
 #endif // OS_MACOS
 
 
-na_internal bool do_next_work_queue_entry(Work_Queue *queue) {
+function bool do_next_work_queue_entry(Work_Queue *queue) {
     bool we_should_sleep = false;
 
     u32 original_next_entry_to_read = queue->next_entry_to_read;
@@ -5505,7 +5559,7 @@ na_internal bool do_next_work_queue_entry(Work_Queue *queue) {
     return we_should_sleep;
 }
 
-na_internal u32 worker_thread_proc(void *data) {
+function u32 worker_thread_proc(void *data) {
     Worker_Params *params = (Worker_Params *)data;
     Work_Queue *queue = params->queue;
 
