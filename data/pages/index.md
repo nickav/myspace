@@ -1,0 +1,14 @@
+<div class='csy-64'>
+
+<div class='csy-32'>
+<h2>Featured Work</h2>
+@projects()
+</div>
+
+<div class='csy-32'>
+<h2>Recent Posts</h2>
+@posts(5)
+@link("← View All Posts", "/posts")
+</div>
+
+</div>

@@ -856,8 +856,14 @@ Arena *arena_alloc_from_memory(u64 size) {
 
 void arena_free(Arena *arena) {
     if (arena->data) {
-        ARENA_RELEASE(arena->data, arena->size);
-        arena->data = NULL;
+        if (arena_has_virtual_backing(arena))
+        {
+            ARENA_RELEASE(arena->data, arena->size);
+        }
+        else
+        {
+            arena->data = NULL;
+        }
     }
 }
 
@@ -1866,6 +1872,11 @@ f64 string_to_f64(String str) {
     }
 
     return result * fact;
+}
+
+bool string_to_bool(String str) {
+    str = string_lower(str);
+    return string_equals(str, S("true")) || string_equals(str, S("1"));
 }
 
 String string_pluralize(i64 count, String singular, String plural)
