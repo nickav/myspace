@@ -497,7 +497,7 @@ void write_custom_tag(Arena *arena, String tag_name, Array<String> args)
 
             //~nja: article
             write(arena, "<a class='no-hover' href='%S'>\n", link);
-            write(arena, "<div class='flex-1 flex-y center-y h-128' style='position:relative'>\n");
+            write(arena, "<div class='flex-1 flex-y center-y h-128 round-2 crop' style='position:relative'>\n");
             if (post.image.count)
             {
             write_image(arena, post.image, S(""), S("class='bg bg-light cover'"));
@@ -553,7 +553,7 @@ void write_custom_tag(Arena *arena, String tag_name, Array<String> args)
             auto desc  = it->desc;
             auto link  = it->href;
 
-            write(arena, "<a class='flex-y center-y padx-32 pady-16 bg-light' href='%S' target='_blank'>", link);
+            write(arena, "<a class='flex-y center-y padx-32 pady-16 bg-light round' href='%S' target='_blank'>", link);
             write(arena, "<div class='flex-y'>");
             write(arena, "<div class='font-bold'>%S</div>", title);
             write(arena, "<div class='c-gray' style='font-size: 0.8rem;'>%S</div>", desc);

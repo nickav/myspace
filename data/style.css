@@ -247,8 +247,20 @@ a:hover .bg {
   height: 100%;
 }
 
-.quote {
+.round {
   border-radius: 2px;
+}
+
+.round-2 {
+  border-radius: 4px;
+}
+
+.crop {
+  overflow: hidden;
+}
+
+.quote {
+  border-radius: 4px;
   background: #272822;
   color: #F8F8F2;
   font-weight: 500;
@@ -260,7 +272,7 @@ a:hover .bg {
 /** Code snippets */
 
 .code, .inline_code {
-  border-radius: 2px;
+  border-radius: 4px;
   background: #272822;
   color: #F8F8F2;
   font-weight: 500;
