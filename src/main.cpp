@@ -10,12 +10,6 @@
 #include "helpers.h"
 #include "code_parser.h"
 
-struct Build_Config
-{
-    String asset_dir;
-    String output_dir;
-};
-
 struct Link
 {
     String title;
@@ -35,9 +29,6 @@ struct Site_Meta
     String author;
     String twitter_handle;
     String theme_color;
-
-    Link *social_icons;
-    Link *last_social_icon;
 };
 
 struct Page_Meta
@@ -60,11 +51,33 @@ struct Page {
     String content;
 };
 
-#define Each(it, list) auto *it = list; it != NULL; it = it->next
+struct Build_Context {
+    String data_dir;
+    String output_dir;
+
+    Site_Meta site;
+
+    Page *pages;
+    Page *last_page;
+
+    Page *posts;
+    Page *last_post;
+
+    Link *social_icons;
+    Link *last_social_icon;
+
+    Link *projects;
+    Link *last_project;
+};
+
+#define Each_Node(it, list) auto *it = list; it != NULL; it = it->next
 
 #define Each_Page(it, list) Page *it = list; it != NULL; it = it->next
 
 #define Each_Link(it, list) Link *it = list; it != NULL; it = it->next
+
+
+Build_Context ctx = {};
 
 
 String yaml_to_string(String str) {
@@ -101,7 +114,8 @@ Site_Meta parse_site_info(String yaml)
 
         if (false) {}
         else if (string_equals(key, S("title")))          { result.name = str; }
-        else if (string_equals(key, S("description")))    { result.description = str; }
+        else if (string_equals(key, S("desc")) ||
+                    string_equals(key, S("description"))) { result.description = str; }
         else if (string_equals(key, S("site_url")))       { result.url = str; }
         else if (string_equals(key, S("site_image")))     { result.image = str; }
         else if (string_equals(key, S("site_icon")))      { result.icon = str; }
@@ -138,7 +152,8 @@ Page_Meta parse_page_meta(String yaml) {
         else if (string_equals(key, S("title")))          { result.title = str; }
         else if (string_equals(key, S("image")))          { result.image = str; }
         else if (string_equals(key, S("og_type")))        { result.og_type = str; }
-        else if (string_equals(key, S("description")))    { result.description = str; }
+        else if (string_equals(key, S("desc")) ||
+                    string_equals(key, S("description"))) { result.description = str; }
         else if (string_equals(key, S("date")))           { result.date = str; }
         else if (string_equals(key, S("author")))         { result.author = str; }
         else if (string_equals(key, S("draft")))          { result.draft = string_to_bool(value); }
@@ -350,22 +365,132 @@ i64 string_count_words(String str)
     return result;
 }
 
-//
-// Want:
-// - quote blocks
-// - output p tags
-// - handle HTML tags properly
-//
-// - nesting (for the future)
-//
+void write_custom_tag(Arena *arena, String tag_name, Array<String> args)
+{
+    String arg0 = args.count > 0 ? yaml_to_string(args[0]) : String{};
+    String arg1 = args.count > 1 ? yaml_to_string(args[1]) : String{};
 
+    if (false) {}
+    else if (string_match(tag_name, S("link"), MatchFlags_IgnoreCase))
+    {
+        auto text = arg0;
+        auto href = arg1;
+
+        if (!href.count) href = text;
+
+        write_link(arena, text, href);
+    }
+    else if (string_match(tag_name, S("img"), MatchFlags_IgnoreCase))
+    {
+        auto src = arg0;
+        auto alt = arg1;
+        if (!alt.count) alt = S("");
+
+        write_image(arena, src, alt);
+    }
+    else if (string_match(tag_name, S("code"), MatchFlags_IgnoreCase))
+    {
+        auto str = arg0;
+        write(arena, "<code class='inline_code'>%S</code>", str);
+    }
+    else if (string_match(tag_name, S("quote"), MatchFlags_IgnoreCase))
+    {
+        auto str = arg0;
+        write_quote(arena, str);
+    }
+    else if (string_match(tag_name, S("iframe"), MatchFlags_IgnoreCase))
+    {
+        auto src = arg0;
+        write(arena, "<div class='video'><iframe src='%S' allowfullscreen='' frameborder='0'></iframe></div>", src);
+    }
+    else if (string_match(tag_name, S("hr"), MatchFlags_IgnoreCase))
+    {
+        auto str = arg0;
+        write(arena, "<hr/>", str);
+    }
+    else if (string_match(tag_name, S("posts"), MatchFlags_IgnoreCase))
+    {
+        //~nja: blog list
+        write(arena, "<div class='flex-y csy-16'>\n");
+        for (Each_Node(it, ctx.posts))
+        {
+            auto post_title = it->meta.title;
+            auto post_slug  = it->slug;
+
+            auto post = it->meta;
+            auto date = pretty_date(ParsePostDate(post.date));
+            auto link = post_link(it);
+
+            dump(post_title);
+            dump(post_slug);
+            dump(date);
+            dump(link);
+
+            //~nja: article
+            write(arena, "<a class='no-hover' href='%S'>\n", link);
+            write(arena, "<div class='flex-1 flex-y center-y h-128' style='position:relative'>\n");
+            if (post.image.count)
+            {
+            write_image(arena, post.image, S(""), S("class='bg bg-light cover'"));
+            }
+            write(arena, "<div class='flex-y padx-32 pady-16'><div class='font-bold'>%S</div><div class='c-gray' style='font-size: 0.8rem;'>%S</div></div>\n", post.title, post.description);
+            write(arena, "</div>\n");
+            write(arena, "</a>\n");
+        }
+        write(arena, "</div>\n");
+    }
+    else if (string_match(tag_name, S("post_links"), MatchFlags_IgnoreCase))
+    {
+        //~nja: blog list
+        write(arena, "<div class='flex-y csy-16'>\n");
+        for (Each_Node(it, ctx.posts))
+        {
+            auto post_title = it->meta.title;
+            auto post_slug  = it->slug;
+
+            auto post = it->meta;
+            auto date = pretty_date(ParsePostDate(post.date));
+            auto link = post_link(it);
+
+            //~nja: article
+            write(arena, "<a href='%S'>\n", link);
+            write(arena, "<div class='flex-1 flex-y center-y' style='position:relative'>\n");
+            write(arena, "<div class='flex-y'><div class='font-bold'>%S</div><div class='c-gray' style='font-size: 0.8rem;'>%S</div></div>\n", post.title, post.description);
+            write(arena, "</div>\n");
+            write(arena, "</a>\n");
+        }
+        write(arena, "</div>\n");
+    }
+    else if (string_match(tag_name, S("projects"), MatchFlags_IgnoreCase))
+    {
+        write(arena, "<div class='grid marb-32'>");
+
+        for (Each_Node(it, ctx.projects))
+        {
+            auto title = it->title;
+            auto desc  = it->desc;
+            auto link  = it->href;
+
+            write(arena, "<a class='flex-y center-y padx-32 pady-16 bg-light' href='%S' target='_blank'>", link);
+            write(arena, "<div class='flex-y'>");
+            write(arena, "<div class='font-bold'>%S</div>", title);
+            write(arena, "<div class='c-gray' style='font-size: 0.8rem;'>%S</div>", desc);
+            write(arena, "</div>");
+            write(arena, "</a>");
+        }
+
+        write(arena, "</div>\n");
+    }
+}
+
+// @Incomplete: supported nested tags
 String markdown_to_html(String text)
 {
     Arena *arena = arena_alloc_from_memory(gigabytes(1));
 
     text = string_normalize_newlines(text);
 
-    bool was_escaped = false;
+    bool was_line_break = true;
 
     for (i64 i = 0; i < text.count; i += 1)
     {
@@ -387,24 +512,34 @@ String markdown_to_html(String text)
 
         if (start_of_line)
         {
-            // @Incomplete: do we support more than 2 dashes?
+            // line breaks (cheap <p> trick)
+            if (it == '\n')
+            {
+                if (!was_line_break)
+                {
+                    arena_print(arena, "<p></p>");
+                    was_line_break = true;
+                }
+                continue;
+            }
+
+            was_line_break = false;
 
             // hr
             if (it == '-' && i < text.count - 2 && text.data[i + 1] == '-' && text.data[i + 2] == '-')
             {
                 i += 2;
-                while (i < text.count && text.data[i] == '-')
-                {
-                    i += 1;
-                }
+                while (i < text.count && text.data[i] == '-') i += 1;
 
                 arena_print(arena, "<hr/>");
                 continue;
             }
 
-            // code blocks
-            if (it == '`' && i < text.count - 2 && text.data[i + 1] == '`' && text.data[i + 2] == '`')
+            // code blocks / quote blocks
+            char bc = it == '`' ? '`' : '>';
+            if (it == bc && i < text.count - 2 && text.data[i + 1] == bc && text.data[i + 2] == bc)
             {
+                bool is_code_block = bc == '`';
                 i += 3;
 
                 i64 tag_start = i;
@@ -419,7 +554,7 @@ String markdown_to_html(String text)
 
                 while (true)
                 {
-                    if (text.data[i] == '`' && string_starts_with(string_skip(text, i), S("```")))
+                    if (text.data[i] == bc && text.data[i + 1] == bc && text.data[i + 2] == bc)
                     {
                         code_end = i;
                         i += 3;
@@ -435,11 +570,18 @@ String markdown_to_html(String text)
                     i += 1;
                 }
 
-                auto code_str = string_slice(text, code_start, code_end);
-                if (tag.count) {
-                    write_code_block(arena, code_str);
-                } else {
-                    arena_print(arena, "<pre class='code'>%S</pre>", code_str);
+                auto str = string_slice(text, code_start, code_end);
+                if (is_code_block)
+                {
+                    if (tag.count) {
+                        write_code_block(arena, str);
+                    } else {
+                        arena_print(arena, "<pre class='code'>%S</pre>", str);
+                    }
+                }
+                else
+                {
+                    write_quote(arena, str);
                 }
 
                 continue;
@@ -516,6 +658,40 @@ String markdown_to_html(String text)
                     arena_print(arena, "</ol>");
                     continue;
                 }
+
+                // markdown-style quotes
+                if (it == '>' && char_is_whitespace(text.data[i + 1]))
+                {
+                    Array<String> lines = {};
+
+                    while (i < text.count && text.data[i] == '>' && char_is_whitespace(text.data[i + 1]))
+                    {
+                        i64 start = i + 2;
+                        while (i < text.count && text.data[i] != '\n') i += 1;
+
+                        auto item_text = string_slice(text, start, i);
+                        array_push(&lines, item_text);
+
+                        i += 1;
+                    }
+
+                    write_quote(arena, string_join(lines, S("\n")));
+                    continue;
+                }
+            }
+        }
+
+        // html tags (or comments)
+        if (it == '<')
+        {
+            if (i < text.count - 1 && (char_is_alpha(text.data[i + 1]) || text.data[i + 1] == '!'))
+            {
+                i64 start_index = i;
+                i += 2; // <a
+                while (i < text.count && text.data[i] != '>') i += 1;
+
+                arena_print(arena, "%S", string_slice(text, start_index, i + 1));
+                continue;
             }
         }
 
@@ -523,6 +699,7 @@ String markdown_to_html(String text)
         if (it == '-')
         {
             // NOTE(nick): markdown actually uses 2 and 3 dashes to be en and em dashes respectively
+            // but we don't really care about that for now...
             if (i < text.count - 1 && text.data[i + 1] == '-')
             {
                 i += 1;
@@ -552,8 +729,7 @@ String markdown_to_html(String text)
                 {
                     auto link_href = string_slice(text, link_start, i);
 
-                    arena_print(arena, "<a href='%S'>%S</a>", link_href, link_text);
-                    //write_link(arena, link_text, link_href);
+                    write_link(arena, link_text, link_href);
                     i += 1;
                     continue;
                 }
@@ -568,11 +744,44 @@ String markdown_to_html(String text)
         // custom expressions
         if (it == '@')
         {
-            // @Incomplete: custom expression parsing
+            i += 1;
+            i64 tag_start = i;
+
+            while (i < text.count && (char_is_alpha(text.data[i]) || text.data[i] == '_'))
+            {
+                i += 1;
+            }
+
+            i64 tag_end = i;
+
+            char bracket = text.data[i];
+            if (bracket == '(' || bracket == '[' || bracket == '{')
+            {
+                char closing_bracket = bracket == '(' ? ')' : (bracket == '[' ? ']' : '}');
+
+                i += 1;
+                while (i < text.count && text.data[i] != closing_bracket) i += 1;
+
+                auto tag_name = string_slice(text, tag_start, tag_end);
+                auto arg_str  = string_slice(text, tag_end + 1, i);
+
+                auto args = string_split(arg_str, S(","));
+                For_Index(args) {
+                    args[index] = string_trim_whitespace(args[index]);
+                }
+
+                write_custom_tag(arena, tag_name, args);
+                continue;
+            }
+            else
+            {
+                i = tag_start - 1;
+            }
         }
 
 
-        // @Incomplete: what happens if these are not matched on a line??
+        // @Incomplete @Robustness: what happens if these are not matched on a line??
+        // markdown just _doesn't_ do anything for the given expression
 
         // bold
         if (it == '*')
@@ -610,6 +819,19 @@ String markdown_to_html(String text)
             }
         }
 
+        // inline code
+        if (it == '`')
+        {
+            i64 closing_index = string_find(text, S("`"), i + 1);
+            if (closing_index < text.count)
+            {
+                arena_print(arena, "<code class='inline_code'>%S</code>", string_slice(text, i + 1, closing_index));
+                i = closing_index;
+                continue;
+            }
+        }
+
+        // output character
         arena_print(arena, "%c", it);
     }
 
@@ -675,10 +897,13 @@ int main(int argc, char **argv)
     auto data_dir   = path_resolve(exe_dir, string_from_cstr(arg1));
     auto output_dir = path_resolve(exe_dir, string_from_cstr(arg2));
 
+    ctx.data_dir   = data_dir;
+    ctx.output_dir = output_dir;
+
     os_make_directory(output_dir);
 
     //
-    // @Incomplete: parse this info from a file somewhere??
+    // @Incomplete @Hardcoded: parse this info from a file somewhere??
     // site.md with YAML frontmatter i guess?
     //
 
@@ -692,13 +917,25 @@ int main(int argc, char **argv)
     site.twitter_handle = S("@nickaversano");
     site.theme_color    = S("#000000");
 
+    ctx.site = site;
+
     Link twitch_icon  = {S("Twitch"),  S("https://twitch.tv/naversano"), S("icons/twitch.svg")};
     Link twitter_icon = {S("Twitter"), S("https://www.twitter.com/nickaversano"), S("icons/twitter.svg")};
     Link github_icon  = {S("Github"),  S("https://www.github.com/nickav"), S("icons/github.svg")};
 
-    QueuePush(site.social_icons, site.last_social_icon, &twitch_icon);
-    QueuePush(site.social_icons, site.last_social_icon, &twitter_icon);
-    QueuePush(site.social_icons, site.last_social_icon, &github_icon);
+    QueuePush(ctx.social_icons, ctx.last_social_icon, &twitch_icon);
+    QueuePush(ctx.social_icons, ctx.last_social_icon, &twitter_icon);
+    QueuePush(ctx.social_icons, ctx.last_social_icon, &github_icon);
+
+    Link project0 = {S("na.h"), S("https://github.com/nickav/na"), S("My Single-File Header Libraries")};
+    Link project1 = {S("myspace"), S("https://github.com/nickav/myspace"), S("This website written in C")};
+    Link project2 = {S("Harley-Davidson"), S("https://maps.harley-davidson.com"), S("Ride-Planner Web")};
+    Link project3 = {S("DRONEPOLLOCK"), S("https://news.mlh.io/the-making-of-drone-pollock-03-10-2016"), S("Internet-of-Things painting")};
+
+    QueuePush(ctx.projects, ctx.last_project, &project0);
+    QueuePush(ctx.projects, ctx.last_project, &project1);
+    QueuePush(ctx.projects, ctx.last_project, &project2);
+    QueuePush(ctx.projects, ctx.last_project, &project3);
 
 
     // @Speed: go wide on reading all data files
@@ -729,13 +966,6 @@ int main(int argc, char **argv)
     print("[after assets] %.2fms\n", os_time_in_miliseconds());
 
 
-    // @Incomplete: parse site pages and posts
-    Page *pages = NULL;
-    Page *last_page = NULL;
-
-    Page *posts = NULL;
-    Page *last_post = NULL;
-
     //~nja: site pages
     auto pages_dir = path_join(data_dir, S("pages"));
     {
@@ -757,7 +987,7 @@ int main(int argc, char **argv)
             page->content = content;
             page->meta    = parse_page_meta(yaml);
 
-            QueuePush(pages, last_page, page);
+            QueuePush(ctx.pages, ctx.last_page, page);
         }
 
         os_file_list_end(&iter);
@@ -786,8 +1016,8 @@ int main(int argc, char **argv)
 
             // @Incomplete: verify that we can actually push a thing to two separate lists?
             // I suspect not!!!!
-            QueuePush(pages, last_page, post);
-            QueuePush(posts, last_post, post);
+            QueuePush(ctx.pages, ctx.last_page, post);
+            QueuePush(ctx.posts, ctx.last_post, post);
         }
 
         os_file_list_end(&iter);
@@ -795,7 +1025,7 @@ int main(int argc, char **argv)
 
 
     //~nja: generate RSS feed
-    auto rss_feed = generate_blog_rss_feed(site, posts);
+    auto rss_feed = generate_blog_rss_feed(site, ctx.posts);
     os_write_entire_file(path_join(output_dir, S("feed.xml")), rss_feed);
 
     //~nja: output site pages
@@ -804,7 +1034,7 @@ int main(int argc, char **argv)
     print("[time] %.2fms\n", os_time_in_miliseconds());
     print("Generating Pages...\n");
 
-    for (Page *it = pages; it != NULL; it = it->next)
+    for (Each_Page(it, ctx.pages))
     {
         print("  %S\n", it->slug);
 
@@ -878,7 +1108,7 @@ int main(int argc, char **argv)
 
             write(arena, "<div class='csx-16 flex-x'>\n");
 
-            for (Each_Link(it, site.social_icons))
+            for (Each_Link(it, ctx.social_icons))
             {
                 auto name  = it->title;
                 auto image = it->desc;
