@@ -564,6 +564,7 @@ void write_custom_tag(Arena *arena, String tag_name, Array<String> args)
 }
 
 // @Incomplete: supported nested tags
+// @Speed: arena_print is actually sort of slower than you might think (especially when doing for each character)
 String markdown_to_html(String text)
 {
     Arena *arena = arena_alloc_from_memory(gigabytes(1));
@@ -921,7 +922,8 @@ String markdown_to_html(String text)
         }
 
         // output character
-        arena_print(arena, "%c", it);
+        u8 *output = PushStruct(arena, u8);
+        *output = it;
     }
 
     String result = arena_to_string(arena);
@@ -1035,6 +1037,7 @@ int main(int argc, char **argv)
 
     Link author0 = {S("Nick Aversano"), S("/"), {}};
     QueuePush(ctx.authors, ctx.last_author, &author0);
+
 
     // @Speed: go wide on reading all data files
 
@@ -1308,16 +1311,12 @@ int main(int argc, char **argv)
 
         write(arena, "</html>\n");
 
-        // TODO(nick): we can go wide here and write all the files in parallel
         auto html = arena_to_string(arena);
         os_write_entire_file(path_join(output_dir, sprint("%S.html", it->slug)), html);
     }
 
 
-    auto out = markdown_to_html(S("hello  *bold* _italic_ ~strike~ `code`  _*bold italic*_"));
-    print("%S\n", out);
-
-
+    // TODO(nick): we can go wide here and write all the files in parallel
     // @Speed: go wide on writing all output files
 
 
