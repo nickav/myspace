@@ -260,35 +260,24 @@ VERSION HISTORY
     #endif
 #endif
 
-#ifndef cast
 #define cast(type) (type)
-#endif
 
-#ifndef size_of
 #define size_of(x) ((isize)sizeof(x))
-#endif
 
-#ifndef count_of
 #define count_of(array) (sizeof(array) / sizeof((array)[0]))
-#endif
 
-#ifndef offset_of
 #define offset_of(Type, member) ((uint64_t) & (((Type *)0)->member))
-#endif
 
-#ifndef member_from_offset
 #define member_from_offset(ptr, Type, offset) (*(Type *)((u8 *)ptr + offset))
-#endif
 
-#ifndef align_of
 #define align_of(Type) ((isize)alignof(Type))
-#endif
 
-#ifndef global
+#define IntFromPtr(p) (u64)(((u8*)p) - 0)
+#define PtrFromInt(i) (void*)(((u8*)0) + i)
+
 #define global        static // Global variables
 #define local         static // Local Persisting variables
 #define function      static // Internal linkage
-#endif
 
 #define fallthrough
 
@@ -300,9 +289,7 @@ VERSION HISTORY
 #define read_only
 #endif
 
-#ifndef FourCC
 #define FourCC(a, b, c, d) (((u32)(a) << 0) | ((u32)(b) << 8) | ((u32)(c) << 16) | ((u32)(d) << 24))
-#endif
 
 #define Swap(Type, a, b) do { Type tmp = (a); (a) = (b); (b) = tmp; } while (0)
 
@@ -316,7 +303,7 @@ VERSION HISTORY
 #define STRINGIFY(x) STRINGIFY2(x)
 #endif
 
-#ifndef defer
+#if !defined(defer) && LANG_CPP
 // Defer macro/thing.
 template<typename T>
 struct ExitScope {
@@ -337,9 +324,7 @@ public:
 #define defer const auto& CONCAT(defer__, __LINE__) = ExitScopeHelp() + [&]()
 #endif
 
-#ifndef SetFlag
 #define SetFlag(flags, mask, enable) do { if (enable) { flags |= (mask); } else { flags &= ~(mask); } } while(0)
-#endif
 
 //
 // Types
@@ -785,12 +770,16 @@ bool os_release(void *ptr, u64 size);
 #define DEFAULT_MEMORY_ALIGNMENT 16
 #endif
 
-#ifndef ARENA_COMMIT_BLOCK_SIZE
-#define ARENA_COMMIT_BLOCK_SIZE megabytes(4)
+#ifndef ARENA_COMMIT_SIZE
+#define ARENA_COMMIT_SIZE kilobytes(4)
 #endif
 
 #ifndef ARENA_INITIAL_COMMIT_SIZE
 #define ARENA_INITIAL_COMMIT_SIZE kilobytes(4)
+#endif
+
+#ifndef ARENA_DECOMMIT_THRESHOLD
+#define ARENA_DECOMMIT_THRESHOLD kilobytes(64)
 #endif
 
 #ifndef ARENA_RESERVE
@@ -809,17 +798,17 @@ bool os_release(void *ptr, u64 size);
 #define ARENA_RELEASE os_release
 #endif
 
-#define arena_has_virtual_backing(arena) ((arena)->commit_position < U64_MAX)
+#define arena_has_virtual_backing(arena) (arena->commit_pos < U64_MAX)
 
 struct Arena {
     u8 *data;
-    u64 offset;
+    u64 pos;
     u64 size;
-    u64 commit_position;
+    u64 commit_pos;
 };
 
 struct Arena_Mark {
-    u64 offset;
+    u64 pos;
 };
 
 Arena arena_make(u8 *data, u64 size) {
@@ -833,21 +822,23 @@ void arena_init(Arena *arena, u8 *data, u64 size) {
     *arena = {};
     arena->data = data;
     arena->size = size;
-    arena->commit_position = U64_MAX;
+    arena->pos  = 0;
+    arena->commit_pos = U64_MAX;
 }
 
 Arena *arena_alloc_from_memory(u64 size) {
-    Arena *result = 0;
+    size = Max(size, ARENA_INITIAL_COMMIT_SIZE);
 
-    if (size >= ARENA_INITIAL_COMMIT_SIZE) {
-        u8 *data = cast(u8 *)ARENA_RESERVE(size);
-        if (data && ARENA_COMMIT(data, ARENA_INITIAL_COMMIT_SIZE)) {
-            result = (Arena *)data;
-            result->data = data;
-            result->size = size;
-            result->offset = AlignUpPow2(sizeof(Arena), 64);
-            result->commit_position = ARENA_INITIAL_COMMIT_SIZE;
-        }
+    Arena *result = NULL;
+    u8 *data = cast(u8 *)ARENA_RESERVE(size);
+
+    if (data && ARENA_COMMIT(data, ARENA_INITIAL_COMMIT_SIZE))
+    {
+        result = cast(Arena *)data;
+        result->data = data + AlignUpPow2(sizeof(Arena), 64);
+        result->size = size;
+        result->pos  = 0;
+        result->commit_pos = ARENA_INITIAL_COMMIT_SIZE;
     }
 
     assert(result != 0);
@@ -855,14 +846,13 @@ Arena *arena_alloc_from_memory(u64 size) {
 }
 
 void arena_free(Arena *arena) {
-    if (arena->data) {
+    if (arena->data)
+    {
+        arena->data = NULL;
+
         if (arena_has_virtual_backing(arena))
         {
-            ARENA_RELEASE(arena->data, arena->size);
-        }
-        else
-        {
-            arena->data = NULL;
+            ARENA_RELEASE(arena, arena->size);
         }
     }
 }
@@ -870,27 +860,33 @@ void arena_free(Arena *arena) {
 void *arena_push(Arena *arena, u64 size) {
     void *result = NULL;
 
-    if (arena->offset + size <= arena->size) {
-        void *result_on_success = arena->data + arena->offset;
+    if (arena->pos + size <= arena->size)
+    {
+        void *result_on_success = arena->data + arena->pos;
+        u64 p = arena->pos + size;
+        u64 commit_p = arena->commit_pos;
 
-        u64 p = arena->offset + size;
-        u64 commit_p = arena->commit_position;
-
-        if (arena->commit_position < U64_MAX && p > commit_p)
+        if (arena_has_virtual_backing(arena))
         {
-            u64 p_aligned = AlignUpPow2(p, ARENA_COMMIT_BLOCK_SIZE);
-            u64 next_commit_position = ClampTop(p_aligned, arena->size);
-            u64 commit_size = next_commit_position - commit_p;
+            u64 base_p = p + AlignUpPow2(sizeof(Arena), 64);
+            if (base_p > commit_p)
+            {
+                u64 p_aligned = AlignUpPow2(base_p, ARENA_COMMIT_SIZE);
+                u64 next_commit_position = ClampTop(p_aligned, arena->size);
+                u64 commit_size = next_commit_position - commit_p;
 
-            if (ARENA_COMMIT(arena->data + arena->commit_position, commit_size)) {
-                commit_p = next_commit_position;
-                arena->commit_position = next_commit_position;
+                if (ARENA_COMMIT((u8 *)arena + arena->commit_pos, commit_size))
+                {
+                    commit_p = next_commit_position;
+                    arena->commit_pos = next_commit_position;
+                }
             }
         }
 
-        if (p <= commit_p) {
+        if (p <= commit_p)
+        {
             result = result_on_success;
-            arena->offset = p;
+            arena->pos = p;
         }
     }
 
@@ -907,21 +903,21 @@ void *arena_push_zero(Arena *arena, u64 size) {
 }
 
 void arena_pop_to(Arena *arena, u64 pos) {
-    if (pos < arena->offset) {
-        arena->offset = pos;
+    if (arena->pos > pos)
+    {
+        arena->pos = pos;
 
-        // NOTE(nick): if arena has virtual backing
-        if (arena->commit_position < U64_MAX)
+        if (arena_has_virtual_backing(arena))
         {
-            u64 prev_commit_position = arena->commit_position;
-            u64 next_commit_position = AlignUpPow2(arena->offset, ARENA_COMMIT_BLOCK_SIZE);
-            next_commit_position = ClampTop(next_commit_position, arena->size);
+            u64 base_p = pos + AlignUpPow2(sizeof(Arena), 64);
+            u64 decommit_pos = AlignUpPow2(base_p, ARENA_COMMIT_SIZE);
+            u64 over_committed = arena->commit_pos - decommit_pos;
 
-            if (next_commit_position < prev_commit_position) {
-                u64 decommit_size = prev_commit_position - next_commit_position;
-
-                if (ARENA_DECOMMIT(arena->data + next_commit_position, decommit_size)) {
-                    arena->commit_position = next_commit_position;
+            if (decommit_pos < arena->commit_pos && over_committed >= ARENA_DECOMMIT_THRESHOLD)
+            {
+                if (ARENA_DECOMMIT((u8 *)arena + decommit_pos, over_committed))
+                {
+                    arena->commit_pos -= over_committed;
                 }
             }
         }
@@ -929,31 +925,22 @@ void arena_pop_to(Arena *arena, u64 pos) {
 }
 
 void arena_pop(Arena *arena, u64 size) {
-    if (size < arena->offset) {
-        arena_pop_to(arena, arena->offset - size);
-    } else {
-        arena_pop_to(arena, 0);
-    }
+    arena_pop_to(arena, arena->pos - size);
 }
 
 void arena_reset(Arena *arena) {
-    // NOTE(nick): if arena has virtual backing
-    if (arena->commit_position < U64_MAX) {
-        if (arena->commit_position > ARENA_INITIAL_COMMIT_SIZE) {
-            // @Incomplete: do we want to decommit on reset?
-            u64 decommit_size = arena->commit_position - ARENA_INITIAL_COMMIT_SIZE;
-            ARENA_DECOMMIT(arena->data + ARENA_INITIAL_COMMIT_SIZE, decommit_size);
-            arena->commit_position = ARENA_INITIAL_COMMIT_SIZE;
-        }
-
-        arena->offset = AlignUpPow2(sizeof(Arena), 64);
-    } else {
-        arena->offset = 0;
+    if (arena_has_virtual_backing(arena))
+    {
+        arena_pop(arena, arena->pos);
+    }
+    else
+    {
+        arena->pos = 0;
     }
 }
 
 void arena_align(Arena *arena, u64 pow2_align) {
-    u64 p = arena->offset;
+    u64 p = arena->pos;
     u64 p_aligned = AlignUpPow2(p, pow2_align);
     u64 z = p_aligned - p;
     if (z > 0) {
@@ -995,13 +982,13 @@ bool arena_write(Arena *arena, u8 *data, u64 size) {
 
 Arena_Mark arena_get_position(Arena *arena) {
     Arena_Mark result = {};
-    result.offset = arena->offset;
+    result.pos = arena->pos;
     return result;
 }
 
 void arena_set_position(Arena *arena, Arena_Mark mark) {
-    arena_pop_to(arena, mark.offset);
-    arena->offset = mark.offset;
+    arena_pop_to(arena, mark.pos);
+    arena->pos = mark.pos;
 }
 
 //
@@ -1782,14 +1769,9 @@ void arena_write(Arena *arena, String string)
     arena_write(arena, string.data, string.count);
 }
 
-String arena_to_string(Arena *arena) {
-    if (arena->commit_position < U64_MAX)
-    {
-        u64 offset = AlignUpPow2(sizeof(Arena), 64);
-        return make_string(arena->data + offset, arena->offset - offset);
-    }
-
-    return make_string(arena->data, arena->offset);
+String arena_to_string(Arena *arena)
+{
+    return make_string(arena->data, arena->pos);
 }
 
 

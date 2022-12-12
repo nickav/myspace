@@ -100,7 +100,8 @@ Array<C_Token> c_tokenize(String text)
 
                 auto token = array_push(&tokens);
                 token->type = C_TokenType_Comment;
-                token->value = string_slice(text, start, i == text.count ? i : i - 1);
+                token->value = string_slice(text, start, i);
+                i += 1;
                 continue;
             }
 

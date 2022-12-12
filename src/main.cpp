@@ -18,11 +18,11 @@ struct Build_Config
 
 struct Link
 {
-    Link *next;
-
     String title;
     String href;
     String desc;
+
+    Link *next;
 };
 
 struct Site_Meta
@@ -35,6 +35,9 @@ struct Site_Meta
     String author;
     String twitter_handle;
     String theme_color;
+
+    Link *social_icons;
+    Link *last_social_icon;
 };
 
 struct Page_Meta
@@ -57,7 +60,12 @@ struct Page {
     String content;
 };
 
+#define Each(it, list) auto *it = list; it != NULL; it = it->next
+
 #define Each_Page(it, list) Page *it = list; it != NULL; it = it->next
+
+#define Each_Link(it, list) Link *it = list; it != NULL; it = it->next
+
 
 String yaml_to_string(String str) {
     str = string_trim_whitespace(str);
@@ -342,22 +350,268 @@ i64 string_count_words(String str)
     return result;
 }
 
+//
+// Want:
+// - quote blocks
+// - output p tags
+// - handle HTML tags properly
+//
+// - nesting (for the future)
+//
 
 String markdown_to_html(String text)
 {
     Arena *arena = arena_alloc_from_memory(gigabytes(1));
 
     text = string_normalize_newlines(text);
-    return text;
 
-    #if 0
-    // @Incomplete: we also want to split by code blocks and quote blocks
-    Array<String> lines = string_split(text, S("\n"));
+    bool was_escaped = false;
 
-    For (lines) {
-        arena_print(arena, "<p>%S</p>", it);
+    for (i64 i = 0; i < text.count; i += 1)
+    {
+        char it = text.data[i];
+
+        char prev_it = i > 0 ? text.data[i - 1] : '\0';
+        bool start_of_line = prev_it == '\n';
+        bool escaped = it == '\\';
+
+        if (escaped)
+        {
+            i += 1;
+            if (i < text.count)
+            {
+                arena_print(arena, "%c", text.data[i]);
+            }
+            continue;
+        }
+
+        if (start_of_line)
+        {
+            // @Incomplete: do we support more than 2 dashes?
+
+            // hr
+            if (it == '-' && i < text.count - 2 && text.data[i + 1] == '-' && text.data[i + 2] == '-')
+            {
+                i += 2;
+                while (i < text.count && text.data[i] == '-')
+                {
+                    i += 1;
+                }
+
+                arena_print(arena, "<hr/>");
+                continue;
+            }
+
+            // code blocks
+            if (it == '`' && i < text.count - 2 && text.data[i + 1] == '`' && text.data[i + 2] == '`')
+            {
+                i += 3;
+
+                i64 tag_start = i;
+                while (text.data[i] != '\n') i += 1;
+
+                auto tag = string_slice(text, tag_start, i);
+
+                i += 1;
+
+                i64 code_start = i;
+                i64 code_end = 0;
+
+                while (true)
+                {
+                    if (text.data[i] == '`' && string_starts_with(string_skip(text, i), S("```")))
+                    {
+                        code_end = i;
+                        i += 3;
+                        break;
+                    }
+
+                    if (i >= text.count)
+                    {
+                        code_end = i;
+                        break;
+                    }
+
+                    i += 1;
+                }
+
+                auto code_str = string_slice(text, code_start, code_end);
+                if (tag.count) {
+                    write_code_block(arena, code_str);
+                } else {
+                    arena_print(arena, "<pre class='code'>%S</pre>", code_str);
+                }
+
+                continue;
+            }
+
+            // headers
+            if (it == '#')
+            {
+                i64 count = 1;
+                while (i < text.count && text.data[i + count] == '#')
+                {
+                    count += 1;
+                }
+
+                if (count >= 1 && count <= 6 && char_is_whitespace(text.data[i + count]))
+                {
+                    i += count;
+                    i += 1; // eat whitespace
+
+                    i64 start_index = i;
+                    while (text.data[i] != '\n') i += 1;
+
+                    auto header_text = string_slice(text, start_index, i);
+                    arena_print(arena, "<h%d>%S</h%d>", count, header_text, count);
+
+                    continue;
+                }
+            }
+
+            // lists
+            if (i < text.count - 1)
+            {
+                // bullet list
+                if (it == '-' && char_is_whitespace(text.data[i + 1]))
+                {
+                    arena_print(arena, "<ul>");
+
+                    while (i < text.count && text.data[i] == '-' && char_is_whitespace(text.data[i + 1]))
+                    {
+                        i64 start = i + 2;
+                        while (i < text.count && text.data[i] != '\n') i += 1;
+
+                        auto item_text = string_slice(text, start, i);
+                        arena_print(arena, "<li>%S</li>", item_text);
+
+                        i += 1;
+                    }
+
+                    arena_print(arena, "</ul>");
+                    continue;
+                }
+
+                // number list
+                if (char_is_digit(it) && text.data[i + 1] == '.' && char_is_whitespace(text.data[i + 2]))
+                {
+                    arena_print(arena, "<ol>");
+
+                    while (i < text.count)
+                    {
+                        if (!(char_is_digit(it) && text.data[i + 1] == '.' && char_is_whitespace(text.data[i + 2])))
+                        {
+                            break;
+                        }
+
+                        i64 start = i + 3;
+                        while (i < text.count && text.data[i] != '\n') i += 1;
+
+                        auto item_text = string_slice(text, start, i);
+                        arena_print(arena, "<li>%S</li>", item_text);
+
+                        i += 1;
+                    }
+
+                    arena_print(arena, "</ol>");
+                    continue;
+                }
+            }
+        }
+
+        // em dash
+        if (it == '-')
+        {
+            // NOTE(nick): markdown actually uses 2 and 3 dashes to be en and em dashes respectively
+            if (i < text.count - 1 && text.data[i + 1] == '-')
+            {
+                i += 1;
+                arena_print(arena, "—");
+                continue;
+            }
+        }
+
+        // links
+        if (it == '[')
+        {
+            i += 1;
+            i64 text_start = i;
+            while (i < text.count && text.data[i] != ']' && text.data[i] != '\n') i += 1;
+
+            i += 1;
+
+            if (text.data[i - 1] == ']' && text.data[i] == '(')
+            {
+                i64 text_end = i - 1;
+                i += 1;
+                auto link_text = string_slice(text, text_start, text_end);
+
+                i64 link_start = i;
+                while (i < text.count && text.data[i] != ')' && text.data[i] != '\n') i += 1;
+                if (text.data[i] == ')')
+                {
+                    auto link_href = string_slice(text, link_start, i);
+
+                    arena_print(arena, "<a href='%S'>%S</a>", link_href, link_text);
+                    //write_link(arena, link_text, link_href);
+                    i += 1;
+                    continue;
+                }
+                else
+                {
+                    i = text_start + 1;
+                }
+            }
+        }
+
+
+        // custom expressions
+        if (it == '@')
+        {
+            // @Incomplete: custom expression parsing
+        }
+
+
+        // @Incomplete: what happens if these are not matched on a line??
+
+        // bold
+        if (it == '*')
+        {
+            i64 closing_index = string_find(text, S("*"), i + 1);
+            if (closing_index < text.count)
+            {
+                arena_print(arena, "<b>%S</b>", string_slice(text, i + 1, closing_index));
+                i = closing_index;
+                continue;
+            }
+        }
+
+        // italic
+        if (it == '_')
+        {
+            i64 closing_index = string_find(text, S("_"), i + 1);
+            if (closing_index < text.count)
+            {
+                arena_print(arena, "<i>%S</i>", string_slice(text, i + 1, closing_index));
+                i = closing_index;
+                continue;
+            }
+        }
+        
+        // strike
+        if (it == '~')
+        {
+            i64 closing_index = string_find(text, S("~"), i + 1);
+            if (closing_index < text.count)
+            {
+                arena_print(arena, "<s>%S</s>", string_slice(text, i + 1, closing_index));
+                i = closing_index;
+                continue;
+            }
+        }
+
+        arena_print(arena, "%c", it);
     }
-    #endif
 
     return arena_to_string(arena);
 }
@@ -423,6 +677,11 @@ int main(int argc, char **argv)
 
     os_make_directory(output_dir);
 
+    //
+    // @Incomplete: parse this info from a file somewhere??
+    // site.md with YAML frontmatter i guess?
+    //
+
     Site_Meta site = {};
     site.name           = S("Nick Aversano");
     site.url            = S("http://nickav.co");
@@ -432,6 +691,14 @@ int main(int argc, char **argv)
     site.author         = S("Nick Aversano");
     site.twitter_handle = S("@nickaversano");
     site.theme_color    = S("#000000");
+
+    Link twitch_icon  = {S("Twitch"),  S("https://twitch.tv/naversano"), S("icons/twitch.svg")};
+    Link twitter_icon = {S("Twitter"), S("https://www.twitter.com/nickaversano"), S("icons/twitter.svg")};
+    Link github_icon  = {S("Github"),  S("https://www.github.com/nickav"), S("icons/github.svg")};
+
+    QueuePush(site.social_icons, site.last_social_icon, &twitch_icon);
+    QueuePush(site.social_icons, site.last_social_icon, &twitter_icon);
+    QueuePush(site.social_icons, site.last_social_icon, &github_icon);
 
 
     // @Speed: go wide on reading all data files
@@ -513,10 +780,12 @@ int main(int argc, char **argv)
             string_advance(&content, yaml.count);
 
             Page *post    = PushStruct(temp_arena(), Page);
-            post->slug    = path_join(temp_arena(), S("posts"), it.name);
+            post->slug    = path_join(temp_arena(), S("posts"), path_strip_extension(it.name));
             post->content = content;
             post->meta    = parse_page_meta(yaml);
 
+            // @Incomplete: verify that we can actually push a thing to two separate lists?
+            // I suspect not!!!!
             QueuePush(pages, last_page, post);
             QueuePush(posts, last_post, post);
         }
@@ -609,18 +878,16 @@ int main(int argc, char **argv)
 
             write(arena, "<div class='csx-16 flex-x'>\n");
 
-            #if 0
-            for (Each_Node(it, site.social_icons))
+            for (Each_Link(it, site.social_icons))
             {
-                auto name  = node_get_child(it, 0)->string;
-                auto image = node_get_child(it, 1)->string;
-                auto url   = node_get_child(it, 2)->string;
+                auto name  = it->title;
+                auto image = it->desc;
+                auto url   = it->href;
 
                 auto content = os_read_entire_file(path_join(data_dir, image));
 
                 write(arena, "<a title='%S' href='%S' target='_blank' class='inline-flex center pad-8'><div class='inline-block size-20'>%S</div></a>\n", name, url, content);
             }
-            #endif
             write(arena, "</div>\n");
         write(arena, "</div>\n");
 
@@ -683,7 +950,7 @@ int main(int argc, char **argv)
             write(arena, "</div>\n", page.title);
             }
 
-            write(arena, "%S", it->content);
+            write(arena, "%S", markdown_to_html(it->content));
 
         write(arena, "</div>\n");
 
