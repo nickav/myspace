@@ -571,6 +571,7 @@ String markdown_to_html(String text)
     text = string_normalize_newlines(text);
 
     bool was_line_break = true;
+    i64 html_scope_depth = 0;
 
     for (i64 i = 0; i < text.count; i += 1)
     {
@@ -595,7 +596,7 @@ String markdown_to_html(String text)
             // line breaks (cheap <p> trick)
             if (it == '\n')
             {
-                if (!was_line_break)
+                if (!was_line_break && html_scope_depth <= 0)
                 {
                     arena_print(arena, "<p></p>");
                     was_line_break = true;
@@ -762,15 +763,23 @@ String markdown_to_html(String text)
         }
 
         // html tags (or comments)
-        if (it == '<')
+        if (it == '<' && i < text.count - 1)
         {
-            if (i < text.count - 1 && (char_is_alpha(text.data[i + 1]) || text.data[i + 1] == '!'))
+            char next = text.data[i + 1];
+            if (char_is_alpha(next) || next == '!' || next == '/')
             {
                 i64 start_index = i;
                 i += 2; // <a
                 while (i < text.count && text.data[i] != '>') i += 1;
 
                 arena_print(arena, "%S", string_slice(text, start_index, i + 1));
+
+                if (next == '/') {
+                    html_scope_depth -= 1;
+                } else {
+                    html_scope_depth += 1;
+                }
+
                 continue;
             }
         }
@@ -915,7 +924,14 @@ String markdown_to_html(String text)
         arena_print(arena, "%c", it);
     }
 
-    return arena_to_string(arena);
+    String result = arena_to_string(arena);
+
+    if (string_ends_with(result, S("<p></p>")))
+    {
+        result.count -= S("<p></p>").count;
+    }
+
+    return result;
 }
 
 
