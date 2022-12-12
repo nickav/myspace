@@ -266,9 +266,11 @@ String generate_blog_rss_feed(Site_Meta site, Page *posts)
 
     for (Each_Page(it, posts))
     {
+        if (it->meta.draft) continue;
+
         auto post_slug  = it->slug;
 
-        auto post = parse_page_meta(it->content);
+        auto post = it->meta;
         auto date = ParsePostDate(post.date);
         auto link = path_join(site.url, post_link(it));
 

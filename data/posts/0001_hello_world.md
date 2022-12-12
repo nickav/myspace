@@ -1,6 +1,6 @@
 ---
 title: "Hello, World!"
-desc:  "An amazing blog post"
+desc:  "A breif backstory about me"
 date:  "2021-11-19 10:13:03"
 image: "godrays_04.png"
 author: "Nick Aversano"
