@@ -44,11 +44,13 @@ struct Page_Meta
 };
 
 struct Page {
-    Page *next;
-
     Page_Meta meta;
     String slug;
     String content;
+    String type;
+
+    Page *next;
+    Page *prev;
 };
 
 struct Build_Context {
@@ -68,9 +70,19 @@ struct Build_Context {
 
     Link *projects;
     Link *last_project;
+
+    Link *authors;
+    Link *last_author;
+};
+
+struct Next_Prev_Pages {
+    Page *next;
+    Page *prev;
 };
 
 #define Each_Node(it, list) auto *it = list; it != NULL; it = it->next
+
+#define Each_Node_Reverse(it, list) auto *it = list; it != NULL; it = it->prev
 
 #define Each_Page(it, list) Page *it = list; it != NULL; it = it->next
 
@@ -179,6 +191,56 @@ String post_link(Page *post)
         return absolute_url(post->slug);
     }
     return {};
+}
+
+Page *find_page_by_slug(Page *page, Page *array)
+{
+    for (Each_Node(it, array))
+    {
+        if (string_equals(it->slug, page->slug)) return it;
+    }
+    return NULL;
+}
+
+Next_Prev_Pages find_next_and_prev_pages(Page *page)
+{
+    Next_Prev_Pages result = {};
+
+    Page *next = page->next;
+    Page *prev = page->prev;
+
+    while (next && next->meta.draft) next = next->next;
+    while (prev && prev->meta.draft) prev = prev->next;
+
+    result.next = next;
+    result.prev = prev;
+    return result;
+}
+
+Next_Prev_Pages find_next_and_prev_pages_by_type(Page *page)
+{
+    Next_Prev_Pages result = {};
+
+    String type = page->type;
+
+    Page *next = page->next;
+    Page *prev = page->prev;
+
+    while (next && (!string_equals(type, next->type) || next->meta.draft)) next = next->next;
+    while (prev && (!string_equals(type, prev->type) || prev->meta.draft)) prev = prev->next;
+
+    result.next = next;
+    result.prev = prev;
+    return result;
+}
+
+Link *find_link_by_title(String title, Link *links)
+{
+    for (Each_Link(it, links))
+    {
+        if (string_equals(it->title, title)) return it;
+    }
+    return NULL;
 }
 
 
@@ -410,21 +472,26 @@ void write_custom_tag(Arena *arena, String tag_name, Array<String> args)
     }
     else if (string_match(tag_name, S("posts"), MatchFlags_IgnoreCase))
     {
+        // NOTE(nick): in the future maybe we could let the sign of the argument
+        // determine the order in which we output posts
+        // e.g. @posts(-5) could be the last 5 posts
+        i64 limit = I64_MAX;
+        if (arg0.count > 0) limit = string_to_i64(arg0);
+        i64 count = 0;
+
         //~nja: blog list
         write(arena, "<div class='flex-y csy-16'>\n");
-        for (Each_Node(it, ctx.posts))
+        for (Each_Node_Reverse(it, ctx.last_post))
         {
+            if (it->meta.draft) continue;
+            if (count++ >= limit) break;
+
             auto post_title = it->meta.title;
             auto post_slug  = it->slug;
 
             auto post = it->meta;
             auto date = pretty_date(ParsePostDate(post.date));
             auto link = post_link(it);
-
-            dump(post_title);
-            dump(post_slug);
-            dump(date);
-            dump(link);
 
             //~nja: article
             write(arena, "<a class='no-hover' href='%S'>\n", link);
@@ -441,10 +508,17 @@ void write_custom_tag(Arena *arena, String tag_name, Array<String> args)
     }
     else if (string_match(tag_name, S("post_links"), MatchFlags_IgnoreCase))
     {
+        i64 limit = I64_MAX;
+        if (arg0.count > 0) limit = string_to_i64(arg0);
+        i64 count = 0;
+
         //~nja: blog list
         write(arena, "<div class='flex-y csy-16'>\n");
-        for (Each_Node(it, ctx.posts))
+        for (Each_Node_Reverse(it, ctx.last_post))
         {
+            if (it->meta.draft) continue;
+            if (count++ >= limit) break;
+
             auto post_title = it->meta.title;
             auto post_slug  = it->slug;
 
@@ -463,10 +537,16 @@ void write_custom_tag(Arena *arena, String tag_name, Array<String> args)
     }
     else if (string_match(tag_name, S("projects"), MatchFlags_IgnoreCase))
     {
+        i64 limit = I64_MAX;
+        if (arg0.count > 0) limit = string_to_i64(arg0);
+        i64 count = 0;
+
         write(arena, "<div class='grid marb-32'>");
 
         for (Each_Node(it, ctx.projects))
         {
+            if (count++ >= limit) break;
+
             auto title = it->title;
             auto desc  = it->desc;
             auto link  = it->href;
@@ -937,6 +1017,8 @@ int main(int argc, char **argv)
     QueuePush(ctx.projects, ctx.last_project, &project2);
     QueuePush(ctx.projects, ctx.last_project, &project3);
 
+    Link author0 = {S("Nick Aversano"), S("/"), {}};
+    QueuePush(ctx.authors, ctx.last_author, &author0);
 
     // @Speed: go wide on reading all data files
 
@@ -986,8 +1068,9 @@ int main(int argc, char **argv)
             page->slug    = PushStringCopy(temp_arena(), path_strip_extension(path_filename(it.name)));
             page->content = content;
             page->meta    = parse_page_meta(yaml);
+            page->type    = S("page");
 
-            QueuePush(ctx.pages, ctx.last_page, page);
+            DLLPushBack(ctx.pages, ctx.last_page, page);
         }
 
         os_file_list_end(&iter);
@@ -1013,11 +1096,13 @@ int main(int argc, char **argv)
             post->slug    = path_join(temp_arena(), S("posts"), path_strip_extension(it.name));
             post->content = content;
             post->meta    = parse_page_meta(yaml);
+            post->type    = S("post");
 
-            // @Incomplete: verify that we can actually push a thing to two separate lists?
-            // I suspect not!!!!
-            QueuePush(ctx.pages, ctx.last_page, post);
-            QueuePush(ctx.posts, ctx.last_post, post);
+            DLLPushBack(ctx.pages, ctx.last_page, post);
+
+            Page *copy = PushStruct(temp_arena(), Page);
+            memory_copy(post, copy, sizeof(Page));
+            DLLPushBack(ctx.posts, ctx.last_post, copy);
         }
 
         os_file_list_end(&iter);
@@ -1127,22 +1212,26 @@ int main(int argc, char **argv)
         write(arena, "<div class='w-full h-320 sm:h-240 xl:h-480 bg-light'>\n");
             write_image(arena, page.image, S(""), S("class='cover'"));
         write(arena, "</div>\n");
-
-        #if 0
-        auto links = find_next_and_prev_pages(it->slug, posts);
-        write(arena, "<div class='content padx-64 sm:padx-32 h-64 flex-x center-y csx-32' style='margin-bottom: -2rem'>");
-            if (links.prev)
-            {
-                write(arena, "<a class='font-bold pady-16' href='%S'>← Prev</a>", post_link(links.prev));
-            }
-            if (links.next)
-            {
-                write(arena, "<a class='font-bold pady-16 align-right' href='%S'>Next →</a>", post_link(links.next));
-            }
-        write(arena, "</div>\n");
-        #endif
-
         }
+
+        // @Incomplete: we can actually make this work for other types of things too!
+        //~nja: post next / prev links
+        auto post = find_page_by_slug(it, ctx.posts);
+        if (post)
+        {
+            auto links = find_next_and_prev_pages(post);
+            write(arena, "<div class='content padx-64 sm:padx-32 h-64 flex-x center-y csx-32' style='margin-bottom: -2rem'>");
+                if (links.prev)
+                {
+                    write(arena, "<a class='font-bold pady-16' href='%S'>← Prev</a>", post_link(links.prev));
+                }
+                if (links.next)
+                {
+                    write(arena, "<a class='font-bold pady-16 align-right' href='%S'>Next →</a>", post_link(links.next));
+                }
+            write(arena, "</div>\n");
+        }
+
 
         //~nja: page content
         write(arena, "<div class='content pad-64 sm:pad-32'>\n");
@@ -1174,8 +1263,16 @@ int main(int argc, char **argv)
                 }
                 if (page.author.count)
                 {
-                    // @Incomplete: support other author links
-                    write(arena, "<div>By <a class='font-bold link' href='/'>%S</a></div>\n", page.author);
+                    Link *author = find_link_by_title(page.author, ctx.authors);
+                    if (author)
+                    {
+                        write(arena, "<div>By <a class='font-bold link' href='%S'>%S</a></div>\n",
+                            author->href, author->title);
+                    }
+                    else
+                    {
+                        write(arena, "<div>By <span class='font-bold'>%S</span></div>\n", page.author);
+                    }
                 }
             write(arena, "</div>\n", page.title);
             }

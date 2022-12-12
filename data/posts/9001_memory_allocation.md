@@ -1,10 +1,12 @@
+---
 title: "On Memory Allocation"
 desc:  "The messy reality of dealing with memory in real-time applicaitons"
 date:  "2021-11-19 10:13:03"
 image: "godrays_04.png"
 author: "Nick Aversano"
+draft: true
+---
 
-"""
 When writing high-performance software, thinking about memory can result in dramatic speed improvements.
 General purpose solutions will often leave a lot of performance on the table.
 While you don't always need to do the most optimal thing, memory acess can definitely be a runtime bound on your program's execution time.
@@ -17,7 +19,7 @@ As programmers, we often think of memory access as `O(1)` runtime complexity. Bu
 As such, heap allocators are really bad for cache locality.
 In addition, they can have fragmentation problems.
 
-```
+```c
 // Insert benchmark here
 ```
 
@@ -31,8 +33,7 @@ So if heap allocators are too slow, what else is there that you can use?
 
 Well, for starters, there's the classic static allocation. Meaning, just declare the thing to be as big as you possibly could ever want it to be:
 
-@code
-```
+```c
 struct Game_Memory
 {
     Entity entities[2048]; // 2048 should be enough for anybody
@@ -55,8 +56,7 @@ The only difference is the data segment has both read-write and read-only areas.
 
 Enter one my favorite memory strategies. It's so simple you'll fall out of your chair:
 
-@code
-```
+```c
 struct Arena
 {
     u8 *data;
@@ -80,8 +80,7 @@ For this reaon, it's often useful to allow the `Arena` to provide `push` and `po
 
 This allows you to do some nice scratch memory kind of stuff. For example:
 
-@code
-```
+```c
 u64 size = kilobytes(1);
 void *data = arena_push(arena, size);
 if (data)

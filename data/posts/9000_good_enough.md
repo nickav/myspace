@@ -1,10 +1,12 @@
+---
 title: "Good Enough Is All You Need"
 desc:  "Clever solutions are usually worse."
 date:  "2021-11-19 10:13:03"
 image: "godrays_04.png"
 author: "Nick Aversano"
+draft: true
+---
 
-```
 When writing software, especially low-level software, there is this tendancy to try to over-optimize everything.
 It can be paralizing to constantly think about what the best possible thing you can do is.
 As it turns out, just doing the first thing that comes to mind is often fast enough--especially if you've made the larger decisions about your problem correctly. And if it's not, you can always come back later and make it faster.
