@@ -2,4 +2,4 @@
 title: "Posts"
 ---
 
-@post_links()
+@post_list()

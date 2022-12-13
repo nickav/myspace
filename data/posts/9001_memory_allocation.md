@@ -4,7 +4,7 @@ desc:  "The messy reality of dealing with memory in real-time applicaitons"
 date:  "2021-11-19 10:13:03"
 image: "godrays_04.png"
 author: "Nick Aversano"
-draft: true
+draft: false
 ---
 
 When writing high-performance software, thinking about memory can result in dramatic speed improvements.

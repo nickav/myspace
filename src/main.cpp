@@ -43,7 +43,8 @@ struct Page_Meta
     bool draft;
 };
 
-struct Page {
+struct Page
+{
     Page_Meta meta;
     String slug;
     String content;
@@ -53,7 +54,8 @@ struct Page {
     Page *prev;
 };
 
-struct Build_Context {
+struct Build_Context
+{
     String data_dir;
     String output_dir;
 
@@ -65,17 +67,21 @@ struct Build_Context {
     Page *posts;
     Page *last_post;
 
+    Page *projects;
+    Page *last_project;
+
     Link *social_icons;
     Link *last_social_icon;
 
-    Link *projects;
-    Link *last_project;
+    Link *work;
+    Link *last_work;
 
     Link *authors;
     Link *last_author;
 };
 
-struct Next_Prev_Pages {
+struct Next_Prev_Pages
+{
     Page *next;
     Page *prev;
 };
@@ -134,13 +140,6 @@ Site_Meta parse_site_info(String yaml)
         else if (string_equals(key, S("author")))         { result.author = str; }
         else if (string_equals(key, S("twitter_handle"))) { result.twitter_handle = str; } 
         else if (string_equals(key, S("theme_color")))    { result.theme_color = str; } 
-
-        /*
-        else if (string_equals(key, S("pages")))          { result.pages = it->first_child; } 
-        else if (string_equals(key, S("links")))          { result.links = it->first_child; } 
-        else if (string_equals(key, S("projects")))       { result.projects = it->first_child; } 
-        else if (string_equals(key, S("social_icons")))   { result.social_icons = it->first_child; } 
-        */
     }
 
     return result;
@@ -210,7 +209,7 @@ Next_Prev_Pages find_next_and_prev_pages(Page *page)
     Page *prev = page->prev;
 
     while (next && next->meta.draft) next = next->next;
-    while (prev && prev->meta.draft) prev = prev->next;
+    while (prev && prev->meta.draft) prev = prev->prev;
 
     result.next = next;
     result.prev = prev;
@@ -429,6 +428,58 @@ i64 string_count_words(String str)
     return result;
 }
 
+// NOTE(nick): in the future maybe we could let the sign of the argument
+// determine the order in which we output posts
+// e.g. @posts(-5) could be the last 5 posts
+void write_page_card_list(Arena *arena, Page *items, Page *last_item, i64 limit)
+{
+    i64 count = 0;
+
+    //~nja: blog list
+    write(arena, "<div class='flex-y csy-16'>\n");
+
+    bool reverse = false;
+    if (limit < 0)
+    {
+        limit = -limit;
+        reverse = true;
+    }
+
+    // NOTE(nick): iterate forwards or backwards
+    for (auto *it = (reverse ? last_item : items); it != NULL; (reverse ? it = it->prev : it = it->next))
+    {
+        if (it->meta.draft) continue;
+        if (count++ >= limit) break;
+
+        auto post_title = it->meta.title;
+        auto post_slug  = it->slug;
+
+        auto post = it->meta;
+        auto date = pretty_date(ParsePostDate(post.date));
+        auto link = post_link(it);
+
+        //~nja: article
+        write(arena, "<a class='no-hover' href='%S'>\n", link);
+            write(arena, "<div class='flex-1 flex-y center-y h-128 round-2 crop' style='position:relative'>\n");
+                if (post.image.count)
+                {
+                write_image(arena, post.image, S(""), S("class='bg bg-light cover'"));
+                }
+                write(
+                    arena,
+                    "<div class='flex-y padx-32 pady-16'><div class='font-bold'>%S</div><div class='c-gray' style='font-size: 0.8rem;'>%S</div></div>\n",
+                    post.title,
+                    post.description
+                );
+            write(arena, "</div>\n");
+        write(arena, "</a>\n");
+    }
+
+    write(arena, "</div>\n");
+
+    print("Done!\n");
+}
+
 void write_custom_tag(Arena *arena, String tag_name, Array<String> args)
 {
     String arg0 = args.count > 0 ? yaml_to_string(args[0]) : String{};
@@ -474,41 +525,19 @@ void write_custom_tag(Arena *arena, String tag_name, Array<String> args)
     }
     else if (string_match(tag_name, S("posts"), MatchFlags_IgnoreCase))
     {
-        // NOTE(nick): in the future maybe we could let the sign of the argument
-        // determine the order in which we output posts
-        // e.g. @posts(-5) could be the last 5 posts
         i64 limit = I64_MAX;
         if (arg0.count > 0) limit = string_to_i64(arg0);
-        i64 count = 0;
 
-        //~nja: blog list
-        write(arena, "<div class='flex-y csy-16'>\n");
-        for (Each_Node_Reverse(it, ctx.last_post))
-        {
-            if (it->meta.draft) continue;
-            if (count++ >= limit) break;
-
-            auto post_title = it->meta.title;
-            auto post_slug  = it->slug;
-
-            auto post = it->meta;
-            auto date = pretty_date(ParsePostDate(post.date));
-            auto link = post_link(it);
-
-            //~nja: article
-            write(arena, "<a class='no-hover' href='%S'>\n", link);
-            write(arena, "<div class='flex-1 flex-y center-y h-128 round-2 crop' style='position:relative'>\n");
-            if (post.image.count)
-            {
-            write_image(arena, post.image, S(""), S("class='bg bg-light cover'"));
-            }
-            write(arena, "<div class='flex-y padx-32 pady-16'><div class='font-bold'>%S</div><div class='c-gray' style='font-size: 0.8rem;'>%S</div></div>\n", post.title, post.description);
-            write(arena, "</div>\n");
-            write(arena, "</a>\n");
-        }
-        write(arena, "</div>\n");
+        write_page_card_list(arena, ctx.posts, ctx.last_post, limit);
     }
-    else if (string_match(tag_name, S("post_links"), MatchFlags_IgnoreCase))
+    else if (string_match(tag_name, S("projects"), MatchFlags_IgnoreCase))
+    {
+        i64 limit = I64_MAX;
+        if (arg0.count > 0) limit = string_to_i64(arg0);
+
+        write_page_card_list(arena, ctx.projects, ctx.last_project, limit);
+    }
+    else if (string_match(tag_name, S("post_list"), MatchFlags_IgnoreCase))
     {
         i64 limit = I64_MAX;
         if (arg0.count > 0) limit = string_to_i64(arg0);
@@ -521,7 +550,7 @@ void write_custom_tag(Arena *arena, String tag_name, Array<String> args)
             if (it->meta.draft) continue;
             if (count++ >= limit) break;
 
-            auto post_title = it->meta.title;
+            auto title = it->meta.title;
             auto post_slug  = it->slug;
 
             auto post = it->meta;
@@ -530,14 +559,21 @@ void write_custom_tag(Arena *arena, String tag_name, Array<String> args)
 
             //~nja: article
             write(arena, "<a href='%S'>\n", link);
-            write(arena, "<div class='flex-1 flex-y center-y' style='position:relative'>\n");
-            write(arena, "<div class='flex-y'><div class='font-bold'>%S</div><div class='c-gray' style='font-size: 0.8rem;'>%S</div></div>\n", post.title, post.description);
-            write(arena, "</div>\n");
+                write(arena, "<div class='flex-1 flex-y center-y' style='position:relative'>\n");
+                    write(arena, "<div class='flex-y'>");
+                        write(
+                            arena,
+                            "<div class='font-bold'>%S</div><div class='c-gray' style='font-size: 0.8rem;'>%S</div>",
+                            title,
+                            date
+                        );
+                    write(arena, "</div>");
+                write(arena, "</div>\n");
             write(arena, "</a>\n");
         }
         write(arena, "</div>\n");
     }
-    else if (string_match(tag_name, S("projects"), MatchFlags_IgnoreCase))
+    else if (string_match(tag_name, S("work"), MatchFlags_IgnoreCase))
     {
         i64 limit = I64_MAX;
         if (arg0.count > 0) limit = string_to_i64(arg0);
@@ -545,7 +581,7 @@ void write_custom_tag(Arena *arena, String tag_name, Array<String> args)
 
         write(arena, "<div class='grid marb-32'>");
 
-        for (Each_Node(it, ctx.projects))
+        for (Each_Node(it, ctx.work))
         {
             if (count++ >= limit) break;
 
@@ -562,6 +598,10 @@ void write_custom_tag(Arena *arena, String tag_name, Array<String> args)
         }
 
         write(arena, "</div>\n");
+    }
+    else
+    {
+        print("[warning] Unhandled custom tag: @%S\n", tag_name);
     }
 }
 
@@ -1009,7 +1049,7 @@ int main(int argc, char **argv)
 
     Site_Meta site = {};
     site.name           = S("Nick Aversano");
-    site.url            = S("http://nickav.co");
+    site.url            = S("https://nickav.co");
     site.image          = S("");
     site.icon           = S("logo.png");
     site.description    = S("Cool new web page");
@@ -1027,15 +1067,15 @@ int main(int argc, char **argv)
     QueuePush(ctx.social_icons, ctx.last_social_icon, &twitter_icon);
     QueuePush(ctx.social_icons, ctx.last_social_icon, &github_icon);
 
-    Link project0 = {S("na.h"), S("https://github.com/nickav/na"), S("My Single-File Header Libraries")};
-    Link project1 = {S("myspace"), S("https://github.com/nickav/myspace"), S("This website written in C")};
-    Link project2 = {S("Harley-Davidson"), S("https://maps.harley-davidson.com"), S("Ride-Planner Web")};
-    Link project3 = {S("DRONEPOLLOCK"), S("https://news.mlh.io/the-making-of-drone-pollock-03-10-2016"), S("Internet-of-Things painting")};
+    Link work0 = {S("na.h"), S("https://github.com/nickav/na"), S("My Single-File Header Libraries")};
+    Link work1 = {S("myspace"), S("https://github.com/nickav/myspace"), S("This website written in C")};
+    Link work2 = {S("Harley-Davidson"), S("https://maps.harley-davidson.com"), S("Ride-Planner Web")};
+    Link work3 = {S("DRONEPOLLOCK"), S("https://news.mlh.io/the-making-of-drone-pollock-03-10-2016"), S("Internet-of-Things painting")};
 
-    QueuePush(ctx.projects, ctx.last_project, &project0);
-    QueuePush(ctx.projects, ctx.last_project, &project1);
-    QueuePush(ctx.projects, ctx.last_project, &project2);
-    QueuePush(ctx.projects, ctx.last_project, &project3);
+    QueuePush(ctx.work, ctx.last_work, &work0);
+    QueuePush(ctx.work, ctx.last_work, &work1);
+    QueuePush(ctx.work, ctx.last_work, &work2);
+    QueuePush(ctx.work, ctx.last_work, &work3);
 
     Link author0 = {S("Nick Aversano"), S("/"), {}};
     QueuePush(ctx.authors, ctx.last_author, &author0);
@@ -1097,9 +1137,14 @@ int main(int argc, char **argv)
         os_file_list_end(&iter);
     }
 
+    // @Cleanup: make this dynamic?!
+    // It would be cool if we didn't have to specify these things every time!
+    // maybe it just reads from the folder name or something?
+    // :DynamicPageTypes
+
     //~nja: site posts
-    auto posts_dir = path_join(data_dir, S("posts"));
     {
+        auto posts_dir = path_join(data_dir, S("posts"));
         auto iter = os_file_list_begin(temp_arena(), posts_dir);
         File_Info it = {};
         while (os_file_list_next(&iter, &it))
@@ -1113,17 +1158,52 @@ int main(int argc, char **argv)
 
             string_advance(&content, yaml.count);
 
-            Page *post    = PushStruct(temp_arena(), Page);
-            post->slug    = path_join(temp_arena(), S("posts"), path_strip_extension(it.name));
-            post->content = content;
-            post->meta    = parse_page_meta(yaml);
-            post->type    = S("post");
+            Page *page    = PushStruct(temp_arena(), Page);
+            page->slug    = path_join(temp_arena(), S("posts"), path_strip_extension(it.name));
+            page->content = content;
+            page->meta    = parse_page_meta(yaml);
+            page->type    = S("post");
 
-            DLLPushBack(ctx.pages, ctx.last_page, post);
+            DLLPushBack(ctx.pages, ctx.last_page, page);
 
             Page *copy = PushStruct(temp_arena(), Page);
-            memory_copy(post, copy, sizeof(Page));
+            memory_copy(page, copy, sizeof(Page));
             DLLPushBack(ctx.posts, ctx.last_post, copy);
+        }
+
+        os_file_list_end(&iter);
+    }
+
+    // @Copypaste:
+    // :DynamicPageTypes
+
+    //~nja: site projects
+    {
+        auto posts_dir = path_join(data_dir, S("projects"));
+        auto iter = os_file_list_begin(temp_arena(), posts_dir);
+        File_Info it = {};
+        while (os_file_list_next(&iter, &it))
+        {
+            if (file_is_directory(it)) continue;
+            if (!string_ends_with(it.name, S(".md"))) continue;
+
+            auto post_file = path_join(posts_dir, it.name);
+            auto content   = os_read_entire_file(post_file);
+            auto yaml      = find_yaml_frontmatter(content);
+
+            string_advance(&content, yaml.count);
+
+            Page *page    = PushStruct(temp_arena(), Page);
+            page->slug    = path_join(temp_arena(), S("projects"), path_strip_extension(it.name));
+            page->content = content;
+            page->meta    = parse_page_meta(yaml);
+            page->type    = S("project");
+
+            DLLPushBack(ctx.pages, ctx.last_page, page);
+
+            Page *copy = PushStruct(temp_arena(), Page);
+            memory_copy(page, copy, sizeof(Page));
+            DLLPushBack(ctx.projects, ctx.last_project, copy);
         }
 
         os_file_list_end(&iter);
@@ -1136,6 +1216,7 @@ int main(int argc, char **argv)
 
     //~nja: output site pages
     os_make_directory(path_join(output_dir, S("posts")));
+    os_make_directory(path_join(output_dir, S("projects")));
 
     print("[time] %.2fms\n", os_time_in_miliseconds());
     print("Generating Pages...\n");
@@ -1314,7 +1395,7 @@ int main(int argc, char **argv)
         write(arena, "</html>\n");
 
         auto html = arena_to_string(arena);
-        os_write_entire_file(path_join(output_dir, sprint("%S.html", it->slug)), html);
+        assert(os_write_entire_file(path_join(output_dir, sprint("%S.html", it->slug)), html));
     }
 
 
