@@ -4589,6 +4589,18 @@ Slice<T> slice_from_array(Array<T> &array) {
     return result;
 }
 
+template <typename T>
+Array<T> array_from_slice(Slice<T> &array) {
+    Array<T> result = {};
+
+    result.allocator = null_allocator();
+    result.capacity  = array.count;
+    result.data      = array.data;
+    result.count     = array.count;
+
+    return result;
+}
+
 //
 // Hash
 //

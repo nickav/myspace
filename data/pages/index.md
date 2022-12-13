@@ -2,7 +2,7 @@
 
 <div class='csy-32'>
 <h2>Featured Work</h2>
-@work()
+@featured()
 </div>
 
 <!--

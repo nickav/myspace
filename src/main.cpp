@@ -29,6 +29,11 @@ struct Site_Meta
     String author;
     String twitter_handle;
     String theme_color;
+    String og_type;
+
+    Link *social_icons;
+    Link *featured;
+    Link *authors;
 };
 
 struct Page_Meta
@@ -69,15 +74,6 @@ struct Build_Context
 
     Page *projects;
     Page *last_project;
-
-    Link *social_icons;
-    Link *last_social_icon;
-
-    Link *work;
-    Link *last_work;
-
-    Link *authors;
-    Link *last_author;
 };
 
 struct Next_Prev_Pages
@@ -114,19 +110,72 @@ String yaml_to_string(String str) {
     return str;
 }
 
+Link *parse_yaml_links_array(String str)
+{
+    Link *result = NULL;
+    Link *last = NULL;
+
+    i64 depth = 0;
+
+    for (i64 i = 0; i < str.count; i += 1)
+    {
+        char it = str.data[i];
+
+        if (char_is_whitespace(it)) continue;
+        if (it == '[') depth += 1;
+        if (it == ']') {
+            depth -= 1;
+            if (depth <= 0) break;
+        }
+
+        // NOTE(nick): if the user made a mistake and forgot to add a closing bracket
+        // the second colon would be a new key
+        if (it == ':') break;
+
+        if (depth == 2)
+        {
+            i64 closing_index = string_find(str, S("]"), i + 1);
+            auto list = string_slice(str, i, closing_index + 1);
+
+            auto str = string_trim_whitespace(string_slice(list, 1, list.count - 1));
+            auto parts = string_split(str, S(","));
+            if (parts.count > 0)
+            {
+                Link *item = PushStruct(temp_arena(), Link);
+                if (parts.count > 0) item->title = PushStringCopy(temp_arena(), yaml_to_string(parts[0]));
+                if (parts.count > 1) item->href  = PushStringCopy(temp_arena(), yaml_to_string(parts[1]));
+                if (parts.count > 2) item->desc  = PushStringCopy(temp_arena(), yaml_to_string(parts[2]));
+                QueuePush(result, last, item);
+            }
+
+            i += list.count - 1;
+            depth -= 1;
+        }
+    }
+
+    return result;
+}
+
 
 Site_Meta parse_site_info(String yaml)
 {
     Site_Meta result = {};
 
+    i64 offset = 0;
     auto lines = string_split(yaml, S("\n"));
-    For (lines)
+    For_Index (lines)
     {
-        i64 index = string_find(it, S(":"));
-        if (index >= it.count) continue;
+        auto it = lines[index];
 
-        auto key   = string_trim_whitespace(string_slice(it, 0, index));
-        auto value = string_trim_whitespace(string_slice(it, index + 1));
+        i64 colon_index = string_find(it, S(":"));
+        if (colon_index >= it.count)
+        {
+            offset += it.count + 1;
+            continue;
+        }
+
+        auto key   = string_trim_whitespace(string_slice(it, 0, colon_index));
+        auto value = string_trim_whitespace(string_slice(it, colon_index + 1));
 
         auto str = yaml_to_string(value);
 
@@ -140,6 +189,19 @@ Site_Meta parse_site_info(String yaml)
         else if (string_equals(key, S("author")))         { result.author = str; }
         else if (string_equals(key, S("twitter_handle"))) { result.twitter_handle = str; } 
         else if (string_equals(key, S("theme_color")))    { result.theme_color = str; } 
+        else if (string_equals(key, S("og_type")))        { result.og_type = str; } 
+
+        else if (string_equals(key, S("social_icons"))) {
+            result.social_icons = parse_yaml_links_array(string_slice(yaml, offset + colon_index + 1));
+        }
+        else if (string_equals(key, S("author_links"))) {
+            result.authors = parse_yaml_links_array(string_slice(yaml, offset + colon_index + 1));
+        }
+        else if (string_equals(key, S("featured_links"))) {
+            result.featured = parse_yaml_links_array(string_slice(yaml, offset + colon_index + 1));
+        }
+
+        offset += it.count + 1;
     }
 
     return result;
@@ -573,7 +635,7 @@ void write_custom_tag(Arena *arena, String tag_name, Array<String> args)
         }
         write(arena, "</div>\n");
     }
-    else if (string_match(tag_name, S("work"), MatchFlags_IgnoreCase))
+    else if (string_match(tag_name, S("featured"), MatchFlags_IgnoreCase))
     {
         i64 limit = I64_MAX;
         if (arg0.count > 0) limit = string_to_i64(arg0);
@@ -581,7 +643,7 @@ void write_custom_tag(Arena *arena, String tag_name, Array<String> args)
 
         write(arena, "<div class='grid marb-32'>");
 
-        for (Each_Node(it, ctx.work))
+        for (Each_Node(it, ctx.site.featured))
         {
             if (count++ >= limit) break;
 
@@ -1067,47 +1129,12 @@ int main(int argc, char **argv)
 
     os_make_directory(output_dir);
 
-    //
-    // @Incomplete @Hardcoded: parse this info from a file somewhere??
-    // site.md with YAML frontmatter i guess?
-    //
+    auto yaml = os_read_entire_file(path_join(data_dir, S("site.yaml")));
 
-    Site_Meta site = {};
-    site.name           = S("Nick Aversano");
-    site.url            = S("https://nickav.co");
-    site.image          = S("");
-    site.icon           = S("logo.png");
-    site.description    = S("Cool new web page");
-    site.author         = S("Nick Aversano");
-    site.twitter_handle = S("@nickaversano");
-    site.theme_color    = S("#000000");
-
+    Site_Meta site = parse_site_info(yaml);
     ctx.site = site;
 
-    Link twitch_icon  = {S("Twitch"),  S("https://twitch.tv/naversano"), S("icons/twitch.svg")};
-    Link twitter_icon = {S("Twitter"), S("https://www.twitter.com/nickaversano"), S("icons/twitter.svg")};
-    Link github_icon  = {S("Github"),  S("https://www.github.com/nickav"), S("icons/github.svg")};
-
-    QueuePush(ctx.social_icons, ctx.last_social_icon, &twitch_icon);
-    QueuePush(ctx.social_icons, ctx.last_social_icon, &twitter_icon);
-    QueuePush(ctx.social_icons, ctx.last_social_icon, &github_icon);
-
-    Link work0 = {S("na.h"), S("https://github.com/nickav/na"), S("My Single-File Header Libraries")};
-    Link work1 = {S("myspace"), S("https://github.com/nickav/myspace"), S("This website written in C")};
-    Link work2 = {S("Harley-Davidson"), S("https://maps.harley-davidson.com"), S("Ride-Planner Web")};
-    Link work3 = {S("DRONEPOLLOCK"), S("https://news.mlh.io/the-making-of-drone-pollock-03-10-2016"), S("Internet-of-Things painting")};
-
-    QueuePush(ctx.work, ctx.last_work, &work0);
-    QueuePush(ctx.work, ctx.last_work, &work1);
-    QueuePush(ctx.work, ctx.last_work, &work2);
-    QueuePush(ctx.work, ctx.last_work, &work3);
-
-    Link author0 = {S("Nick Aversano"), S("/"), {}};
-    QueuePush(ctx.authors, ctx.last_author, &author0);
-
-
     // @Speed: go wide on reading all data files
-
 
     auto css = os_read_entire_file(path_join(data_dir, S("style.css")));
     css = minify_css(css);
@@ -1135,16 +1162,16 @@ int main(int argc, char **argv)
 
 
     //~nja: site pages
-    auto pages_dir = path_join(data_dir, S("pages"));
     {
-        auto iter = os_file_list_begin(temp_arena(), pages_dir);
+        auto dir = path_join(data_dir, S("pages"));
+        auto iter = os_file_list_begin(temp_arena(), dir);
         File_Info it = {};
         while (os_file_list_next(&iter, &it))
         {
             if (file_is_directory(it)) continue;
             if (!string_ends_with(it.name, S(".md"))) continue;
 
-            auto page_file = path_join(pages_dir, it.name);
+            auto page_file = path_join(dir, it.name);
             auto content   = os_read_entire_file(page_file);
             auto yaml      = find_yaml_frontmatter(content);
 
@@ -1169,15 +1196,15 @@ int main(int argc, char **argv)
 
     //~nja: site posts
     {
-        auto posts_dir = path_join(data_dir, S("posts"));
-        auto iter = os_file_list_begin(temp_arena(), posts_dir);
+        auto dir = path_join(data_dir, S("posts"));
+        auto iter = os_file_list_begin(temp_arena(), dir);
         File_Info it = {};
         while (os_file_list_next(&iter, &it))
         {
             if (file_is_directory(it)) continue;
             if (!string_ends_with(it.name, S(".md"))) continue;
 
-            auto post_file = path_join(posts_dir, it.name);
+            auto post_file = path_join(dir, it.name);
             auto content   = os_read_entire_file(post_file);
             auto yaml      = find_yaml_frontmatter(content);
 
@@ -1204,15 +1231,15 @@ int main(int argc, char **argv)
 
     //~nja: site projects
     {
-        auto posts_dir = path_join(data_dir, S("projects"));
-        auto iter = os_file_list_begin(temp_arena(), posts_dir);
+        auto dir = path_join(data_dir, S("projects"));
+        auto iter = os_file_list_begin(temp_arena(), dir);
         File_Info it = {};
         while (os_file_list_next(&iter, &it))
         {
             if (file_is_directory(it)) continue;
             if (!string_ends_with(it.name, S(".md"))) continue;
 
-            auto post_file = path_join(posts_dir, it.name);
+            auto post_file = path_join(dir, it.name);
             auto content   = os_read_entire_file(post_file);
             auto yaml      = find_yaml_frontmatter(content);
 
@@ -1256,6 +1283,7 @@ int main(int argc, char **argv)
         if (!meta.title.count)       meta.title = site.name;
         if (!meta.description.count) meta.description = site.description;
         if (!meta.image.count)       meta.image = site.image;
+        if (!meta.og_type.count)     meta.og_type = site.og_type;
 
         Arena *arena = arena_alloc_from_memory(megabytes(16));
 
@@ -1320,7 +1348,7 @@ int main(int argc, char **argv)
 
             write(arena, "<div class='csx-16 flex-x'>\n");
 
-            for (Each_Link(it, ctx.social_icons))
+            for (Each_Link(it, ctx.site.social_icons))
             {
                 auto name  = it->title;
                 auto image = it->desc;
@@ -1390,7 +1418,7 @@ int main(int argc, char **argv)
                 }
                 if (page.author.count)
                 {
-                    Link *author = find_link_by_title(page.author, ctx.authors);
+                    Link *author = find_link_by_title(page.author, ctx.site.authors);
                     if (author)
                     {
                         write(arena, "<div>By <a class='font-bold link' href='%S'>%S</a></div>\n",

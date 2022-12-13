@@ -1,0 +1,26 @@
+title:          "Nick Aversano"
+description:    "My Personal Website"
+site_url:       "https://nickav.co"
+site_icon:      "logo.png"
+site_image:     ""
+author:         "Nick Aversano"
+twitter_handle: "@nickaversano"
+og_type:        "website"
+theme_color:    "#000000"
+
+social_icons: [
+    ["Twitch",  "https://twitch.tv/naversano",          "icons/twitch.svg"],
+    ["Twitter", "https://www.twitter.com/nickaversano", "icons/twitter.svg"],
+    ["Github",  "https://www.github.com/nickav",        "icons/github.svg"],
+]
+
+author_links: [
+    ["Nick Aversano", "/"],
+]
+
+featured_links: [
+    ["na.h",            "https://github.com/nickav/na",      "My Single-File Header Libraries"],
+    ["myspace",         "https://github.com/nickav/myspace", "This website written in C"],
+    ["Harley-Davidson", "https://maps.harley-davidson.com",  "Ride-Planner Web"],
+    ["DRONEPOLLOCK",    "https://news.mlh.io/the-making-of-drone-pollock-03-10-2016", "Internet-of-Things painting"],
+]
