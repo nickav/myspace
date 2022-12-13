@@ -5,11 +5,13 @@
 @work()
 </div>
 
+<!--
 <div class='csy-32'>
 <h2>Projects</h2>
 @projects(5)
-<!-- @link("← View All Projects", "/projects") -->
+@link("← View All Projects", "/projects")
 </div>
+-->
 
 <div class='csy-32'>
 <h2>Recent Posts</h2>

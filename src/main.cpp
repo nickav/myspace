@@ -805,11 +805,12 @@ String markdown_to_html(String text)
             }
         }
 
-        // html tags (or comments)
+        // html tags and comments
         if (it == '<' && i < text.count - 1)
         {
             char next = text.data[i + 1];
-            if (char_is_alpha(next) || next == '!' || next == '/')
+            // html tag
+            if (char_is_alpha(next) || next == '/')
             {
                 i64 start_index = i;
                 i += 2; // <a
@@ -823,6 +824,30 @@ String markdown_to_html(String text)
                     html_scope_depth += 1;
                 }
 
+                continue;
+            }
+
+            // html comment
+            if (next == '!' && i < text.count - 3 && text.data[i + 2] == '-' && text.data[i + 3] == '-')
+            {
+                i64 start_index = i;
+                i += 4; // <!--
+
+                while (i < text.count)
+                {
+                    // -->
+                    if (
+                        i < text.count - 3 &&
+                        (text.data[i] == '-' && text.data[i + 1] == '-' && text.data[i + 2] == '>'))
+                    {
+                        i += 2;
+                        break;
+                    }
+
+                    i += 1;
+                }
+
+                arena_print(arena, "%S", string_slice(text, start_index, i + 3));
                 continue;
             }
         }
