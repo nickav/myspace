@@ -7,6 +7,7 @@
         prefetch: true,
         prefetchDelay: 20,
         cacheTimeout: 0,
+        scrollToTop: true,
         debug: false,
     };
 
@@ -31,7 +32,11 @@
 
         const getState = () => {
             const el = getElement(document);
-            const result = { html: el ? el.innerHTML : null, title: document.title, className: document.body.className };
+            const result = {
+                html: el ? el.innerHTML : null,
+                title: document.title,
+                className: document.body.className,
+            };
             return result;
         };
 
@@ -78,11 +83,13 @@
             instance.pageCache[path] = instance.pageCache[path] || {};
             instance.pageCache[path].promise = promise;
 
-            promise.then((text) => {
+            return promise.then((text) => {
                 const cache = instance.pageCache[path];
                 cache.data = text;
                 cache.time = window.performance.now();
                 cache.promise = null;
+
+                return text;
             });
         }
 
@@ -133,6 +140,11 @@
                                     className: body.className,
                                 });
 
+                                if (options.scrollToTop)
+                                {
+                                    window.scrollTo(0, 0);
+                                }
+
                                 const state = getState();
                                 debug("push state", state);
                                 window.history.pushState(state, title, path);
@@ -156,7 +168,6 @@
                             link.lightningPrefetch = null;
 
                             getPageCached(path);
-                            debug("prefetch", path);
 
                         }, options.prefetchDelay);
                     }
