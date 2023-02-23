@@ -1442,6 +1442,7 @@ int main(int argc, char **argv)
         write(arena, "</div>\n");
 
         write(arena, "<script>%S</script>\n", js);
+        write(arena, "<script src='/lightning.js'></script>\n");
 
         write(arena, "</body>\n");
 
