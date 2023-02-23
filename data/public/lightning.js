@@ -196,4 +196,4 @@
     window.Lightning = Lightning;
 })();
 
-Lightning({ debug: true });
+Lightning();
