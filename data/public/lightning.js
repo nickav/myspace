@@ -6,6 +6,7 @@
         contentSelector: 'body',
         prefetch: true,
         prefetchDelay: 20,
+        cache: true,
         cacheTimeout: 0,
         scrollToTop: true,
         debug: false,
@@ -20,7 +21,7 @@
         };
 
         Lightning.instance = instance;
-        Lightning.VERSION = '0.0.1';
+        Lightning.VERSION = '1.0.0';
 
         const debug = (...args) => {
             if (options.debug) console.log(...args);
@@ -57,6 +58,11 @@
         };
 
         const getPageCached = (path) => {
+            if (!options.cache)
+            {
+                return getPage(path);
+            }
+
             if (instance.pageCache[path]) {
                 const cache = instance.pageCache[path];
                 if (cache.promise) {
@@ -193,6 +199,12 @@
         const init = () => {
             const initialState = getState();
             window.history.pushState(initialState, initialState.title, '');
+
+            if (options.cache)
+            {
+                const path = window.location.pathname;
+                instance.pageCache[path] = { data: initialState.html, promise: null, time: 0 };
+            }
 
             LightningLinks();
         };
