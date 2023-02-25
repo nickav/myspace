@@ -20,28 +20,29 @@ I want to share some thoughts on my journey so far and where I think I'm heading
 I got started programming when I was 10 because I wanted to make games.
 I remember playing Super Mario 64 on the Nintendo 64: my first game on my first console.
 I thought to myself, "how does someone make this game?"
-It was a simple thought in my 8yo brain. At the time, I couldn't imagine what went on behind the scenes. The endearing polygon art was one hint. You could kind of tell that everything was made out of triangles.
+It was a simple thought in my 8 yo brain. At the time, I couldn't imagine what went on behind the scenes. The endearing polygon art was one hint. You could kind of tell that everything was made out of triangles.
 I am happy to say that I can finally answer that question, but it's been a _long_ journey.
 
-I remember vidly when my friend told me about this program called Game Maker which you could make games without any programming knowledge.
+I remember vividly when my friend told me about this program called Game Maker that you can use to make games without any programming knowledge.
 So I asked my dad for a computer. I told him I wanted to make and sell games on the internet.
-He said, "sure, we can get you a computer, Nick.".
+He said, "Sure, we can get you a computer, Nick.".
 I am fortunate that my parents were able to get me a PC at the time.
 
 My first computer was a Dell tower with a whopping 40Gb of memory.
 I downloaded Game Maker and started it up.
-Staring at the blank white Game Maker screen I was so excited to start making things and had no idea what I was supposed to do.
-My head was full of possibilities.
+Staring at the blank white Game Maker screen I was so excited to start making things and simultaneously had no idea what I was supposed to do.
+My head was spinning with possibilities.
 
 I started learning how to make games by looking at tutorials and examples others had posted on the Game Maker Forums.
 I would ask questions when I got stuck.
 At first, it was all drag-and-drop blocks.
-It wasn't until a little later when I discovered all of these blocks had one line of code you could type into this special block called a "Code Block".
-I almost learned programming accidently.
+It wasn't until a little later when I discovered all of these blocks mapped to one line of code you could just type into this special block called a "Code Block".
+I almost learned programming accidentally.
+Thus began the torrent of unfinished games.
 
 ## Freelancing
 
-I got started freelancing in high school. My first gig was making a website for my dad's friends band.
+I got started freelancing in high school. My first gig was making a website for my dad's friend's band.
 I made a bunch of small websites for random people.
 It was fun.
 
@@ -49,14 +50,15 @@ It was fun.
 
 My first programming job was at a local real-estate company.
 I was working as an intern there building out various features on their website.
-My boss showed my tools I still use to this day: vim, git, tmux, bash.
+My boss showed my tools I still use to this day: `vim`, `git`, `tmux`, `bash`.
+Importantly, I added a secret keyboard shortcut that put mustaches on all of the agents.
 
 ## The Internship
 
 I got an internship at CBSNews my freshman summer during college. I remember the exhausting 3 hour commute every day into NYC. I would pretty much get home and fall asleep, then wake up the next day and do it all over again.
 Luckily this only lasted for 3 months and everyone I worked with was super nice.
 But I hated commuting.
-I felt like I was watching my life slowly dissapear on every bus ride.
+I felt like I was watching my life slowly disappear on every bus ride.
 I knew I never wanted to do that for a living.
 
 ## LinkedIn
@@ -64,13 +66,13 @@ I knew I never wanted to do that for a living.
 I got an internship at LinkedIn during junior year summer.
 It was my first time going out West.
 It was really exciting.
-I remember they said attire was "buisness casual" so I dressed like NYC business casual. And everyone wore jeans, t-shirts and sometimes even sandals.
+I remember they said attire was "business casual" so I dressed like NYC business casual. And everyone wore jeans, t-shirts and sometimes even sandals.
 
-Being in California was a lot of fun, I instantly became great friends with my roommates, and we travelled all around California.
+Being in California was a lot of fun, I instantly became great friends with my roommates, and we traveled all around California.
 I really didn't enjoy the work all that much. I was working as an Android Developer.
 
 Not having any idea what I wanted to do after college, I signed the return offer to go back to LinkedIn full-time.
-I knew I wanted to go back to California, but I wasn't sure I would want to stay in coorporate America.
+I knew I wanted to go back to California, but I wasn't sure I would want to stay in corporate America.
 After 2 months I knew I needed to quit.
 I wasn't going to continue to improve as a developer.
 
@@ -87,25 +89,23 @@ I thought the product was solving the wrong problems.
 
 ## Back to Freelancing
 
-I went back to freelacing after that. My friend / downstairs roommate @link("Josh Taylor", "http://joshtaylor.io/") was freelancing on this platform called Gigster.
+I went back to freelancing after that. My friend / downstairs roommate @link("Josh Taylor", "http://joshtaylor.io/") was freelancing on this platform called Gigster.
 I decided to try it out for a couple of months.
-Worst case, I'd be out a couple of months of rent.
+I figured worst case, I'd be out a couple of months of rent.
 
-Freelancing turned out to be much better than I thought it would be.
+Freelancing turned out to be much better than I could have imagined it would be.
 You actually could make enough money to live off of doing it.
 It led me down a long path of doing lots of different jobs for various companies.
 Some big, some small.
-One time I worked for a porn company.
-One time I worked for the federal government.
+Once I worked for the federal government.
+Once I worked for a porn company.
 
 I tried to always be on greenfield projects. I really liked building things from scratch on small teams.
 I think I have learned that lesson repeatedly.
 
-Then there's the meta-game of being able to start new projects quickly. Carry over patterns that worked from past projects.
-But after a while it started to get stale.
-I wasn't really enjoying it anymore.
+Then there's the meta-game of being able to start new projects quickly. Carry over patterns that worked from past projects. Over time you build up a super solid foundation.
 
-But what I really loved about freelancing is:
+What I really loved about freelancing is:
 
 - you get to work on small teams of highly productive people
 - you get to build things from scratch
@@ -114,6 +114,9 @@ But what I really loved about freelancing is:
 
 In some ways, it felt like the film industry. You would get a team together, work on something, them go your separate ways.
 Then sometime later someone from an old project would think of you to help out with a new one.
+
+But after a while it started to get stale.
+I wasn't really enjoying it anymore.
 
 ## The Present
 
@@ -136,9 +139,9 @@ Following your immediate interests may lead you down weird rabbit holes, but it 
 Given your situation, what is the most interesting thing you could be working on?
 And why are you not working on it?
 
-Many people chase money, prestiege, .... But I want to work on things that are interesting to me.
+Many people chase money, prestige, .... But I want to work on things that are interesting to me.
 Too much of work is largely uninspiring.
 Especially on the web.
 Browsers are this incredible mess of complexity.
-The speed of light is more like the speed of sound.
-
+The speed of light is more like the speed of sound and yet computers are insanely fast.
+But I think we can do better!
