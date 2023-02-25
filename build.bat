@@ -14,7 +14,7 @@ pushd %project_root%
 
     rmdir /s /q bin
 
-    .\%exe_name% ..\data bin
+    .\%exe_name% ..\data bin --serve
   popd
 popd
 

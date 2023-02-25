@@ -1,27 +1,24 @@
+:: Exact same script as `build.bat` with different arguments to exe
 @echo off
 
 :: Setup
 set project_root=%~dp0%
-set publish_path=%project_root%..\nickav.github.io
-
-echo From: %project_root%
-echo To: %publish_path%
+set exe_name=myspace.exe
 
 pushd %project_root%
+  if not exist build (mkdir build)
 
-    FOR /F "tokens=*" %%g IN ('more %project_root%\.git\refs\heads\master') do (set build_hash=%%g)
+  pushd build
+    cl /MD -DDEBUG=1 /Od -nologo -Zo -Z7 ..\src\main.cpp /link -subsystem:console -incremental:no -opt:ref -OUT:%exe_name%
 
-    echo %build_hash%
+    IF %errorlevel% NEQ 0 (popd && goto end)
 
-    FOR /F "tokens=*" %%g IN ('more %project_root%\.git\COMMIT_EDITMSG') do (set commit_message=%%g)
+    rmdir /s /q bin
 
-    echo %commit_message%
+    .\%exe_name% ..\data bin --open
+  popd
 popd
 
-pushd %publish_path%
-    xcopy /s /i /y %project_root%\build\bin %publish_path%
+:end
 
-    git commit -a -m "%commit_message%"
-
-     git push
-popd
+exit /B %errorlevel%

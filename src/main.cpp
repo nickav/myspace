@@ -1456,13 +1456,27 @@ int main(int argc, char **argv)
     // TODO(nick): we can go wide here and write all the files in parallel
     // @Speed: go wide on writing all output files
 
-
     print("Done! Took %.2fms\n", os_time_in_miliseconds());
 
-    os_shell_execute(S("firefox.exe"), S("http://localhost:3000"));
-    
-    auto public_path = string_alloc(os_allocator(), output_dir);
-    run_server(S("127.0.0.1:3000"), public_path);
+    if (argc >= 3)
+    {
+        // TODO(nick): allow the browser to be customized
+        
+        auto arg3 = string_from_cstr(argv[3]);
+
+        if (string_equals(arg3, S("--serve")))
+        {
+            os_shell_execute(S("firefox.exe"), S("http://localhost:3000"));
+            
+            auto public_path = string_alloc(os_allocator(), output_dir);
+            run_server(S("127.0.0.1:3000"), public_path);
+        }
+
+        if (string_equals(arg3, S("--open")))
+        {
+            os_shell_execute(S("firefox.exe"), path_join(S("file://"), output_dir, S("index.html")));
+        }
+    }
 
     return 0;
 }

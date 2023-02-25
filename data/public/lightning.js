@@ -3,6 +3,7 @@
 // - fix back history being lost on page reload
 // - add documentation for options
 // - clean up cache and prefetch configs
+// - add configurable top bar when fetching
 //
 
 (function() {
@@ -10,7 +11,7 @@
     {
         return;
     }
-    
+
     if (window.Lightning) return;
 
     const defaultConfig = {
