@@ -1,4 +1,16 @@
+//
+// TODO(nick):
+// - fix back history being lost on page reload
+// - add documentation for options
+// - clean up cache and prefetch configs
+//
+
 (function() {
+    if (typeof window === 'undefined' || typeof document === 'undefined')
+    {
+        return;
+    }
+    
     if (window.Lightning) return;
 
     const defaultConfig = {
@@ -21,7 +33,7 @@
         };
 
         Lightning.instance = instance;
-        Lightning.VERSION = '1.0.0';
+        Lightning.VERSION = '1.0.1';
 
         const debug = (...args) => {
             if (options.debug) console.log(...args);
@@ -133,13 +145,12 @@
                         }
 
                         if (html) {
-                            const body = html.body;
-                            const title = html.title;
-
                             const el = getElement(html);
-
                             if (el)
                             {
+                                const body = html.body;
+                                const title = html.title;
+
                                 setState({
                                     title: html.title,
                                     html: el.innerHTML,
@@ -203,8 +214,10 @@
             if (options.cache)
             {
                 const path = window.location.pathname;
-                instance.pageCache[path] = { data: initialState.html, promise: null, time: 0 };
+                instance.pageCache[path] = { data: document.body.innerHTML, promise: null, time: 0 };
             }
+
+            debug("Element:", getElement(document));
 
             LightningLinks();
         };
