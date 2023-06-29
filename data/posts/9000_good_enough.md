@@ -9,7 +9,7 @@ draft: true
 
 When writing software, especially low-level software, there is this tendancy to try to over-optimize everything.
 It can be paralizing to constantly think about what the best possible thing you can do is.
-As it turns out, just doing the first thing that comes to mind is often fast enough--especially if you've made the larger decisions about your problem correctly. And if it's not, you can always come back later and make it faster.
+As it turns out, just doing the first thing that comes to mind is often fast enough--especially if you've made the larger decisions about your problem correctly. And if it's not fast enough, you can always make it faster later.
 
 John Blow
 https://www.youtube.com/watch?v=JjDsP5n2kSM
@@ -22,7 +22,7 @@ https://twitter.com/Nothke/status/1246613901015486466
 Often, doing what is good enough for now is good enough to ship.
 You can always go back and optimize the thing, but most of the time you probably won't because computers are so fucking fast these days.
 
-Well, computers are so fucking fast and yet the software we write is increasingly slow, broken and outright disrespectful of our user's time.
+Well, computers are so fast and yet the software we write is increasingly slow, broken and outright disrespectful of our user's time.
 
 Listening to Lex Fridman's extremely long interview with John Carmack (https://www.youtube.com/watch?v=I845O57ZSy4), he talks about "knowing what your speed of light is" for the code that you write.
 Meaning, you should know what the theoretical limit to how fast this thing can actually be, and consequently how far away from that you are.

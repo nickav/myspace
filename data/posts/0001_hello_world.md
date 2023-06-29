@@ -142,6 +142,6 @@ And why are you not working on it?
 Many people chase money, prestige, .... But I want to work on things that are interesting to me.
 Too much of work is largely uninspiring.
 Especially on the web.
-Browsers are this incredible mess of complexity.
-The speed of light is more like the speed of sound and yet computers are insanely fast.
+Browsers are an incredible mess of complexity.
+The speed of light is more like the speed of sound.
 But I think we can do better!

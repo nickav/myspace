@@ -1,32 +1,64 @@
 ---
 title: "On Memory Allocation"
-desc:  "The messy reality of dealing with memory in real-time applicaitons"
+desc:  "The messy reality of dealing with memory in real-time applications"
 date:  "2021-11-19 10:13:03"
 image: "godrays_04.png"
 author: "Nick Aversano"
 draft: true
 ---
 
-When writing high-performance software, thinking about memory can result in dramatic speed improvements.
-General purpose solutions will often leave a lot of performance on the table.
-While you don't always need to do the most optimal thing, memory acess can definitely be a runtime bound on your program's execution time.
+When writing high-performance software, organizing your program's memory properly can result in dramatic speed improvements.
+While you don't always need to do the most optimal thing, memory access can _definitely_ be a runtime bound on your program's maximum speed.
 For that reason, it's often important to carefully consider where your memory comes from.
 
-Everyone knows about the classic `malloc` and `free`. But maybe you didn't know those use a @link{'Heap Allocator'}. Or maybe you did, but you still use them anyway. Well read on, my friend.
+As programmers, we often think of memory access as `O(1)` runtime complexity. But the code we write runs on an actual physical CPU in the real world. So while that is true in the theoretical sense, it's not at all true when dealing with modern CPUs.
 
-As programmers, we often think of memory access as `O(1)` runtime complexity. But the code we write runs on an actual physical CPU in the real world. So while that is true in the theoretical sense, it's not entirely true when dealing with modern CPUs.
+## Heap Allocators
 
-As such, heap allocators are really bad for cache locality.
-In addition, they can have fragmentation problems.
+Of course there are the classic `malloc` and `free` functions.
+
+Anyone who's taken a CS course has been taught to write code like this:
 
 ```c
-// Insert benchmark here
+struct Node
+{
+    Node *next;
+    Node *last;
+
+    u64 data;
+};
+
+void insert_node(Node *first, u64 data)
+{
+    Node *next = (Node *)malloc(sizeof(Node));
+    next->data = data;
+
+    first->last = next;
+}
+
+int main()
+{
+    for (int i = 0; i < 100; i += 1)
+    {
+        insert_node(first)
+    }
+}
 ```
 
-In non-trival programs this actually starts to really slow down your code.
+While it's not true that linked-lists are _always_ bad, you have no idea where the memory for each node is going to be stored.
+
+What you _should_ have done in this case, is the following:
+
+The way to make your code as fast as possible is to think "Data-Oriented" about it!
+
+When you access memory from the CPU, it turns out there are 3 levels of caching that sits in between you and RAM. This is to help with the fact that memory access is _so slow_.
+So while your CPU is taking a stroll down to RAM memory lane, it might as well grab a bunch of stuff while it's already there.
 
 
-So if heap allocators are too slow, what else is there that you can use?
+In non-trivial programs this actually starts to really slow down your code.
+
+
+So if heap allocators are too slow, what else can you do?
 
 
 ## Static Allocation
@@ -42,9 +74,10 @@ struct Game_Memory
 ```
 
 The drawbacks to this approach should be obvious, but there are some good properties worth talking about:
-For one, you know exactly what your worst possible case scenario is and you can make sure your program runs smoothly at the limit.
-This has knock-on effects with algorithmic runtime complexity.
-Another benefit is that you know if your program starts at all, then it already has enough memory to run.
+
+1) You know exactly what your worst possible case scenario is and you can make sure your program runs smoothly at the limit. This has knock-on effects with algorithmic complexity.
+
+2) Another benefit is that you know if your program starts at all, then it definitely has enough memory to run.
 
 Depending on your usage, this memory can be stored in a few different places: the stack, the heap, or the data segment.
 In fact, the data segment is not any more special than program memory.

@@ -1338,7 +1338,7 @@ int main(int argc, char **argv)
 
         write(arena, "</head>\n");
         //~nja: body
-        write(arena, "<body>\n");
+        write(arena, "<body class='%S'>\n", meta.title);
 
         //~nja: header
         write(arena, "<div class='content flex-x pad-64  xs:flex-y sm:csy-8 sm:pad-32'>\n");
@@ -1389,7 +1389,7 @@ int main(int argc, char **argv)
 
 
         //~nja: page content
-        write(arena, "<div class='content pad-64 sm:pad-32'>\n");
+        write(arena, "<div id='content' class='content pad-64 sm:pad-32'>\n");
 
             //~nja: page header
             if (page.title.count || page.date.count)
