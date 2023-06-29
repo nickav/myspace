@@ -817,6 +817,7 @@ String markdown_to_html(String text)
                     }
 
                     arena_print(arena, "</ul>");
+                    arena_print(arena, "<p></p>");
                     continue;
                 }
 
@@ -842,6 +843,7 @@ String markdown_to_html(String text)
                     }
 
                     arena_print(arena, "</ol>");
+                    arena_print(arena, "<p></p>");
                     continue;
                 }
 
@@ -999,14 +1001,12 @@ String markdown_to_html(String text)
         }
 
 
-        // @Incomplete @Robustness: what happens if these are not matched on a line??
-        // markdown just _doesn't_ do anything for the given expression
-
         // bold
         if (it == '*')
         {
+            i64 newline_index = string_find(text, S("\n"), i + 1);
             i64 closing_index = string_find(text, S("*"), i + 1);
-            if (closing_index < text.count)
+            if (newline_index > closing_index && closing_index < text.count)
             {
                 arena_print(arena, "<b>%S</b>", string_slice(text, i + 1, closing_index));
                 i = closing_index;
@@ -1017,8 +1017,9 @@ String markdown_to_html(String text)
         // italic
         if (it == '_')
         {
+            i64 newline_index = string_find(text, S("\n"), i + 1);
             i64 closing_index = string_find(text, S("_"), i + 1);
-            if (closing_index < text.count)
+            if (newline_index > closing_index && closing_index < text.count)
             {
                 arena_print(arena, "<i>%S</i>", string_slice(text, i + 1, closing_index));
                 i = closing_index;
@@ -1029,8 +1030,9 @@ String markdown_to_html(String text)
         // strike
         if (it == '~')
         {
+            i64 newline_index = string_find(text, S("\n"), i + 1);
             i64 closing_index = string_find(text, S("~"), i + 1);
-            if (closing_index < text.count)
+            if (newline_index > closing_index && closing_index < text.count)
             {
                 arena_print(arena, "<s>%S</s>", string_slice(text, i + 1, closing_index));
                 i = closing_index;
@@ -1041,8 +1043,9 @@ String markdown_to_html(String text)
         // inline code
         if (it == '`')
         {
+            i64 newline_index = string_find(text, S("\n"), i + 1);
             i64 closing_index = string_find(text, S("`"), i + 1);
-            if (closing_index < text.count)
+            if (newline_index > closing_index && closing_index < text.count)
             {
                 arena_print(arena, "<code class='inline_code'>%S</code>", string_slice(text, i + 1, closing_index));
                 i = closing_index;
@@ -1375,6 +1378,23 @@ int main(int argc, char **argv)
         if (post)
         {
             auto links = find_next_and_prev_pages(post);
+            write(arena, "<div class='content padx-64 sm:padx-32 h-64 flex-x center-y csx-32' style='margin-bottom: -2rem'>");
+                if (links.prev)
+                {
+                    write(arena, "<a class='font-bold pady-16' href='%S'>← Prev</a>", post_link(links.prev));
+                }
+                if (links.next)
+                {
+                    write(arena, "<a class='font-bold pady-16 align-right' href='%S'>Next →</a>", post_link(links.next));
+                }
+            write(arena, "</div>\n");
+        }
+
+        //~nja: project next / prev links
+        auto project = find_page_by_slug(it, ctx.projects);
+        if (project)
+        {
+            auto links = find_next_and_prev_pages(project);
             write(arena, "<div class='content padx-64 sm:padx-32 h-64 flex-x center-y csx-32' style='margin-bottom: -2rem'>");
                 if (links.prev)
                 {

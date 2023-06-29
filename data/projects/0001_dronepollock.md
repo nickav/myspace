@@ -4,7 +4,6 @@ desc:  "Internet-of-Things painting"
 date:  "2015-11-23"
 image: "dronepollock.jpg"
 author: "Nick Aversano"
-draft: true
 ---
 
 @img{"dronepollock.jpg"}

@@ -17,6 +17,8 @@ img, video {
   margin: 0 auto;
 }
 
+img { width: 100%; }
+
 input, button, textarea, select {
   font: inherit;
 }
