@@ -24,7 +24,8 @@ popd
 pushd %publish_path%
     xcopy /s /i /y %project_root%\build\bin %publish_path%
 
-    git commit -a -m "%commit_message%"
+    git add .
+    git commit -m "%commit_message%"
 
-     git push
+    git push
 popd
