@@ -23,6 +23,7 @@
         cacheTimeout: 0,
         scrollToTop: true,
         debug: false,
+        restoreClassName: true,
     };
 
     function Lightning(config = defaultConfig) {
@@ -57,7 +58,10 @@
 
         const setState = (state) => {
             document.title = state.title;
-            document.body.className = state.className;
+            if (options.restoreClassName)
+            {
+                document.body.className = state.className;
+            }
 
             const el = getElement(document);
             if (el) {
@@ -247,4 +251,4 @@
     window.Lightning = Lightning;
 })();
 
-Lightning();
+Lightning({ restoreClassName: false });

@@ -1463,9 +1463,9 @@ int main(int argc, char **argv)
 
         write(arena, "<a class='pad-16' onclick='toggle()'>💡</a>\n");
 
-        write(arena, "<div style='min-width: 64px; max-width: 64px;'>");
+        write(arena, "<div style='min-width: 64px; max-width: 64px; margin-bottom: -64px'>\n");
         write_image(arena, S("guy_pixel.png"), S("Guy"));
-        write(arena, "</div>");
+        write(arena, "</div>\n");
 
         write(arena, "</div>\n");
 
