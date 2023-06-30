@@ -557,7 +557,9 @@ void write_custom_tag(Arena *arena, String tag_name, Array<String> args)
 
         write_link(arena, text, href);
     }
-    else if (string_match(tag_name, S("img"), MatchFlags_IgnoreCase))
+    else if (string_match(tag_name, S("img"), MatchFlags_IgnoreCase) ||
+             string_match(tag_name, S("image"), MatchFlags_IgnoreCase)
+        )
     {
         auto src = arg0;
         auto alt = arg1;
@@ -1457,8 +1459,14 @@ int main(int argc, char **argv)
         write(arena, "</div>\n");
 
         //~nja: footer
-        write(arena, "<div class='content pad-64 w-800 sm:pad-32 flex-x center-x'>\n");
+        write(arena, "<div class='content pad-64 w-800 sm:pad-32 flex-y center-x'>\n");
+
         write(arena, "<a class='pad-16' onclick='toggle()'>💡</a>\n");
+
+        write(arena, "<div style='min-width: 64px; max-width: 64px;'>");
+        write_image(arena, S("guy_pixel.png"), S("Guy"));
+        write(arena, "</div>");
+
         write(arena, "</div>\n");
 
         write(arena, "<script>%S</script>\n", js);
