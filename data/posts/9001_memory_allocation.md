@@ -18,14 +18,14 @@ As programmers, we often think of memory access as `O(1)` runtime complexity. Bu
 
 If you've gone to computer school, then you've probably learned about `malloc` and `free`.
 You may have even been taught to write linked lists of `Node`s by `malloc`-ing each node.
-This is almost always bad because of how memory acess on a CPU works.
+This is almost always bad because of how memory access on a CPU works.
 
 The only time this is a good solution is if you need to constantly allocate and free unknown sized buffers in random orders.
 
 When you access memory from the CPU, it turns out there are 3 levels of caching that sits in between you and RAM. This is to help with the fact that memory access is _so slow_.
 So while your CPU is taking a stroll down to RAM memory lane, it might as well grab a bunch of stuff while it's already there.
 
-Beacuse memory access on a CPU is incredibly slow, modern CPUs typically have 3 layers of caching to help hide latency.
+Because memory access on a CPU is incredibly slow, modern CPUs typically have 3 layers of caching to help hide latency.
 These layers are called: L1, L2, and L3 and might be sized: 64KB, 256KB, 16MB.
 So when you ask for memory, the CPU goes and fetches a whole page and sticks it in the cache.
 Similarly for writing values back to memory, but we won't get into that now!
