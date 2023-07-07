@@ -6,7 +6,7 @@
 </div>
 
 <div class='csy-32'>
-<h2>Posts</h2>
+<h2>Recent Posts</h2>
 @posts(-5)
 @link("← View All Posts", "/posts")
 </div>
