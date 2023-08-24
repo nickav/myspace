@@ -198,9 +198,11 @@ Array<C_Token> c_tokenize(String text)
             }
 
             while (
+                i < text.count && (
                 char_is_digit(text[i]) ||
                 (text[i] == '.' || text[i] == '_' || text[i] == '-' || text[i] == '+' || text[i] == 'e') ||
                 ('a' <= char_to_lower(text[i]) && char_to_lower(text[i]) >= 'f')
+                )
             ) {
                 i ++;
             }
@@ -394,6 +396,7 @@ void c_convert_token_c_like(C_Token *it, C_Token *prev)
             string_equals(lower, S("local")) ||
             string_equals(lower, S("inline")) ||
             string_equals(lower, S("restrict")) ||
+            string_equals(lower, S("import")) ||
             string_equals(lower, S("export")) ||
             string_equals(lower, S("extern")) ||
 

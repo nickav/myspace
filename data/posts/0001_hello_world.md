@@ -2,7 +2,7 @@
 title: "Hello, World!"
 desc:  "A breif backstory about me"
 date:  "2022-12-12 10:13:03"
-image: "godrays_04.png"
+image: "1.jpg"
 author: "Nick Aversano"
 ---
 

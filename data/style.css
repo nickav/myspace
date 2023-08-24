@@ -196,6 +196,8 @@ hr:after {
 .h-full { height: 100%; }
 .h-64   { height: 4rem; }
 .h-128  { height: 8rem; }
+.h-144  { height: 9rem; }
+.h-160  { height: 10rem; }
 .h-200  { height: 12.5rem; }
 .h-320  { height: 20rem; }
 
@@ -219,6 +221,11 @@ a:hover .bg {
   opacity: 0.75;
 }
 
+.hero {
+  aspect-ratio: 2 / 1;
+  max-height: 55vh;
+}
+
 .cover {
   object-fit: cover;
   width: 100%;
@@ -226,7 +233,7 @@ a:hover .bg {
 }
 
 .content {
-  max-width: 44rem;
+  max-width: 48rem;
   margin: 0 auto;
   width: 100%;
 }
@@ -279,6 +286,7 @@ a:hover .bg {
   color: #F8F8F2;
   font-weight: 500;
   font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.9rem;
 }
 
 .inline_code {
@@ -290,6 +298,10 @@ a:hover .bg {
   overflow-x: auto;
   padding: 2rem;
   margin: 2rem 0;
+}
+
+.no_select {
+  user-select: none;
 }
 
 /*

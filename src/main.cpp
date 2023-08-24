@@ -387,7 +387,7 @@ void write_link(Arena *arena, String text, String href)
     write(arena, "<a class='link' href='%S' target='%S'>%S</a>", href, target, text);
 }
 
-void write_code_block(Arena *arena, String code)
+void write_clike_code_block(Arena *arena, String code)
 {
     string_trim_whitespace(&code);
     if (!code.count) return;
@@ -402,8 +402,12 @@ void write_code_block(Arena *arena, String code)
         auto whitespace = c_whitespace_before_token(&it, code);
         arena_write(arena, whitespace);
 
-        if (
-            it.type == C_TokenType_Identifier ||
+        // NOTE(nick): we can ignore Identifier tokens because they have no special styling
+        if (it.type == C_TokenType_Identifier)
+        {
+            arena_write(arena, it.value);
+        }
+        else if (
             it.type == C_TokenType_Operator ||
             it.type == C_TokenType_Semicolon ||
             it.type == C_TokenType_Paren)
@@ -416,6 +420,81 @@ void write_code_block(Arena *arena, String code)
             auto tok = sprint("<span class='tok-%S'>%S</span>", type, it.value);
             arena_write(arena, tok);
         }
+    }
+
+    write(arena, "</pre>");
+}
+
+void write_bash_code_block(Arena *arena, String code)
+{
+    string_trim_whitespace(&code);
+    if (!code.count) return;
+
+    write(arena, "<pre class='code'>");
+
+    Array<String> lines = string_split(code, S("\n"));
+
+    for (i64 i = 0; i < lines.count; i += 1)
+    {
+        String line = lines[i];
+
+        i64 space_index = string_find(line, S(" "));
+        i64 terminal_index = string_find(line, S(">"));
+        if (terminal_index < space_index)
+        {
+            arena_write(arena, string_slice(line, 0, terminal_index));
+            string_advance(&line, terminal_index);
+
+            arena_print(arena, "<span class='tok-Keyword no_select'>></span>");
+            string_advance(&line, 1);
+
+
+            while (line.count > 0 && char_is_whitespace(line.data[0]))
+            {
+                arena_print(arena, "%c", line.data[0]);
+                string_advance(&line, 1);
+            }
+        }
+
+        Array<String> parts = string_split(line, S(" "));
+
+        For_Index (parts) {
+            String it = parts[index];
+
+            if (index == 0) {
+                auto tok = sprint("<span class='tok-Function'>%S</span>", it);
+                arena_write(arena, tok);
+            }
+            else if (string_contains(it, S("-")))
+            {
+                i64 equals_index = string_find(it, S("="), 0);
+                if (equals_index < it.count)
+                {
+                    String pre = string_slice(it, 0, equals_index);
+                    String post = string_slice(it, equals_index + 1, it.count);
+
+                    auto tok = sprint("<span class='tok-Number'>%S</span>", pre);
+                    arena_write(arena, tok);
+
+                    arena_print(arena, "<span class='tok-Keyword'>=</span>");
+
+                    auto tok2 = sprint("<span class='tok-String'>%S</span>", post);
+                    arena_write(arena, tok2);
+                }
+                else
+                {
+                    auto tok = sprint("<span class='tok-Type'>%S</span>", it);
+                    arena_write(arena, tok);
+                }
+            }
+            else
+            {
+                arena_write(arena, it);
+            }
+            if (index < parts.count - 1) arena_write(arena, S(" "));
+        }
+
+        if (i < lines.count - 1) arena_write(arena, S("\n"));
     }
 
     write(arena, "</pre>");
@@ -522,7 +601,7 @@ void write_page_card_list(Arena *arena, Page *items, Page *last_item, i64 limit)
 
         //~nja: article
         write(arena, "<a class='no-hover' href='%S'>\n", link);
-            write(arena, "<div class='flex-1 flex-y center-y h-128 round-2 crop' style='position:relative'>\n");
+            write(arena, "<div class='flex-1 flex-y center-y h-144 round-2 crop' style='position:relative'>\n");
                 if (post.image.count)
                 {
                 write_image(arena, post.image, S(""), S("class='bg bg-light cover'"));
@@ -761,9 +840,25 @@ String markdown_to_html(String text)
                 auto str = string_slice(text, code_start, code_end);
                 if (is_code_block)
                 {
-                    if (tag.count) {
-                        write_code_block(arena, str);
-                    } else {
+                    if (
+                        string_match(tag, S("c"), MatchFlags_IgnoreCase) ||
+                        string_match(tag, S("h"), MatchFlags_IgnoreCase) ||
+                        string_match(tag, S("cpp"), MatchFlags_IgnoreCase) ||
+                        string_match(tag, S("js"), MatchFlags_IgnoreCase) ||
+                        string_match(tag, S("javascript"), MatchFlags_IgnoreCase)
+                    )
+                    {
+                        write_clike_code_block(arena, str);
+                    }
+                    else if (
+                        string_match(tag, S("bash"), MatchFlags_IgnoreCase) ||
+                        string_match(tag, S("sh"), MatchFlags_IgnoreCase)
+                    )
+                    {
+                        write_bash_code_block(arena, str);
+                    }
+                    else
+                    {
                         arena_print(arena, "<pre class='code'>%S</pre>", str);
                     }
                 }
@@ -953,7 +1048,6 @@ String markdown_to_html(String text)
                     auto link_href = string_slice(text, link_start, i);
 
                     write_link(arena, link_text, link_href);
-                    i += 1;
                     continue;
                 }
                 else
@@ -1369,7 +1463,7 @@ int main(int argc, char **argv)
         //~nja: image header / banner
         if (page.image.count)
         {
-        write(arena, "<div class='w-full h-320 sm:h-240 xl:h-480 bg-light'>\n");
+        write(arena, "<div class='hero w-full bg-light'>\n");
             write_image(arena, page.image, S(""), S("class='cover'"));
         write(arena, "</div>\n");
         }
