@@ -414,6 +414,8 @@ void c_convert_token_c_like(C_Token *it, C_Token *prev)
             string_equals(lower, S("private")) ||
             string_equals(lower, S("new")) ||
             string_equals(lower, S("delete")) ||
+
+            string_equals(lower, S("__attribute__")) ||
             false
         )
         {
@@ -435,6 +437,7 @@ void c_convert_token_c_like(C_Token *it, C_Token *prev)
             string_equals(lower, S("bool")) ||
             string_equals(lower, S("float")) ||
             string_equals(lower, S("double")) ||
+            string_equals(lower, S("signed")) ||
             string_equals(lower, S("unsigned")) ||
             string_ends_with(lower, S("_t")) ||
 

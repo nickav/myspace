@@ -1,24 +1,3 @@
-// Simple encoder, but doesn't handle UTF-8 strings.
-const encode = (memory, base, string) => {
-    for (let i = 0; i < string.length; i++) {
-        memory[base + i] = string.charCodeAt(i);
-    }
-
-    memory[base + string.length] = 0;
-};
-
-// Decode a string from memory starting at address base, but doesn't handle UTF-8 strings.
-const decode = (memory, base) => {
-    let cursor = base;
-    let result = '';
-
-    while (memory[cursor] !== 0) {
-        result += String.fromCharCode(memory[cursor++]);
-    }
-
-    return result;
-};
-
 const decoder = new TextDecoder("utf8");
 
 const DecodeString = (u8Array, idx, length) => {
@@ -35,24 +14,16 @@ const StringLength = (u8Array, ptr) => {
 
 const encoder = new TextEncoder("utf8");
 
-// the output space needed is >= s.length and <= s.length * 3
+// NOTE(nick): the output space needed is >= s.length and <= s.length * 3
 const EncodeString = (u8Array, base, string) => {
     if (!string.length) return 0;
     return encoder.encodeInto(string, u8Array.subarray(base)).written;
-};
-
-const cast = {
-    ptr: (u32) => {
-        console.assert(typeof u32 === 'number');
-        const result = Number(u32) & 0xffffffff;
-        return result;
-    },
-};
+}
 
 const Kilobytes = (x) => 1024 * x;
 const Megabytes = (x) => 1024 * 1024 * x;
 
-export const load = async (wasmPath) => {
+const load = async (wasmPath) => {
     const response = await fetch(wasmPath);
     const bytes = await response.arrayBuffer();
 
@@ -122,10 +93,14 @@ export const load = async (wasmPath) => {
     };
 };
 
-load('/hello.wasm').then((hello) => {
+const main = async () => {
+    const hello = await load('/hello.wasm');
+
     console.log("hello.add(42, 42):", hello.add(42, 42));
     console.log("secret_message():", hello.secret_message());
     console.log(`ping("hello, good sir"):`, hello.ping("hello, good sir"));
     console.log(`compute_square_roots([1, 2, 3, 4, 5]):`, hello.compute_square_roots([1, 2, 3, 4, 5]));
     console.log(`push_f64_array(10):`, hello.push_f64_array(10));
-});
+};
+
+main();

@@ -1,26 +1,6 @@
+// File: hello.html
 <!doctype html>
 <html>
-    <head>
-        <title>hello WASM</title>
-    </head>
-
-    <script>
-const run = async () => {
-    const response = await fetch('/hello.wasm');
-    const bytes = await response.arrayBuffer();
-
-    const numPages = 4;
-    const memory = new WebAssembly.Memory({ initial: numPages });
-
-    const wasm = await WebAssembly.instantiate(bytes, {
-        env: {
-            memory,
-        },
-    });
-
-    console.log(wasm.instance.exports.add(42, 42));
-};
-
-run();
-    </script>
+<script src="./hello.js">
+</script>
 </html>

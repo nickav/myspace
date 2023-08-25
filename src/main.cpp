@@ -389,7 +389,7 @@ void write_link(Arena *arena, String text, String href)
 
 void write_clike_code_block(Arena *arena, String code)
 {
-    string_trim_whitespace(&code);
+    string_trim_newlines(&code);
     if (!code.count) return;
 
     auto tokens = c_tokenize(code);
@@ -427,7 +427,7 @@ void write_clike_code_block(Arena *arena, String code)
 
 void write_bash_code_block(Arena *arena, String code)
 {
-    string_trim_whitespace(&code);
+    string_trim_newlines(&code);
     if (!code.count) return;
 
     write(arena, "<pre class='code'>");
@@ -748,6 +748,17 @@ void write_custom_tag(Arena *arena, String tag_name, Array<String> args)
     }
 }
 
+String make_html_id(String text, i32 header_level)
+{
+    String result = {};
+    if (header_level <= 3)
+    {
+        auto parts = string_split(text, S(" "));
+        result = string_lower(string_join(parts, S("_")));
+    }
+    return result;
+}
+
 // @Incomplete: supported nested tags
 // @Speed: arena_print is actually sort of slower than you might think (especially when doing for each character)
 String markdown_to_html(String text)
@@ -888,7 +899,8 @@ String markdown_to_html(String text)
                     while (text.data[i] != '\n') i += 1;
 
                     auto header_text = string_slice(text, start_index, i);
-                    arena_print(arena, "<h%d>%S</h%d>", count, header_text, count);
+                    auto js_id = make_html_id(header_text, count);
+                    arena_print(arena, "<h%d id='%S'>%S</h%d>", count, js_id, header_text, count);
 
                     continue;
                 }
@@ -1026,6 +1038,35 @@ String markdown_to_html(String text)
             }
         }
 
+        // inline links
+        if (it == 'h')
+        {
+            // http:// or https://
+            if (i < text.count - 8)
+            {
+                if (text.data[i + 1] == 't' && text.data[i + 2] == 't' && text.data[i + 3] == 'p')
+                {
+                    auto slice = string_slice(text, i, text.count);
+                    if (
+                        string_starts_with(slice, S("https://")) ||
+                        string_starts_with(slice, S("http://"))
+                    )
+                    {
+                        i64 start_index = i;
+
+                        while (i < text.count && !char_is_whitespace(text.data[i]))
+                        {
+                            i += 1;
+                        }
+
+                        auto link_href = string_slice(text, start_index, i);
+                        write_link(arena, link_href, link_href);
+                        continue;
+                    }
+                }
+            }
+        }
+
         // links
         if (it == '[')
         {
@@ -1052,8 +1093,12 @@ String markdown_to_html(String text)
                 }
                 else
                 {
-                    i = text_start + 1;
+                    i = text_start - 1;
                 }
+            }
+            else
+            {
+                i = text_start - 1;
             }
         }
 

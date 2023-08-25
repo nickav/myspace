@@ -1624,6 +1624,17 @@ String string_trim_whitespace(String str) {
     return copy;
 }
 
+void string_trim_newlines(String *str) {
+    while (str->count > 0 && str->data[0] == '\n') {
+        str->data ++;
+        str->count --;
+    }
+
+    while (str->count > 0 && str->data[str->count - 1] == '\n') {
+        str->count --;
+    }
+}
+
 bool string_eat_whitespace(String *str) {
     u64 start_count = str->count;
 

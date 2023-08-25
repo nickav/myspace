@@ -109,6 +109,13 @@ hr:after {
   border-bottom: 4px solid var(--accent);
 }
 
+.message {
+  border-left: 4px solid var(--accent);
+  padding: 1rem 2rem;
+  margin: 2rem 0;
+  font-weight: 500;
+}
+
 .c-gray { color: var(--gray); }
 
 .bg-light { background: var(--highlight); }
@@ -239,7 +246,11 @@ a:hover .bg {
 }
 
 .content :is(h2, h3, h4, h5, h6) {
-  margin: 2rem 0 0.5rem 0;
+  margin: 2.5rem 0 0.5rem 0;
+}
+
+.content .link {
+  word-break: break-all;
 }
 
 .video {
@@ -286,12 +297,13 @@ a:hover .bg {
   color: #F8F8F2;
   font-weight: 500;
   font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 0.9rem;
+  font-size: 0.9em;
 }
 
 .inline_code {
+  white-space: nowrap;
   display: inline;
-  padding: 0.2rem 0.4rem;
+  padding: 0.1rem 0.4rem;
 }
 
 .code {
