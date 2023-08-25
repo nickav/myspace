@@ -1,7 +1,7 @@
 <div class='csy-64'>
 
 <div class='csy-32'>
-<h2>Featured Work</h2>
+<h2 style='margin-top:0'>Featured Work</h2>
 @featured()
 </div>
 
