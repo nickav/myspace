@@ -4,7 +4,7 @@ desc:  "A practical guide for working with Web Assembly"
 date:  "2023-08-23 23:23:23"
 image: "3.jpg"
 author: "Nick Aversano"
-draft: true
+draft: false
 ---
 
 I recently was trying to figure out how to compile my C code to WASM.
@@ -288,14 +288,14 @@ void wasm__pop(u32 size)
 ⚠️ Note that we always align our allocations because some data structures like `Float64Array` require that the memory is 8-byte aligned!
 </div>
 
-If you are using `wasm32` then pointers with be `u32`-sized.
+Pointers will be `u32`-sized because we are using `wasm32`.
 As far as I can tell, the most you can return from a native function via the WASM FFI is a `u64` and this gets returned to JavaScript as a `BigInt`.
 If you need to read or write more than that, then you can use the `wasm__push` and `wasm__pop` functions.
 Another strategy would be to just agree on a reserved address space for JS-WASM communication, sort of like a global scratch buffer.
 
 There is no `malloc` or `free` (again, no standard library).
 If you absolutely can't live without them, you can define your own or find an implementation online.
-In practice, I literally just use my `Arena` allocator on top of my `wasm__push` and `wasm__pop` funtions.
+In practice, I literally just use my `Arena` allocator on top of the `wasm__push` and `wasm__pop` functions.
 
 
 ## Strings
@@ -353,8 +353,7 @@ instance.exports.wasm__pop(3 * message.length);
 
 ## Structs
 
-As far as I can tell, the most you can return from a function is a `u64` and this gets returned to JS as a `BigInt`.
-If you want to return a struct from a function you can either pack it into a `u32` or a `u64` and re-interpret the bytes as needed, or you can return a pointer to the struct and decode the struct fields from the pointer. I think returning a pointer is a bit easier to work with so that's what I normally do.
+If you want to return a struct from a function you can either pack it into a `u32` or a `u64` and re-interpret the bytes, or you can return a pointer to the struct and decode the struct fields. I think returning a pointer is a bit easier to work with so that's what I normally do.
 
 For example:
 
@@ -382,11 +381,11 @@ at += 4;
 const foo = { x, y };
 ```
 
-`DataView` has a bunch of [methods](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/DataView) for interpretting different kinds of data.
+`DataView` has a bunch of [methods](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/DataView) for interpreting different kinds of data.
 
 The second argument should be `true` because according to [Rasmus](https://rsms.me/wasm-intro) the bytes are always little endian independent of the host-machine's endianess.
 
-This strategy also works for pointers fields.
+This strategy also works for pointer fields.
 
 
 ## Arrays
@@ -428,9 +427,9 @@ const result = new Float64Array(memory.buffer, data, count);
 return result;
 ```
 
-Note that because we just returned a `Float64Array` into WASM's memory, this will actually change when WASM overwrites that memory. So you should take care to copy the array if you need to.
+Note that because we just returned a `Float64Array` into WASM's memory, these values will actually change if WASM overwrites that memory. So you should take care to copy the array if you need to, or make sure the memory stays at a fixed address.
 
-For small arrays you can use `Array.from(float64Array)` to make it a plain JavaScript array.
+For small arrays you can use `Array.from(float64Array)` to convert the `TypedArray` into a plain JavaScript array.
 You can also copy the typed array itself with `float64Array.slice()`.
 
 <div class="message">
@@ -693,6 +692,7 @@ main();
 
 ## Wrap Up
 
+The code I've shared should cover just about everything you could ever want to do in WASM.
 While it would be a lot of work to emulate _everything_ `emscripten` is doing, I hope this has shown you a viable alternative.
 
 Overall I have enjoyed working with WASM despite some of it's limitations.
