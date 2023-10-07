@@ -678,8 +678,8 @@ const load = async (wasmPath) => {
 const main = async () => {
     const hello = await load('/hello.wasm');
 
-    console.log("hello.add(42, 42):", hello.add(42, 42));
-    console.log("secret_message():", hello.secret_message());
+    console.log(`add(42, 42):`, hello.add(42, 42));
+    console.log(`secret_message():`, hello.secret_message());
     console.log(`ping("hello, good sir"):`, hello.ping("hello, good sir"));
     console.log(`compute_square_roots([1, 2, 3, 4, 5]):`, hello.compute_square_roots([1, 2, 3, 4, 5]));
     console.log(`push_f64_array(10):`, hello.push_f64_array(10));
@@ -689,6 +689,16 @@ main();
 ```
 
 ---
+
+## Debugging with Sourcemaps
+
+To step through your C code in the browser with sourcemaps you need to do the following:
+
+1) Install the Chrome extension: [C/C++ DevTools Support for DWARF](https://chrome.google.com/webstore/detail/cc%20%20-devtools-support-dwa/pdcpmagijalfljmkmjngeonclgbbannb)
+
+2) Add `-gdwarf-5` to the CLI arguments (and probably disable optimizations)
+
+3) Set up a Path Substitution in the extension's Options. For compiling on Windows, I needed to add a substitution from `/home/nick/` to `C:/` and then it just works!
 
 ## Wrap Up
 
