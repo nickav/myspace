@@ -52,7 +52,7 @@ wasm-ld: error: cannot open C:\Program Files (x86)\Microsoft Visual Studio\2019\
 clang: error: linker command failed with exit code 1 (use -v to see invocation)
 ```
 
-This is because, much like embeded software, there is no C standard library!
+This is because, much like embedded software, there is no C standard library!
 OK, no problem, we've got the `--no-standard-libraries` flag. So let's try that and get another error:
 
 ```bash
@@ -61,7 +61,7 @@ wasm-ld: error: entry symbol not defined (pass --no-entry to suppress): _start
 clang: error: linker command failed with exit code 1 (use -v to see invocation)
 ```
 
-This is clang telling us that here is no `_start` function (the function that eventually calls `int main` in a typical C program). OK, well it looks like there's a suggestion there too so let's just using that. The thing is `wasm-ld` is giving us the error. To pass a `wasm-ld` linker flag you have to prefix it with `-Wl,`, so the actual flag looks like: `-Wl,--no-entry`.
+This is clang telling us that there is no `_start` function (the function that eventually calls `int main` in a typical C program). Well it looks like there's a suggestion there too so let's just using that. The thing is `wasm-ld` is giving us the error. To pass a `wasm-ld` linker flag you have to prefix it with `-Wl,`, so the actual flag looks like: `-Wl,--no-entry`.
 
 I will now take the liberty to add a few more compiler flags that will matter later:
 
@@ -172,7 +172,7 @@ f64 sqrt(f64 x) {
 }
 ```
 
-This will _just work_ in WASM because there is are `f32.sqrt` and `f64.sqrt` instructions!
+This will _just work_ in WASM because there are `f32.sqrt` and `f64.sqrt` instructions!
 
 There are a few more notable built-ins:
 
@@ -215,19 +215,14 @@ const wasm = await WebAssembly.instantiate(bytes, {
 
 Now you can call `js__sin` from C.
 
-This is also, for example, how you would do OpenGL bindings in WASM.
+This is also, for example, how you would do WebGL bindings.
 
 
 ## Memory
 
-When we booted up our WASM code, we told it exactly how many memory pages it has to run in. Each memory page is 64KB.
-
-Our whole program must run with the memory that it's given.
+When we booted up our WASM code, we told it exactly how many memory pages it has. Each page is 64KB.
+Our program must run with the memory that it's given.
 While there is a builtin to request more memory from the WASM runtime, I prefer to just declare all the memory I will ever use upfront.
-
-<div class="message">
-⚠️ If you just try to write directly into your WASM program's memory you will be writing over the stack from `[0, &__heap_base)`.
-</div>
 
 You can get the heap size and base pointer with:
 
@@ -249,6 +244,10 @@ void *wasm__heap_pointer()
     return (void *)&__heap_base;
 }
 ```
+
+<div class="message">
+⚠️ If you just try to write directly into your WASM program's memory you will be writing over the stack from `[0, &__heap_base)`.
+</div>
 
 Now we can define our own global allocator with a simple bump allocator:
 
@@ -290,10 +289,10 @@ void wasm__pop(u32 size)
 
 Pointers will be `u32`-sized because we are using `wasm32`.
 As far as I can tell, the most you can return from a native function via the WASM FFI is a `u64` and this gets returned to JavaScript as a `BigInt`.
-If you need to read or write more than that, then you can use the `wasm__push` and `wasm__pop` functions.
+If you need to read or write more than that then you can use the `wasm__push` and `wasm__pop` functions.
 Another strategy would be to just agree on a reserved address space for JS-WASM communication, sort of like a global scratch buffer.
 
-There is no `malloc` or `free` (again, no standard library).
+There is no `malloc` or `free`.
 If you absolutely can't live without them, you can define your own or find an implementation online.
 In practice, I literally just use my `Arena` allocator on top of the `wasm__push` and `wasm__pop` functions.
 
@@ -303,7 +302,7 @@ In practice, I literally just use my `Arena` allocator on top of the `wasm__push
 Strings in WASM are a special case of dealing with exchanging large amounts of information back and forth (I mean, larger than a `u64`).
 You might require special handling to get the UTF8 part correctly, but otherwise we are literally just writing the bytes to some shared location on the heap and passing the pointer to them.
 
-The browser has two built-in functions for dealing with UTF8 strings: `TextDecoder` and `TextEncoder`.
+The browser has two built-in classes for dealing with UTF8 strings: `TextDecoder` and `TextEncoder`.
 
 Let's define a couple of functions for reading and writing UTF8 strings:
 

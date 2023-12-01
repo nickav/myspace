@@ -41,3 +41,4 @@ Go down rabbit holes that are interesting.
 
 But make sure to surface and actually just ship the fucking website.
 
+Similarly, I have struggled to find the right balance between using other people's code and writing my own. I think I should probably be using more libraries in general.

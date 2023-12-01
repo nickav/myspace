@@ -219,13 +219,14 @@ Array<C_Token> c_tokenize(String text)
         // true, false, null, nullptr, NULL
         if (char_is_alpha(it))
         {
-            static String literals[] = {S("true"), S("false"), S("null"), S("nullptr")};
+            static String literals[] = {S("true"), S("false"), S("NULL"), S("null"), S("nullptr")};
 
+            String slice = string_skip(text, i);
             bool match = false;
             for (int j = 0; j < count_of(literals); j++)
             {
                 auto it = literals[j];
-                if (string_match(string_skip(text, i), it, MatchFlags_IgnoreCase))
+                if (string_starts_with(slice, it))
                 {
                     auto token = array_push(&tokens);
                     token->type = C_TokenType_Literal;
