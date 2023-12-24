@@ -1,6 +1,6 @@
 ---
 title: "Hello, World!"
-desc:  "A breif backstory about me"
+desc:  "A brief backstory about me"
 date:  "2022-12-12 10:13:03"
 image: "1.jpg"
 author: "Nick Aversano"
