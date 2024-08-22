@@ -2,7 +2,10 @@ var invert = false;
 
 const up = (i) => {
     try { localStorage.setItem('invert', i ? 1 : 0); } catch(err) {}
+
+    document.body.classList.toggle('load', false);
     document.body.classList.toggle('invert', i);
+    document.body.classList.toggle('load', true);
     invert = i;
 };
 
