@@ -4,7 +4,7 @@
 #include "third_party/stb_sprintf.h"
 
 #include "na.h"
-#define NA_NET_IMPLEMENTATION
+#define impl
 #include "na_net.h"
 
 #include "helpers.h"
@@ -549,7 +549,7 @@ String string_normalize_newlines(String input)
         at ++;
     }
 
-    return make_string(data, at - data);
+    return string_make(data, at - data);
 }
 
 i64 string_count_words(String str)

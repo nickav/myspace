@@ -1,6 +1,6 @@
 /*
-    na_net.h - v0.01
-    Nick Aversano's C++ networking library
+    na_net.h - v0.02
+    Nick Aversano's C++ networking library for TCP/UDP and HTTP
 ===========================================================================
 
 LICENSE
@@ -12,6 +12,7 @@ CREDITS
     Written by Nick Aversano
 
 VERSION HISTORY
+    0.02  - Update to na.h v0.07
     0.01  - Initial release
 */
 
@@ -19,38 +20,12 @@ VERSION HISTORY
 #define NA_NET_H
 
 //
-// TODO(nick):
-// - handle chunked responses
-// - replace `select` calls with Linux epoll / win32 / MacOS kqueue solution
-// - make this library standalone
-// - make sure it compiles on Linux / Mac
-// - support C compilers
-// - add API documentation
-// - support IPV6 addresses
-// - fix HTTP server slowness on Chrome/Windows?
-//
-
-#ifdef __cplusplus
-#define NET_EXPORT extern "C"
-#else
-#define NET_EXPORT
-#endif
-
-#if !defined(__cplusplus) && !defined(bool)
-#define bool  int
-#define true  1
-#define false 0
-#endif
-
-//
 // Simple HTTP Example:
 //
 #if 0
-void simple_http_example()
-{
     socket_init();
 
-    Http r = http_get(S("http://nickav.co/"));
+    auto r = http_get(S("http://nickav.co/"));
 
     while (r.status == HttpStatus_Pending) {
         reset_temporary_storage();
@@ -64,28 +39,25 @@ void simple_http_example()
         dump(r.status_code);
         dump(r.content_type);
 
-        Http headers = http_parse_headers(r.response_headers);
+        auto headers = http_parse_headers(r.response_headers);
         For (headers) {
             print("%S = %S\n", it.key, it.value);
         }
 
         dump(r.response_body);
     }
-}
 #endif
 
 //
 // HTTP Request Manager Example:
 //
 #if 0
-void http_request_manager_example()
-{
     socket_init();
 
-    Http r1 = http_get(S("http://nickav.co/"));
+    auto r1 = http_get(S("http://nickav.co/"));
     http_add(&man, r1);
 
-    Http r2 = http_get(S("http://nickav.co/images/dronepollock.jpg"));
+    auto r2 = http_get(S("http://nickav.co/images/dronepollock.jpg"));
     http_add(&man, r2);
 
     while (man.requests.count > 0)
@@ -103,15 +75,38 @@ void http_request_manager_example()
 
         os_sleep(1.0f);
     }
-}
+#endif
+
+//
+// Simple TCP Example
+//
+#if 0
+    Socket socket = socket_create_tcp_server(socket_make_address_from_url(S("127.0.0.1:3000")));
+    Socket client;
+
+    while (1)
+    {
+        reset_temporary_storage();
+
+        Socket client;
+        Socket_Address client_address;
+        if (socket_accept(&socket, &client, &client_address))
+        {
+            print("Got request from %S:%d\n", socket_get_address_name(client_address), client_address.port);
+            
+            auto request = socket_recieve_entire_stream(temp_arena(), &client);
+            socket_send(&client, {}, S("HTTP/1.1 200 OK\r\n\r\nHello, World!\r\n\r\n"));
+            socket_close(&client);
+        }
+
+        os_sleep(1);
+    }
 #endif
 
 //
 // UDP Client/Server Example
 //
 #if 0
-void udp_client_server_example()
-{
     socket_init();
 
     Socket_Address server_address = socket_make_address_from_url(S("127.0.0.1:9999"));
@@ -153,9 +148,13 @@ void udp_client_server_example()
     }
 
     return 0;
-}
 #endif
 
+//
+// TODO(nick):
+// - handle chunked responses
+// - replace `select` calls with Linux epoll / win32 / MacOS kqueue solution
+//
 
 typedef u32 Socket_Type;
 enum
@@ -163,7 +162,6 @@ enum
     SocketType_TCP,
     SocketType_UDP,
 };
-
 
 typedef struct Socket Socket;
 struct Socket
@@ -191,6 +189,8 @@ enum
 typedef struct Http Http;
 struct Http
 {
+    Http *next;
+
     Socket      socket;
     Http_Status status;
 
@@ -215,6 +215,14 @@ struct Http_Header
     String value;
 };
 
+typedef struct Http_Header_Array Http_Header_Array;
+struct Http_Header_Array
+{
+    Http_Header *data;
+    u64 count;
+    u64 capacity;
+};
+
 typedef struct Http_Request Http_Request;
 struct Http_Request
 {
@@ -227,15 +235,27 @@ typedef struct Http_Response Http_Response;
 struct Http_Response
 {
     i32 status_code;
-    Array<Http_Header> headers;
+    Http_Header_Array headers;
     String content_type;
     String body;
+};
+
+
+typedef struct Http_Url_Parts Http_Url_Parts;
+struct Http_Url_Parts
+{
+    String protocol; // http or https
+    String host;     // nickav.co
+    i64    port;     // 80
+    String path;     // robots.txt
 };
 
 typedef struct Http_Manager Http_Manager;
 struct Http_Manager
 {
-    Array<Http> requests;
+    Arena *arena;
+    Http *first_request;
+    Http *last_request;
 };
 
 
@@ -243,57 +263,61 @@ struct Http_Manager
 // Socket methods
 //
 
-NET_EXPORT bool socket_init();
-NET_EXPORT void socket_shutdown();
+function bool socket_init();
+function void socket_shutdown();
 
-NET_EXPORT Socket socket_open(Socket_Type type);
-NET_EXPORT void socket_close(Socket *socket);
+function Socket socket_open(Socket_Type type);
+function void socket_close(Socket *socket);
 
-NET_EXPORT bool socket_bind(Socket *socket, Socket_Address address);
-NET_EXPORT bool socket_connect(Socket *socket, Socket_Address address);
-NET_EXPORT bool socket_listen(Socket *socket);
-NET_EXPORT bool socket_accept(Socket *socket, Socket_Address *address);
+function bool socket_bind(Socket *socket, Socket_Address address);
+function bool socket_connect(Socket *socket, Socket_Address address);
+function bool socket_listen(Socket *socket);
+function bool socket_accept(Socket *socket, Socket_Address *address);
 
-NET_EXPORT bool socket_can_write(Socket *socket);
+function bool socket_can_write(Socket *socket);
 
-NET_EXPORT bool socket_is_ready(Socket *socket);
-NET_EXPORT bool socket_send(Socket *socket, Socket_Address address, String message);
-NET_EXPORT i64 socket_recieve_bytes(Socket *socket, u8 *data, u64 count, Socket_Address *address);
-NET_EXPORT bool socket_recieve(Socket *socket, String *buffer, Socket_Address *address);
+function bool socket_is_ready(Socket *socket);
+function bool socket_send(Socket *socket, Socket_Address address, String message);
+function i64 socket_recieve_bytes(Socket *socket, u8 *data, u64 count, Socket_Address *address);
+function bool socket_recieve(Socket *socket, String *buffer, Socket_Address *address);
 
-NET_EXPORT String socket_get_address_name(Socket_Address address);
+function String socket_get_address_name(Socket_Address address);
 
-NET_EXPORT Socket_Address socket_make_address(const char *host, u16 port);
-NET_EXPORT Socket_Address socket_make_address_from_url(String url);
+function Socket_Address socket_make_address(const char *host, u16 port);
+function Socket_Address socket_make_address_from_url(String url);
+
+function Socket socket_create_udp_server(Socket_Address address);
+function Socket socket_create_udp_client(Socket_Address address);
 
 
 //
 // HTTP methods
 //
 
-Http http_request(String verb, String url, String headers, String data);
+function Http http_request(String verb, String url, String headers, String data);
 
-Http http_get(String url);
-Http http_post(String url, String data);
-Http http_put(String url, String data);
-Http http_delete(String url);
+function Http http_get(String url);
+function Http http_post(String url, String data);
+function Http http_put(String url, String data);
+function Http http_delete(String url);
 
-void http_process(Http *http);
+function void http_process(Http *http);
 
 
-Array<Http_Header> http_parse_headers(String headers);
-Http_Request http_parse_request(String request);
+function Http_Header_Array http_parse_headers(Arena *arena, String headers);
+function Http_Request http_parse_request(String request);
 
-void http_manager_init(Http_Manager *manager);
-void http_manager_add(Http_Manager *manager, Http *request);
-void http_manager_update(Http_Manager *manager);
-Http *http_manager_get_completed(Http_Manager *manager);
+function void http_manager_init(Http_Manager *manager);
+function void http_manager_add(Http_Manager *manager, Http *request);
+function void http_manager_update(Http_Manager *manager);
+function Http *http_manager_get_completed(Http_Manager *manager);
+
 
 
 #endif // NA_NET_H
 
 
-#ifdef NA_NET_IMPLEMENTATION
+#ifdef impl
 
 #if _WIN32
 
@@ -333,6 +357,9 @@ static WSACleanup_Func *W32_WSACleanup;
 #include <errno.h>
 #include <fcntl.h>
 #include <netdb.h>
+#include <arpa/inet.h>
+#include <sys/time.h>
+#include <sys/select.h>
 
 #define SOCKET_ERROR   -1
 #define INVALID_SOCKET -1
@@ -343,26 +370,10 @@ static WSACleanup_Func *W32_WSACleanup;
 
 #endif // _WIN32
 
-#if defined(__APPLE__)
-#include <arpa/inet.h>
 
-#define TIMEVAL timeval
-#define SOCKADDR_IN sockaddr_in
-#endif
-
-
-struct URL_Parts
+function Socket_Address socket_make_address(const char *host, u16 port)
 {
-    String protocol; // http or https
-    String host;     // nickav.co
-    i64    port;     // 80
-    String path;     // robots.txt
-};
-
-
-Socket_Address socket_make_address(const char *host, u16 port)
-{
-    Socket_Address result = {};
+    Socket_Address result = {0};
 
     if (host == NULL)
     {
@@ -376,12 +387,12 @@ Socket_Address socket_make_address(const char *host, u16 port)
             struct hostent *hostent = gethostbyname(host);
             if (hostent)
             {
-                memory_copy(hostent->h_addr, &result.host, hostent->h_length);
+                MemoryCopy(hostent->h_addr, &result.host, hostent->h_length);
             }
             else
             {
                 print("[socket] Invalid host name: %s\n", host);
-                return {};
+                return result;
             }
         }
 
@@ -395,33 +406,33 @@ Socket_Address socket_make_address(const char *host, u16 port)
     return result;
 }
 
-static URL_Parts socket_parse_url(String url)
+function Http_Url_Parts socket_parse_url(String url)
 {
-    URL_Parts result = {};
+    Http_Url_Parts result = {0};
 
     i64 index;
 
-    index = string_find(url, S("://"));
+    index = string_find(url, S("://"), 0, 0);
     if (index < url.count)
     {
         result.protocol = string_slice(url, 0, index);
-        url = string_slice(url, index + S("://").count);
+        url = string_slice(url, index + S("://").count, url.count);
     }
 
-    index = string_find(url, S("/"));
+    index = string_find(url, S("/"), 0, 0);
     if (index < url.count)
     {
-        result.path = string_slice(url, index);
+        result.path = string_slice(url, index, url.count);
         url = string_prefix(url, index);
     }
 
     result.port = 80;
 
-    index = string_find(url, S(":"));
+    index = string_find(url, S(":"), 0, 0);
     if (index < url.count)
     {
-        String port_str = string_slice(url, index + 1);
-        result.port = string_to_i64(port_str);
+        String port_str = string_slice(url, index + 1, url.count);
+        result.port = string_to_i64(port_str, 10);
         if (result.port <= 0 || result.port > U16_MAX) {
             result.port = 0;
         }
@@ -434,7 +445,7 @@ static URL_Parts socket_parse_url(String url)
     return result;
 }
 
-bool socket_init()
+function bool socket_init()
 {
     static bool initted = false;
     if (initted) return true;
@@ -469,7 +480,7 @@ bool socket_init()
     return true;
 }
 
-bool socket_set_non_blocking_internal(i64 handle)
+function bool socket_set_non_blocking_internal(i64 handle)
 {
     int ret;
     #if OS_WINDOWS
@@ -482,9 +493,9 @@ bool socket_set_non_blocking_internal(i64 handle)
     return ret == 0;
 }
 
-Socket socket_open(Socket_Type type)
+function Socket socket_open(Socket_Type type)
 {
-    Socket result = {};
+    Socket result = {0};
 
     bool udp = type == SocketType_UDP;
     // AF_INET6
@@ -516,7 +527,21 @@ Socket socket_open(Socket_Type type)
     return result;
 }
 
-bool socket_bind(Socket *socket, Socket_Address address)
+function void socket_close(Socket *socket)
+{
+    if (socket && socket->handle)
+    {
+        #if OS_WINDOWS
+        closesocket(socket->handle);
+        #else
+        close(socket->handle);
+        #endif
+
+        socket->handle = 0;
+    }
+}
+
+function bool socket_bind(Socket *socket, Socket_Address address)
 {
     struct sockaddr_in addr;
     addr.sin_family      = AF_INET;
@@ -531,7 +556,7 @@ bool socket_bind(Socket *socket, Socket_Address address)
     return true;
 }
 
-bool socket_listen(Socket *socket)
+function bool socket_listen(Socket *socket)
 {
     #ifndef SOMAXCONN
     #define SOMAXCONN 10
@@ -545,12 +570,12 @@ bool socket_listen(Socket *socket)
     return true;
 }
 
-bool socket_accept(Socket *socket, Socket *from_socket, Socket_Address *from_address)
+function bool socket_accept(Socket *socket, Socket *from_socket, Socket_Address *from_address)
 {
     struct sockaddr_in from;
     int addr_len = sizeof(from);
 
-    i64 sock = accept(socket->handle, (sockaddr *)&from, (socklen_t *)&addr_len);
+    i64 sock = accept(socket->handle, (struct sockaddr *)&from, (socklen_t *)&addr_len);
 
     if (sock != INVALID_SOCKET)
     {
@@ -575,7 +600,7 @@ bool socket_accept(Socket *socket, Socket *from_socket, Socket_Address *from_add
     return false;
 }
 
-bool socket_connect(Socket *socket, Socket_Address address)
+function bool socket_connect(Socket *socket, Socket_Address address)
 {
     struct sockaddr_in addr;
     addr.sin_family      = AF_INET;
@@ -586,12 +611,12 @@ bool socket_connect(Socket *socket, Socket_Address address)
     if (result == SOCKET_ERROR)
     {
         #ifdef _WIN32
-            if (WSAGetLastError() != WSAEWOULDBLOCK && WSAGetLastError() != WSAEINPROGRESS)
+            if ( WSAGetLastError() != WSAEWOULDBLOCK && WSAGetLastError() != WSAEINPROGRESS )
             {
                 return false;
             }
         #else
-            if (errno != EWOULDBLOCK && errno != EINPROGRESS && errno != EAGAIN)
+            if ( errno != EWOULDBLOCK && errno != EINPROGRESS && errno != EAGAIN )
             {
                 return false;
             }
@@ -601,21 +626,7 @@ bool socket_connect(Socket *socket, Socket_Address address)
     return true;
 }
 
-void socket_close(Socket *socket)
-{
-    if (socket && socket->handle)
-    {
-        #if OS_WINDOWS
-        closesocket(socket->handle);
-        #else
-        close(socket->handle);
-        #endif
-
-        socket->handle = 0;
-    }
-}
-
-bool socket_can_write(Socket *socket)
+function bool socket_can_write(Socket *socket)
 {
     if (!socket) return false;
 
@@ -623,7 +634,7 @@ bool socket_can_write(Socket *socket)
     FD_ZERO(&write_fds);
     FD_SET(socket->handle, &write_fds);
 
-    TIMEVAL timeout;
+    struct timeval timeout;
     timeout.tv_sec = 0;
     timeout.tv_usec = 0;
 
@@ -639,9 +650,7 @@ bool socket_can_write(Socket *socket)
     return false;
 }
 
-// @Cleanup @Incomplete: socket_is_ready should really be socket_is_ready_to_write
-// Also merge this with socket_can_write if possible??
-bool socket_is_ready(Socket *socket)
+function bool socket_is_ready(Socket *socket)
 {
     if (!socket) return false;
 
@@ -649,7 +658,7 @@ bool socket_is_ready(Socket *socket)
     FD_ZERO(&write_fds);
     FD_SET(socket->handle, &write_fds);
 
-    TIMEVAL timeout;
+    struct timeval timeout;
     timeout.tv_sec = 0;
     timeout.tv_usec = 0;
 
@@ -658,7 +667,7 @@ bool socket_is_ready(Socket *socket)
     return result > 0;
 }
 
-bool socket_send(Socket *socket, Socket_Address address, String message)
+function bool socket_send(Socket *socket, Socket_Address address, String message)
 {
     if (!socket) return false;
 
@@ -669,13 +678,7 @@ bool socket_send(Socket *socket, Socket_Address address, String message)
         addr.sin_addr.s_addr = address.host;
         addr.sin_port        = htons(address.port);
 
-        int sent_bytes = sendto(socket->handle, (char *)message.data, message.count, 0, (sockaddr *)&addr, sizeof(addr));
-        if (sent_bytes < 0)
-        {
-            return false;
-        }
-
-        // @Incomplete: should this send the message in chunks?
+        int sent_bytes = sendto(socket->handle, (char *)message.data, message.count, 0, (struct sockaddr *)&addr, sizeof(addr));
         if (sent_bytes != message.count)
         {
             //return zed_net__error("Failed to send data");
@@ -689,34 +692,17 @@ bool socket_send(Socket *socket, Socket_Address address, String message)
         // @Incomplete: non-blocking TCP
 
         int sent_bytes = send(socket->handle, (char *)message.data, message.count, 0);
-        if (sent_bytes < 0)
-        {
-            return false;
-        }
-
-        // @Incomplete: check errno == EAGAIN or errno == EWOULDBLOCK
-        // and use select to determine when we can send again?
         if (sent_bytes != message.count)
         {
-            u8 *data = message.data + sent_bytes;
-            while (sent_bytes < message.count)
-            {
-                i64 bytes_remaining = message.count - sent_bytes;
-                i64 s = send(socket->handle, (char *)(message.data + sent_bytes), bytes_remaining, 0);
-                if (s > 0)
-                {
-                    sent_bytes += s;
-                }
-            }
-
-            return true;
+            //return zed_net__error("Failed to send data");
+            return false;
         }
 
         return true;
     }
 }
 
-i64 socket_recieve_bytes(Socket *socket, u8 *data, u64 count, Socket_Address *address)
+function i64 socket_recieve_bytes(Socket *socket, u8 *data, u64 count, Socket_Address *address)
 {
     if (!socket) return false;
 
@@ -728,12 +714,12 @@ i64 socket_recieve_bytes(Socket *socket, u8 *data, u64 count, Socket_Address *ad
 
     if (socket->type == SocketType_UDP)
     {
-        SOCKADDR_IN from;
+        struct sockaddr_in from;
         int from_size = sizeof(from);
 
         int bytes_received = recvfrom(
             socket->handle,
-            (char *)data, count, 0, (sockaddr *)&from, (socklen_t *)&from_size
+            (char *)data, count, 0, (struct sockaddr *)&from, (socklen_t *)&from_size
         );
 
         if (address != NULL)
@@ -752,7 +738,7 @@ i64 socket_recieve_bytes(Socket *socket, u8 *data, u64 count, Socket_Address *ad
     }
 }
 
-bool socket_recieve(Socket *socket, String *buffer, Socket_Address *address)
+function bool socket_recieve(Socket *socket, String *buffer, Socket_Address *address)
 {
     i64 count = socket_recieve_bytes(socket, buffer->data, buffer->count, address);
     if (count >= 0)
@@ -762,7 +748,7 @@ bool socket_recieve(Socket *socket, String *buffer, Socket_Address *address)
     return count > 0;
 }
 
-String socket_recieve_entire_stream(Arena *arena, Socket *socket)
+function String socket_recieve_entire_stream(Arena *arena, Socket *socket)
 {
     i64 bytes_received = 0;
     i64 buffer_size = 4096;
@@ -772,24 +758,19 @@ String socket_recieve_entire_stream(Arena *arena, Socket *socket)
     for (;;)
     {
         i64 count = socket_recieve_bytes(socket, at, buffer_size, NULL);
-        if (count <= 0)
-        {
-            // @Incomplete: test this?
-            if (bytes_received > 0) break;
-            else continue;
-        }
+        if (count <= 0) break;
 
         bytes_received += count;
         at += count;
-        buffer_size += 4096;
+        buffer_size *= 2;
         assert(arena_push(arena, buffer_size));
     }
 
     arena_pop(arena, buffer_size - bytes_received);
-    return make_string(buffer, bytes_received);
+    return string_make(buffer, bytes_received);
 }
 
-void socket_shutdown()
+function void socket_shutdown()
 {
     #if OS_WINDOWS
     if (w32_socket_lib)
@@ -802,7 +783,7 @@ void socket_shutdown()
     #endif // OS_WINDOWS
 }
 
-String socket_get_address_name(Socket_Address address)
+function String socket_get_address_name(Socket_Address address)
 {
     char ip4[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &address.host, ip4, INET_ADDRSTRLEN);
@@ -816,26 +797,28 @@ String socket_get_address_name(Socket_Address address)
     return string_from_cstr(ip4);
 }
 
-bool socket_is_valid(Socket socket)
+function bool socket_is_valid(Socket socket)
 {
     // @Incomplete @Robustness: can valid socket handles be 0?
     return socket.handle != INVALID_SOCKET && socket.handle != 0;
 }
 
-Socket_Address socket_make_address_from_url(String url)
+function Socket_Address socket_make_address_from_url(String url)
 {
-    URL_Parts parts = socket_parse_url(url);
-    return socket_make_address(string_to_cstr(parts.host), parts.port);
+    Http_Url_Parts parts = socket_parse_url(url);
+    return socket_make_address(string_to_cstr(temp_arena(), parts.host), parts.port);
 }
 
-Socket socket_create_udp_server(Socket_Address address)
+function Socket socket_create_udp_server(Socket_Address address)
 {
+    socket_init();
+
     Socket result = socket_open(SocketType_UDP);
 
     if (!socket_bind(&result, address))
     {
         String url = socket_get_address_name(address);
-        print("[socket] Failed to bind to address: %S\n", url);
+        print("[socket] Failed to bind to address: %.*s\n", LIT(url));
         socket_close(&result);
         return result;
     }
@@ -843,8 +826,10 @@ Socket socket_create_udp_server(Socket_Address address)
     return result;
 }
 
-Socket socket_create_udp_client(Socket_Address address)
+function Socket socket_create_udp_client(Socket_Address address)
 {
+    socket_init();
+
     Socket result = socket_open(SocketType_UDP);
 
     //socket_bind(&result, socket_make_address(0, 0));
@@ -852,7 +837,7 @@ Socket socket_create_udp_client(Socket_Address address)
     if (!socket_connect(&result, address))
     {
         String url = socket_get_address_name(address);
-        print("[socket] Failed to connect to server address: %S\n", url);
+        print("[socket] Failed to connect to server address: %.*s\n", LIT(url));
         socket_close(&result);
         return result;
     }
@@ -860,32 +845,13 @@ Socket socket_create_udp_client(Socket_Address address)
     return result;
 }
 
-
-Http http_get(String url)
+function Http http_request(String verb, String url, String headers, String data)
 {
-    return http_request(S("GET"), url, {}, {});
-}
+    socket_init();
 
-Http http_post(String url, String data)
-{
-    return http_request(S("POST"), url, {}, data);
-}
+    Http result = {0};
 
-Http http_put(String url, String data)
-{
-    return http_request(S("PUT"), url, {}, data);
-}
-
-Http http_delete(String url)
-{
-    return http_request(S("DELETE"), url, {}, {});
-}
-
-Http http_request(String verb, String url, String headers, String data)
-{
-    Http result = {};
-
-    URL_Parts parts = socket_parse_url(url);
+    Http_Url_Parts parts = socket_parse_url(url);
     if (!parts.path.count)
     {
         parts.path = S("/");
@@ -893,7 +859,7 @@ Http http_request(String verb, String url, String headers, String data)
 
     if (parts.protocol.count > 0 && !string_equals(parts.protocol, S("http")))
     {
-        print("[http] Protocol not supported: %S\n", parts.protocol);
+        print("[http] Protocol not supported: %.*s\n", LIT(parts.protocol));
         result.status = HttpStatus_Failed;
         return result;
     }
@@ -905,7 +871,7 @@ Http http_request(String verb, String url, String headers, String data)
         return result;
     }
 
-    Socket_Address address = socket_make_address(string_to_cstr(parts.host), parts.port);
+    Socket_Address address = socket_make_address(string_to_cstr(temp_arena(), parts.host), parts.port);
 
     result.socket = socket_open(SocketType_TCP);
     if (!socket_connect(&result.socket, address))
@@ -918,57 +884,110 @@ Http http_request(String verb, String url, String headers, String data)
 
     assert(string_starts_with(parts.path, S("/")));
 
-    // @Robustness: we need a better string building story
-    // If you print anything at all into temp_arena() during this section, then you
-    // will mess up the request!
-    // :StringTempMemorySituation
+    M_Temp scratch = GetScratch(0, 0);
 
-    String request_data = sprint("%S %S HTTP/1.0\r\nHost: %S:%d\r\n", verb, parts.path, parts.host, parts.port);
+    String_Array chunks = {0};
+    chunks.data = PushArray(scratch.arena, String, 16);
+    chunks.count = 0;
+
+    String request_data = string_print(scratch.arena, "%.*s %.*s HTTP/1.0\r\nHost: %.*s:%d\r\n", LIT(verb), LIT(parts.path), LIT(parts.host), parts.port);
+    chunks.data[chunks.count] = request_data;
+    chunks.count += 1;
 
     if (data.count)
     {
-        request_data.count += sprint("Content-Length: %d", data.count).count;
+        String content_header = string_print(scratch.arena, "Content-Length: %d", data.count);
+        chunks.data[chunks.count] = content_header;
+        chunks.count += 1;
     }
 
     if (headers.count)
     {
-        request_data.count += sprint("%S", headers).count;
+        chunks.data[chunks.count] = headers;
+        chunks.count += 1;
     }
 
-    request_data.count += sprint("\r\n\r\n").count;
+    chunks.data[chunks.count] = string_print(scratch.arena, "\r\n\r\n");
+    request_data.count += 1;
 
     if (data.count)
     {
-        request_data.count += sprint("%S", data).count;
+        chunks.data[chunks.count] = data;
+        chunks.count += 1;
     }
 
-    result.request_data = string_alloc(os_allocator(), request_data);
+    String request = string_concat_array(scratch.arena, chunks.data, chunks.count);
+
+    result.request_data = string_alloc(request);
     result.status       = HttpStatus_Pending;
+
+    ReleaseScratch(scratch);
 
     return result;
 }
 
-Array<Http_Header> http_parse_headers(String headers)
+function Http http_get(String url)
 {
-    Array<Http_Header> results = {};
-    results.allocator = temp_allocator();
+    return http_request(S("GET"), url, S(""), S(""));
+}
 
-    Array<String> lines = string_split(headers, S("\r\n"));
-    array_init_from_allocator(&results, temp_allocator(), lines.count);
+function Http http_post(String url, String data)
+{
+    return http_request(S("POST"), url, S(""), data);
+}
 
-    for (i64 i = 0; i < lines.count; i += 1)
+function Http http_put(String url, String data)
+{
+    return http_request(S("PUT"), url, S(""), data);
+}
+
+function Http http_delete(String url)
+{
+    return http_request(S("DELETE"), url, S(""), S(""));
+}
+
+function Http_Header_Array http_parse_headers(Arena *arena, String headers)
+{
+    Http_Header_Array result = {0};
+
+    result.data = PushArray(arena, Http_Header, 1024);
+    result.count = 0;
+    result.capacity = 1024;
+
+    i64 prev_index = 0;
+    i64 index = string_find(headers, S("\r\n"), 0, 0);
+
+    while (index < headers.count)
     {
-        String line = lines[i];
-        i64 index = string_find(line, S(":"));
-        if (index < line.count)
+        String line = string_slice(headers, prev_index, index);
+        i64 i = string_find(line, S(":"), 0, 0);
+        if (i < line.count)
         {
-            Http_Header *it = array_push(&results);
-            it->key   = string_slice(line, 0, index);
-            it->value = string_trim_whitespace(string_slice(line, index + 1));
+            assert(result.count < result.capacity);
+            Http_Header *it = &result.data[result.count];
+            result.count += 1;
+            it->key   = string_slice(line, 0, i);
+            it->value = string_trim_whitespace(string_slice(line, i + 1, line.count));
         }
+
+        prev_index = index + S("\r\n").count;
+        index = string_find(headers, S("\r\n"), prev_index + 1, 0);
     }
 
-    return results;
+    String line = string_slice(headers, prev_index, index);
+    i64 i = string_find(line, S(":"), 0, 0);
+    if (i < line.count)
+    {
+        assert(result.count < result.capacity);
+        Http_Header *it = &result.data[result.count];
+        result.count += 1;
+        it->key   = string_slice(line, 0, i);
+        it->value = string_trim_whitespace(string_slice(line, i + 1, line.count));
+    }
+
+    // @Memory: release over-allocated count
+
+    return result;
 }
 
 void http_process(Http *http)
@@ -996,7 +1015,7 @@ void http_process(Http *http)
             return;
         }
 
-        string_free(os_allocator(), &http->request_data);
+        string_free(&http->request_data);
         http->request_sent = true;
         return;
     }
@@ -1033,35 +1052,34 @@ void http_process(Http *http)
 
         arena_pop(arena, buffer_size - bytes_received);
 
-        String response_data = make_string(buffer, bytes_received);
+        String response_data = string_make(buffer, bytes_received);
 
-        i64 index = string_find(response_data, S("\r\n"));
+        i64 index = string_find(response_data, S("\r\n"), 0, 0);
         if (index < response_data.count)
         {
             String first = string_slice(response_data, 0, index);
+            String_Array first_parts = string_array_from_list(temp_arena(), string_split(temp_arena(), first, S(" ")));
 
-            // @Cleanup: be less lazy here:
-            Array<String> first_parts = string_split(first, S(" "));
-            i64 status_code = string_to_i64(first_parts[1]);
+            i64 status_code = string_to_i64(first_parts.data[1], 10);
             if (!(status_code > 0 && status_code < 1000))
             {
                 status_code = 0;
             }
             http->status_code = status_code;
 
-            i64 header_end_index = string_find(response_data, S("\r\n\r\n"), index + S("\r\n").count);
+            i64 header_end_index = string_find(response_data, S("\r\n\r\n"), index + S("\r\n").count, 0);
             if (header_end_index < response_data.count)
             {
                 http->response_headers = string_slice(response_data, index + S("\r\n").count, header_end_index);
-                http->response_body = string_slice(response_data, header_end_index + S("\r\n\r\n").count);
+                http->response_body = string_slice(response_data, header_end_index + S("\r\n\r\n").count, response_data.count);
             }
         }
 
         if (http->response_headers.count)
         {
-            i64 content_type_index = string_find(http->response_headers, S("Content-Type:"), 0, MatchFlags_IgnoreCase);
+            i64 content_type_index = string_find(http->response_headers, S("Content-Type:"), 0, MatchFlag_IgnoreCase);
             content_type_index += S("Content-Type:").count;
-            i64 content_type_end_index = string_find(http->response_headers, S("\r\n"), content_type_index);
+            i64 content_type_end_index = string_find(http->response_headers, S("\r\n"), content_type_index, 0);
 
             if (
                 content_type_index < http->response_headers.count &&
@@ -1081,21 +1099,24 @@ void http_process(Http *http)
 }
 
 
-void http_init(Http_Manager *manager)
+function void http_init(Http_Manager *manager)
 {
-    array_init_from_allocator(&manager->requests, os_allocator(), 16);
+    manager->arena = arena_alloc(Gigabytes(1));
 }
 
-void http_add(Http_Manager *manager, Http request)
+function void http_add(Http_Manager *manager, Http request)
 {
-    array_push(&manager->requests, request);
+    // @Incomplete!
+    //array_push(&manager->requests, request);
 }
 
-void http_update(Http_Manager *manager)
+function void http_update(Http_Manager *manager)
 {
+    // @Incomplete!
+    /*
     For_Index (manager->requests)
     {
-        Http *it = &manager->requests[index];
+        auto it = &manager->requests[index];
         if (it->status != HttpStatus_Pending)
         {
             array_remove_ordered(&manager->requests, index);
@@ -1107,27 +1128,28 @@ void http_update(Http_Manager *manager)
     {
         http_process(it);
     }
+    */
 }
 
 
-Http_Request http_parse_request(String request)
+function Http_Request http_parse_request(String request)
 {
-    Http_Request result = {};
+    Http_Request result = {0};
 
     i64 index;
 
-    index = string_find(request, S("\r\n"));
+    index = string_find(request, S("\r\n"), 0, 0);
     if (index < request.count)
     {
         request = string_slice(request, 0, index);
     }
 
-    index = string_find(request, S(" "));
+    index = string_find(request, S(" "), 0, 0);
     if (index < request.count)
     {
         result.method = string_slice(request, 0, index);
 
-        i64 index2 = string_find(request, S(" "), index + 1);
+        i64 index2 = string_find(request, S(" "), index + 1, 0);
         if (index2 < request.count)
         {
             result.url = string_slice(request, index + 1, index2);
@@ -1137,14 +1159,14 @@ Http_Request http_parse_request(String request)
     return result;
 }
 
-Socket socket_create_tcp_server(Socket_Address address)
+function Socket socket_create_tcp_server(Socket_Address address)
 {
     Socket result = socket_open(SocketType_TCP);
 
     if (!socket_bind(&result, address))
     {
         String url = socket_get_address_name(address);
-        print("[socket] Failed to bind to address: %S:%d\n", url, address.port);
+        print("[socket] Failed to bind to address: %.*s:%d\n", LIT(url), address.port);
         socket_close(&result);
         return result;
     }
@@ -1160,9 +1182,9 @@ Socket socket_create_tcp_server(Socket_Address address)
 }
 
 // https://developer.mozilla.org/en-US/docs/Web/HTTP/Status
-String http_status_name_from_code(i32 status_code)
+function String http_status_name_from_code(i32 status_code)
 {
-    String result = {};
+    String result = {0};
     switch (status_code)
     {
         // 100s
@@ -1226,11 +1248,11 @@ String http_status_name_from_code(i32 status_code)
 }
 
 // https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Common_types
-String http_content_type_from_extension(String ext)
+function String http_content_type_from_extension(String ext)
 {
-    String result = {};
+    String result = {0};
 
-    ext = string_lower(ext);
+    string_to_lower(&ext);
 
     if (false) {}
     else if (string_equals(ext, S(".html"))) { result = S("text/html"); }
@@ -1253,9 +1275,11 @@ String http_content_type_from_extension(String ext)
     else if (string_equals(ext, S(".bin")))  { result = S("application/octet-stream"); }
     else if (string_equals(ext, S(".exe")))  { result = S("application/octet-stream"); }
     else if (string_equals(ext, S(".pdf")))  { result = S("application/pdf"); }
+    
     return result;
 }
 
+typedef struct Http_Server Http_Server;
 struct Http_Server
 {
     Socket socket;
@@ -1264,6 +1288,7 @@ struct Http_Server
 #define HTTP_REQUEST_CALLBACK(name) void name(Http_Request *request, Http_Response *response)
 typedef HTTP_REQUEST_CALLBACK(Http_Request_Callback);
 
+typedef struct Http_Thread_Params Http_Thread_Params;
 struct Http_Thread_Params
 {
     Socket client;
@@ -1280,120 +1305,111 @@ THREAD_PROC(http_responder_thread)
     Http_Request request = http_parse_request(raw_request);
     request.address = params->client_address;
 
-    Http_Response response = {};
+    Http_Response response = {0};
     params->request_handler(&request, &response);
 
     if (!response.status_code) response.status_code = (response.body.count > 0) ? 200 : 500;
     if (!response.content_type.count) response.content_type = S("text/plain");
 
+    
+    M_Temp scratch = GetScratch(0, 0);
+
+    String_Array chunks = {0};
+    chunks.data = PushArray(scratch.arena, String, 2048);
+    chunks.count = 0;
 
     String status_name = http_status_name_from_code(response.status_code);
-    String response_data = sprint("HTTP/1.0 %d %S\r\n", response.status_code, status_name);
-    // :StringTempMemorySituation
+    String response_data = string_print(scratch.arena, "HTTP/1.0 %d %.*s\r\n", response.status_code, LIT(status_name));
+    chunks.data[chunks.count] = response_data;
+    chunks.count += 1;
 
     if (response.content_type.count)
     {
-        response_data.count += sprint("Content-Type: %S\r\n", response.content_type).count;
+        chunks.data[chunks.count] = string_print(scratch.arena, "Content-Type: %.*s\r\n", LIT(response.content_type));
+        chunks.count += 1;
     }
 
     if (response.body.count)
     {
-        response_data.count += sprint("Content-Length: %d\r\n", response.body.count).count;
+        chunks.data[chunks.count] = string_print(scratch.arena, "Content-Length: %d\r\n", response.body.count);
+        chunks.count += 1;
     }
 
     if (response.headers.count > 0)
     {
-        For (response.headers)
+        for (int index = 0; index < response.headers.count; index += 1)
         {
-            response_data.count += sprint("%S: %S\r\n", it.key, it.value).count;
+            Http_Header it = response.headers.data[index];
+
+            assert(chunks.count < 2048);
+            chunks.data[chunks.count] = string_print(scratch.arena, "%.*s: %.*s\r\n", LIT(it.key), LIT(it.value));
+            chunks.count += 1;
         }
     }
 
-    response_data.count += sprint("\r\n").count;
+    assert(chunks.count < 2048);
+    chunks.data[chunks.count] = S("\r\n");
+    chunks.count += 1;
 
-    socket_send(client, {}, response_data);
+    String response_payload = string_concat_array(scratch.arena, chunks.data, chunks.count);
+    socket_send(client, {}, response_payload);
 
     if (response.body.count)
     {
-        while (!socket_send(client, {}, response.body))
-        {
-        }
+        socket_send(client, {}, response.body);
     }
 
     socket_close(client);
     return 0;
 }
 
-Http_Server http_server_init(String server_url)
+function Http_Server http_server_init(String server_url)
 {
-    Http_Server result =  {};
+    Http_Server result = {0};
     Socket_Address address = socket_make_address_from_url(server_url);
     result.socket = socket_create_tcp_server(address);
     return result;
 }
 
-bool http_server_poll(Http_Server *server, Socket *client, Socket_Address *client_address)
+function bool http_server_poll(Http_Server *server, Socket *client, Socket_Address *client_address)
 {
     return socket_accept(&server->socket, client, client_address);
 }
 
-void http_server_tick(Http_Server *server, Http_Request_Callback request_handler)
+function void http_server_tick(Http_Server *server, Http_Request_Callback request_handler)
 {
     Socket client;
     Socket_Address client_address;
     while (http_server_poll(server, &client, &client_address))
     {
-        Http_Thread_Params params = {};
+        Http_Thread_Params params = {0};
         params.client = client;
         params.client_address = client_address;
         params.request_handler = request_handler;
 
         // TODO(nick): we should spin up a bunch of threads ahead of time
-        Thread thread = os_create_thread_with_params(megabytes(1), http_responder_thread, &params, sizeof(Http_Thread_Params));
-        os_detatch_thread(thread);
+        Thread thread = thread_create(http_responder_thread, &params, sizeof(Http_Thread_Params));
+        thread_detach(thread);
     }
 }
 
-void http_server_run(String server_url, Http_Request_Callback request_handler)
+function void http_server_run(String server_url, Http_Request_Callback request_handler)
 {
     socket_init();
 
     Http_Server server = http_server_init(server_url);
     if (!socket_is_valid(server.socket))
     {
-        print("Failed to start HTTP server at %S\n", server_url);
+        print("Failed to start HTTP server at %.*s\n", LIT(server_url));
         return;
     }
 
     while (1)
     {
-        reset_temporary_storage();
+        arena_reset(temp_arena());
         http_server_tick(&server, request_handler);
         os_sleep(1);
     }
 }
 
-#if 0
-    Socket socket = socket_create_tcp_server(socket_make_address_from_url(S("127.0.0.1:3000")));
-    Socket client;
-
-    while (1)
-    {
-        reset_temporary_storage();
-
-        Socket client;
-        Socket_Address client_address;
-        if (socket_accept(&socket, &client, &client_address))
-        {
-            print("Got request from %S:%d\n", socket_get_address_name(client_address), client_address.port);
-            
-            String request = socket_recieve_entire_stream(temp_arena(), &client);
-            socket_send(&client, {}, S("HTTP/1.1 200 OK\r\n\r\nHello, World!\r\n\r\n"));
-            socket_close(&client);
-        }
-
-        os_sleep(1);
-    }
-#endif
-
-#endif // NA_NET_IMPLEMENTATION
+#endif // impl

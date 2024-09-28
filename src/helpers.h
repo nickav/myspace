@@ -1,3 +1,37 @@
+void string_advance(String *str, i64 amount)
+{
+    if (amount > str->count) amount = str->count;
+
+    str->data += amount;
+    str->count -= amount;
+}
+
+String string_from_month(Month month)
+{
+    static String string_table[] = {
+        S(""),
+        S("January"),
+        S("February"),
+        S("March"),
+        S("April"),
+        S("May"),
+        S("June"),
+        S("July"),
+        S("August"),
+        S("September"),
+        S("October"),
+        S("November"),
+        S("December")
+    };
+
+    String result = {0};
+    if (month < count_of(string_table))
+    {
+        result = string_table[month];
+    }
+    return result;
+}
+
 String minify_css(String str)
 {
     u8 *data = PushArray(temp_arena(), u8, str.count);
@@ -24,7 +58,7 @@ String minify_css(String str)
         // NOTE(nick): eat whitespace
         if (it == '\r' || it == '\n')
         {
-            string_eat_whitespace(&str);
+            str = string_eat_whitespace(str);
             continue;
         }
 
@@ -114,7 +148,7 @@ String minify_css(String str)
         did_write_char = true;
     }
 
-    return make_string(data, at - data);
+    return string_make(data, at - data);
 }
 
 String minify_js(String str)
@@ -130,7 +164,7 @@ String minify_js(String str)
 
         if (it == '\r' || it == '\n')
         {
-            string_eat_whitespace(&str);
+            str = string_eat_whitespace(str);
             continue;
         }
 
@@ -152,7 +186,7 @@ String minify_js(String str)
         did_write_char = true;
     }
 
-    return make_string(data, at - data);
+    return string_make(data, at - data);
 }
 
 u64 ParsePostID(String name)
@@ -160,25 +194,25 @@ u64 ParsePostID(String name)
     name = path_strip_extension(name);
     name = path_filename(name);
 
-    i64 idx = string_find(name, S("_"));
+    i64 idx = string_find(name, S("_"), 0, 0);
     name = string_slice(name, 0, idx);
-    return (i64)string_to_i64(name);
+    return (i64)string_to_i64(name, 10);
 }
 
 Date_Time ParsePostDate(String str)
 {
     Date_Time result = {};
 
-    string_trim_whitespace(&str);
+    str = string_trim_whitespace(str);
 
     String part0 = str;
     String part1 = {};
 
-    i64 space_index = string_index(str, S(" "));
+    i64 space_index = string_index(str, S(" "), 0);
     if (space_index >= 0)
     {
         part0 = string_slice(str, 0, space_index);
-        part1 = string_trim_whitespace(string_slice(str, space_index));
+        part1 = string_trim_whitespace(string_slice(str, space_index, str.count));
     }
 
     if (part0.count > 0)
@@ -192,9 +226,9 @@ Date_Time ParsePostDate(String str)
             auto mm   = string_slice(part0, 5, 7);
             auto dd   = string_slice(part0, 8, 10);
 
-            result.year = string_to_i64(yyyy);
-            result.mon  = string_to_i64(mm);
-            result.day  = string_to_i64(dd);
+            result.year = string_to_i64(yyyy, 10);
+            result.mon  = string_to_i64(mm, 10);
+            result.day  = string_to_i64(dd, 10);
         }
         else if (part0.count == 10 && !char_is_digit(part0[2]) && !char_is_digit(part0[5]))
         {
@@ -203,35 +237,35 @@ Date_Time ParsePostDate(String str)
             auto dd   = string_slice(part0, 3, 5);
             auto yyyy = string_slice(part0, 6, 10);
 
-            result.year = string_to_i64(yyyy);
-            result.mon  = string_to_i64(mm);
-            result.day  = string_to_i64(dd);
+            result.year = string_to_i64(yyyy, 10);
+            result.mon  = string_to_i64(mm, 10);
+            result.day  = string_to_i64(dd, 10);
         }
     }
 
     if (part1.count > 0)
     {
-        i64 i0 = string_index(part1, ':');
+        i64 i0 = string_index(part1, S(":"), 0);
         if (i0 > 0)
         {
             auto hh = string_slice(part1, 0, i0);
             auto mm = String{};
             auto ss = String{};
 
-            i64 i1 = string_index(part1, ':', i0 + 1);
+            i64 i1 = string_index(part1, S(":"), i0 + 1);
             if (i1 > 0)
             {
                 mm = string_slice(part1, i0 + 1, i1);
-                ss = string_slice(part1, i1 + 1);
+                ss = string_slice(part1, i1 + 1, part1.count);
             }
             else
             {
-                mm = string_slice(part1, i0);
+                mm = string_slice(part1, i0, part1.count);
             }
 
-            result.hour = string_to_i64(hh);
-            result.min  = string_to_i64(mm);
-            result.sec  = string_to_i64(ss);
+            result.hour = string_to_i64(hh, 10);
+            result.min  = string_to_i64(mm, 10);
+            result.sec  = string_to_i64(ss, 10);
         }
     }
 
