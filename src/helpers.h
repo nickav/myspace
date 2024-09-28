@@ -305,6 +305,8 @@ static char unsigned DefaultSeed[16] =
     2, 209, 178, 114, 232, 4, 176, 188
 };
 
+// TODO(nick): port this to MacOS
+
 struct Asset_Hash
 {
     __m128i value;
