@@ -63,10 +63,17 @@ struct C_Token {
     String     value;
 };
 
-Array<C_Token> c_tokenize(String text)
+struct C_Token_Array {
+    Arena *arena;
+    C_Token *data;
+    i64 count;
+    i64 capacity;
+};
+
+C_Token_Array c_tokenize(Arena *arena, String text)
 {
-    Array<C_Token> tokens = {};
-    array_init_from_allocator(&tokens, temp_allocator(), 256);
+    C_Token_Array tokens = {};
+    array_init_from_arena(&tokens, arena, 2048);
 
     i64 i = 0;
     while (i < text.count)
@@ -93,12 +100,12 @@ Array<C_Token> c_tokenize(String text)
                 i64 start = i;
 
                 i += 2; // skip the //
-                while (i < text.count && text[i] != '\n')
+                while (i < text.count && text.data[i] != '\n')
                 {
                     i += 1;
                 }
 
-                auto token = array_push(&tokens);
+                auto token = array_push(&tokens, {0});
                 token->type = C_TokenType_Comment;
                 token->value = string_slice(text, start, i);
                 i += 1;
@@ -108,7 +115,7 @@ Array<C_Token> c_tokenize(String text)
             if (text.data[i + 1] == '*')
             {
                 i64 start = i;
-                auto at = string_slice(text, i + 2);
+                auto at = string_slice(text, i + 2, text.count);
                 i64 scope_depth = 1;
                 while (at.count > 0 && scope_depth > 0)
                 {
@@ -130,7 +137,7 @@ Array<C_Token> c_tokenize(String text)
 
                 auto value = string_slice(text, start, i + 2);
 
-                auto token = array_push(&tokens);
+                auto token = array_push(&tokens, {0});
                 token->type = C_TokenType_Comment;
                 token->value = value;
                 i += 2;
@@ -166,7 +173,7 @@ Array<C_Token> c_tokenize(String text)
             }
             i += 1;
 
-            auto token = array_push(&tokens);
+            auto token = array_push(&tokens, {0});
             token->type = C_TokenType_String;
             token->value = string_slice(text, start, i);
             continue;
@@ -179,7 +186,7 @@ Array<C_Token> c_tokenize(String text)
             i += 1;
             while (i < text.count && char_is_alpha(text[i])) i += 1;
 
-            auto token = array_push(&tokens);
+            auto token = array_push(&tokens, {0});
             token->type = C_TokenType_Macro;
             token->value = string_slice(text, start, i);
             continue;
@@ -209,7 +216,7 @@ Array<C_Token> c_tokenize(String text)
 
             // @Incomplete: suffixes
 
-            auto token = array_push(&tokens);
+            auto token = array_push(&tokens, {0});
             token->type = C_TokenType_Number;
             token->value = string_slice(text, start, i);
             continue;
@@ -228,7 +235,7 @@ Array<C_Token> c_tokenize(String text)
                 auto it = literals[j];
                 if (string_starts_with(slice, it))
                 {
-                    auto token = array_push(&tokens);
+                    auto token = array_push(&tokens, {0});
                     token->type = C_TokenType_Literal;
                     token->value = string_slice(text, i, i + it.count);
                     i += it.count;
@@ -251,7 +258,7 @@ Array<C_Token> c_tokenize(String text)
                 i ++;
             }
 
-            auto token = array_push(&tokens);
+            auto token = array_push(&tokens, {0});
             token->type = C_TokenType_Identifier;
             token->value = string_slice(text, start, i);
             continue;
@@ -262,7 +269,7 @@ Array<C_Token> c_tokenize(String text)
 
         if (it == ';')
         {
-            auto token = array_push(&tokens);
+            auto token = array_push(&tokens, {0});
             token->type = C_TokenType_Semicolon;
             token->value = string_slice(text, i, i + 1);
             i += 1;
@@ -271,7 +278,7 @@ Array<C_Token> c_tokenize(String text)
 
         if (it == '(' || it == ')')
         {
-            auto token = array_push(&tokens);
+            auto token = array_push(&tokens, {0});
             token->type = C_TokenType_Paren;
             token->value = string_slice(text, i, i + 1);
             i += 1;
@@ -304,14 +311,14 @@ Array<C_Token> c_tokenize(String text)
             false
         )
         {
-            auto token = array_push(&tokens);
+            auto token = array_push(&tokens, {0});
             token->type = C_TokenType_Operator;
             token->value = string_slice(text, i, i + 1);
             i += 1;
             continue;
         }
 
-        auto token = array_push(&tokens);
+        auto token = array_push(&tokens, {0});
         token->type = C_TokenType_Unknown;
         token->value = string_slice(text, i, i + 1);
         i ++;
@@ -329,7 +336,7 @@ String c_token_type_to_string(C_Token_Type type)
     return S("");
 }
 
-void print_tokens(Array<C_Token> tokens)
+void print_tokens(C_Token_Array tokens)
 {
     For (tokens) {
         auto type = c_token_type_to_string(it.type);
@@ -361,7 +368,7 @@ void c_convert_token_c_like(C_Token *it, C_Token *prev)
 {
     if (it->type == C_TokenType_Identifier)
     {
-        auto lower = string_lower(it->value);
+        auto lower = string_lower(temp_arena(), it->value);
         if (
             string_equals(lower, S("return")) ||
             string_equals(lower, S("if")) ||
@@ -481,11 +488,11 @@ void c_convert_token_c_like(C_Token *it, C_Token *prev)
     }
 }
 
-void c_convert_tokens_to_c_like(Array<C_Token> tokens)
+void c_convert_tokens_to_c_like(C_Token_Array tokens)
 {
     For_Index (tokens) {
-        auto it = &tokens[index];
-        auto prev = index > 0 ? &tokens[index - 1] : null;
+        auto it = &tokens.data[index];
+        auto prev = index > 0 ? &tokens.data[index - 1] : NULL;
         c_convert_token_c_like(it, prev);
     }
 }

@@ -349,8 +349,8 @@ static STBSP__ASAN stbsp__uint32 stbsp__strlen_limited(char const *s, stbsp__uin
 // NOTE(nick): custom string type
 #include <stdint.h>
 struct stbsp_String {
-  uint64_t count;
   uint8_t *data;
+  int64_t count;
 };
 
 STBSP__PUBLICDEF int STB_SPRINTF_DECORATE(vsprintfcb)(STBSP_SPRINTFCB *callback, void *user, char *buf, char const *fmt, va_list va)

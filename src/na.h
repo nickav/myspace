@@ -1,13 +1,16 @@
 /*
-    na.h - v0.07
-    Nick Aversano's C++ helper library
+    na.h - v0.08
+    Nick Aversano's C/C++ helper library
 
     This is a single header file with a bunch of useful stuff
-    to replace the C++ standard library.
+    to replace the C/C++ standard library.
 ===========================================================================
 
 USAGE
     Define this in your source file:
+
+    #define impl
+    #include "na.h"
 
 LICENSE
     This software is dual-licensed to the public domain and under the following
@@ -19,6 +22,8 @@ CREDITS
     Credits are much appreciated but not required.
 
 VERSION HISTORY
+    0.09  - linux support
+    0.08  - bug fixes, fix arena alignment on MacOS ARM
     0.07  - bug fixes
     0.06  - added comparision helpers, improved stretchy arrays API, added Timing_f64,
             actually seed random with os time
@@ -220,11 +225,21 @@ static const int __arch_endian_check_num = 1;
 #endif
 
 #ifdef __SANITIZE_ADDRESS__
-    #define __AsanPoisonMemoryRegion(addr, size) __asan_poison_memory_region((addr), (size))
-    #define __AsanUnpoisonMemoryRegion(addr, size) __asan_unpoison_memory_region((addr), (size))
+    #if OS_MACOS
+    #include <sanitizer/asan_interface.h>
+    #endif
+
+    #ifndef AsanPoisonMemoryRegion
+        void __asan_poison_memory_region(void const volatile *addr, unsigned long size);
+        #define AsanPoisonMemoryRegion(addr, size) __asan_poison_memory_region((addr), (size))
+    #endif
+    #ifndef AsanUnpoisonMemoryRegion
+        void __asan_unpoison_memory_region(void const volatile *addr, unsigned long size);
+        #define AsanUnpoisonMemoryRegion(addr, size) __asan_unpoison_memory_region((addr), (size))
+    #endif
 #else
-    #define __AsanPoisonMemoryRegion(addr, size) ((void)(addr), (void)(size))
-    #define __AsanUnpoisonMemoryRegion(addr, size) ((void)(addr)
+    #define AsanPoisonMemoryRegion(addr, size) ((void)(addr), (void)(size))
+    #define AsanUnpoisonMemoryRegion(addr, size) ((void)(addr), (void)(size))
 #endif
 
 #endif // BASE_CTX_CRACK_H
@@ -300,6 +315,10 @@ static const int __arch_endian_check_num = 1;
     #endif
 #endif
 
+#ifndef DEBUG
+#define DEBUG 0
+#endif
+
 //
 // Helper Macros
 //
@@ -330,7 +349,7 @@ static const int __arch_endian_check_num = 1;
 #define OffsetOf(S,m) IntFromPtr(&Member(S,m))
 #define CastFromMember(S,m,p) (S*)(((u8*)p) - OffsetOf(S,m))
 #define MemberFromOffset(ptr, off, type) *(type *)((u8 *)(ptr) + off)
-#define UnusedVariable(name) (void)name
+#define Unused(name) ((void)(name))
 
 #define Bytes(n)      (n)
 #define Kilobytes(n)  ((n) << 10)
@@ -354,7 +373,7 @@ static const int __arch_endian_check_num = 1;
 #define ToggleFlag(fl,fi) ((fl)^=(fi))
 #define SetFlagState(fl,fi,set) do { if (set) SetFlag(fl,fi); else RemFlag(fl,fi); } while (0)
 
-#define Swap(T,a,b) do { T t__ = a; a = b; b = t__; } while(0)
+#define Swap(T,a,b) do { T t__ = (a); (a) = (b); (b) = t__; } while(0)
 
 #define FourCC(a, b, c, d) \
     (((u32)(a) << 0) | ((u32)(b) << 8) | ((u32)(c) << 16) | ((u32)(d) << 24))
@@ -362,6 +381,8 @@ static const int __arch_endian_check_num = 1;
 #define FourCCStr(s) FourCC(s[0], s[1], s[2], s[3])
 
 #define InRange(x,lo,hi) (((x) >= (lo)) && ((x) <= (hi)))
+
+#define GetBit(x,bit) (((x) >> (bit)) & 0x1)
 
 #define count_of ArrayCount
 #define offset_of OffsetOf
@@ -387,15 +408,15 @@ static const int __arch_endian_check_num = 1;
     #endif
 #endif
 
-#define Swap2(a,b) do { typeof(a) t__ = a; a = b; b = t__; } while(0)
-
 #define DefineStruct(Type) typedef struct Type Type
 
 #if LANG_C
     #define Struct(Type) typedef struct Type Type; struct Type
+    #define StructLit(Type) (Type)
     // #define Enum(Type) typedef enum Type Type; enum Type
 #else
     #define Struct(Type) struct Type
+    #define StructLit(Type) Type
     // #define Enum(Type) enum Type
 #endif
     
@@ -466,12 +487,12 @@ zchk(p) ? (zset((n)->prev), (n)->next = (f), (zchk(f) ? (0) : ((f)->prev = (n)))
 // Defer
 //
 
-#define Defer(start, end) for(int __i = ((start), 0); !__i; __i += 1, (end))
-
 #ifndef CONCAT
     #define CONCAT_HELPER(x, y) x##y
     #define CONCAT(x, y) CONCAT_HELPER(x, y)
 #endif
+
+#define Defer(start, end) for (int CONCAT(__i, __LINE__) = ((start), 0); !CONCAT(__i, __LINE__); CONCAT(__i, __LINE__) += 1, (end))
 
 
 #if LANG_CPP
@@ -565,9 +586,9 @@ struct MemberOffset
 //
 
 #if COMPILER_MSVC
-    #define Trap() __debugbreak()
+    #define Breakpoint() __debugbreak()
 #elif COMPILER_CLANG || COMPILER_GCC
-    #define Trap() __builtin_trap()
+    #define Breakpoint() __builtin_trap()
 #endif
 
 int na__assert(bool cond, const char *expr, const char *file, long int line, char *msg) {
@@ -583,7 +604,7 @@ int na__assert(bool cond, const char *expr, const char *file, long int line, cha
         fflush(stdout);
 
         #if DEBUG
-        Trap();
+        Breakpoint();
         #endif
 
         *(volatile int *)0 = 0;
@@ -611,36 +632,75 @@ int na__assert(bool cond, const char *expr, const char *file, long int line, cha
 #define NotImplemented assert(!"Not Implemented")
 #define InvalidPath assert(!"Invalid Path")
 
+//
+// Variadic Macros
+//
+
+#define NameConcat2(A, B) A##B
+#define NameConcat(A, B) NameConcat2(A, B)
+
+#define ArgCount(...) _COUNTOF_CAT( _COUNTOF_A, ( 0, ##__VA_ARGS__, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0 ) )
+#define _COUNTOF_CAT( a, b ) a b
+#define _COUNTOF_A( a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, n, ... ) n
+
+//
+// NOTE(nick): you have to define the functions in reverse order, as in:
+// #define Dump(...) ArgSelectHelper4((__VA_ARGS__, Dump4, Dump3, Dump2, Dump1))(__VA_ARGS__)
+//
+
+#define ArgSelectHelper4_(_1, _2, _3, _4, NAME, ...) NAME
+#define ArgSelectHelper4(args) ArgSelectHelper4_ args
+
+#define ArgSelectHelper2_(_1, _2, NAME, ...) NAME
+#define ArgSelectHelper2(args) ArgSelectHelper2_ args
+
+// TODO(nick): implement these
+#define Likely(x) (x)
+#define Unlikely(x) (x)
+
+#define TestFunction(Name) bool Name()
+#define TestAssert(Cond) do { if (!(Cond)) return false; } while(0)
+#define TestAssertM(Cond, Message) do { if (!(Cond)) { print(Message); print("\n"); return false; } } while(0)
+#define TestAssertF(Cond, Message, ...) do { if (!(Cond)) { print(Message, __VA_ARGS__); print("\n"); return false; } } while(0)
+#define TestEntry(Proc) StructLit(TestFunction_Entry){Proc, #Proc}
+
+typedef struct TestFunction_Entry TestFunction_Entry;
+struct TestFunction_Entry
+{
+    bool (*fn)();
+    const char *name;
+};
+
+
 #endif // BASE_TYPES_H
 #ifndef BASE_MEMORY_H
 #define BASE_MEMORY_H
 
-#if !defined(ARENA_DEFAULT_ALIGNMENT)
-#define ARENA_DEFAULT_ALIGNMENT 8
-#endif
-
-#if !defined(ARENA_COMMIT_SIZE)
-#define ARENA_COMMIT_SIZE Kilobytes(4)
-#endif
-
-#if !defined(ARENA_INITIAL_COMMIT_SIZE)
-#define ARENA_INITIAL_COMMIT_SIZE Kilobytes(4)
-#endif
-
-#if !defined(ARENA_DECOMMIT_THRESHOLD)
-#define ARENA_DECOMMIT_THRESHOLD Kilobytes(64)
-#endif
+typedef u64 Arena_Flags;
+enum
+{
+    ArenaFlag_NoChain = (1 << 0),
+};
 
 typedef struct Arena Arena;
-struct Arena {
+struct Arena
+{
+    Arena_Flags flags;
+
+    Arena *current;
+    Arena *prev;
+
     u8 *data;
     u64 pos;
     u64 size;
     u64 commit_pos;
+
+    u64 page_size;
 };
 
 typedef struct M_Temp M_Temp;
-struct M_Temp {
+struct M_Temp
+{
     Arena *arena;
     u64 pos;
 };
@@ -649,31 +709,26 @@ struct M_Temp {
 // API
 //
 
-function Arena arena_make(u8 *data, u64 size);
-function void arena_init(Arena *arena, u8 *data, u64 size);
+function Arena *arena_make_from_buffer(u8 *data, u64 size);
 function Arena *arena_alloc(u64 size);
-function Arena *arena_alloc_default();
 function void arena_free(Arena *arena);
 function void *arena_push_bytes(Arena *arena, u64 size);
 function void arena_pop_to(Arena *arena, u64 pos);
 function void arena_pop(Arena *arena, u64 size);
 function void arena_set_pos(Arena *arena, u64 pos);
 function void arena_reset(Arena *arena);
-function void arena_align(Arena *arena, u64 pow2_align);
+function void arena_push_aligner(Arena *arena, u64 pow2_align);
 function void *arena_push(Arena *arena, u64 size);
 function void *arena_push_zero(Arena *arena, u64 size);
 function bool arena_write(Arena *arena, u8 *data, u64 size);
 
-function void *arena_resize_ptr(Arena *arena, u64 new_size, void *old_memory_pointer, u64 old_size);
-function void arena_free_ptr(Arena *arena, void *old_memory_pointer, u64 old_size);
-
 function M_Temp arena_begin_temp(Arena *arena);
 function void arena_end_temp(M_Temp temp);
 
-#define PushArray(a,T,c)     (T*)arena_push((a), sizeof(T)*(c))
-#define PushArrayZero(a,T,c) (T*)arena_push_zero((a), sizeof(T)*(c))
-#define PushStruct(a, T)     (T*)arena_push((a), sizeof(T))
-#define PushStructZero(a, T) (T*)arena_push_zero((a), sizeof(T))
+#define PushArray(a,T,c)     (T*)arena_push_no_zero((a), sizeof(T)*(c))
+#define PushArrayZero(a,T,c) (T*)arena_push((a), sizeof(T)*(c))
+#define PushStruct(a, T)     (T*)arena_push_no_zero((a), sizeof(T))
+#define PushStructZero(a, T) (T*)arena_push((a), sizeof(T))
 #define PopArray(a, T, c0, c1) if (c1 < c0) arena_pop((a), (c0 - c1) * sizeof(T))
 
 function M_Temp arena_get_scratch(Arena **conflicts, u64 conflict_count);
@@ -693,16 +748,16 @@ function i64 memory_binary_search(void *base, u64 count, u64 size, void *key, Co
 //
 
 #if !defined(ALLOCATOR_DEFAULT_ALIGNMENT)
-#define ALLOCATOR_DEFAULT_ALIGNMENT 16
+    #define ALLOCATOR_DEFAULT_ALIGNMENT 16
 #endif
 
 
 enum Allocator_Mode
 {
-    AllocatorMode_Alloc    = 0,
-    AllocatorMode_Resize   = 1,
-    AllocatorMode_Free     = 2,
-    AllocatorMode_FreeAll  = 3,
+    AllocatorMode_Alloc    = 1,
+    AllocatorMode_Resize   = 2,
+    AllocatorMode_Free     = 3,
+    AllocatorMode_FreeAll  = 4,
 };
 typedef enum Allocator_Mode Allocator_Mode;
 
@@ -727,10 +782,6 @@ function void *allocator_realloc(Allocator allocator, void *data, u64 new_size, 
 function void *allocator_alloc_aligned(Allocator allocator, u64 size, u32 alignment);
 function void *allocator_realloc_aligned(Allocator allocator, void *data, u64 new_size, u64 old_size, u32 alignment);
 
-#ifndef default_allocator
-#define default_allocator() os_allocator()
-#endif
-
 function Allocator os_allocator();
 function Allocator arena_allocator(Arena *arena);
 
@@ -745,32 +796,14 @@ function Allocator arena_allocator(Arena *arena);
 #define Str(x) #x
 
 #if LANG_CPP
-    #define S(x) String{(u8 *)(x), sizeof(x)-1}
+    #define S(x) (String{(u8 *)(x), sizeof(x)-1})
 #else
-    #define S(x) (String){(u8 *)(x), sizeof(x)-1}
+    #define S(x) ((String){(u8 *)(x), sizeof(x)-1})
 #endif
-
-#if 0
-#define BufA(array) r_bytes_make((u8 *)(array), count_of(array) * sizeof((array)[0]))
-#define BufS(struct) r_bytes_make((u8 *)&struct, sizeof(struct))
-#define BufD(array, count) r_bytes_make((u8 *)(array), (count) * sizeof((array)[0]))
-#endif
-
-typedef struct Buffer Buffer;
-struct Buffer {
-    u8 *data;
-    i64 count;
-
-    #if LANG_CPP
-    u8 &operator[](i64 i) {
-        assert(i >= 0 && i < count);
-        return data[i];
-    }
-    #endif
-};
 
 typedef struct String String;
-struct String {
+struct String
+{
     u8 *data;
     i64 count;
 
@@ -783,7 +816,8 @@ struct String {
 };
 
 typedef struct String16 String16;
-struct String16 {
+struct String16
+{
     u16 *data;
     i64 count;
 
@@ -796,7 +830,8 @@ struct String16 {
 };
 
 typedef struct String32 String32;
-struct String32 {
+struct String32
+{
     u32 *data;
     i64 count;
 
@@ -809,7 +844,8 @@ struct String32 {
 };
 
 typedef struct String_Decode String_Decode;
-struct String_Decode {
+struct String_Decode
+{
     u32 codepoint;
     u8 advance; // 1 - 4
 };
@@ -830,8 +866,8 @@ struct String_List
     u64 total_size;
 };
 
-typedef struct String_Join String_Join;
-struct String_Join
+typedef struct String_Join_Params String_Join_Params;
+struct String_Join_Params
 {
     String pre;
     String sep;
@@ -842,14 +878,14 @@ typedef struct String_Array String_Array;
 struct String_Array
 {
     i64 count;
+    i64 capacity;
     String *data;
 };
 
 typedef u32 Match_Flags;
 enum
 {
-    MatchFlag_None             = 0,
-    MatchFlag_IgnoreCase  = 1 << 0,
+    MatchFlag_IgnoreCase       = 1 << 0,
     MatchFlag_RightSideSloppy  = 1 << 1,
     MatchFlag_SlashInsensitive = 1 << 2,
     MatchFlag_FindLast         = 1 << 3,
@@ -863,6 +899,14 @@ struct String_Time_Options
     b32 show_sign;
 };
 
+typedef struct CLI_Argument CLI_Argument;
+struct CLI_Argument
+{
+    String name;
+    String value;
+    b32 consumes_next_index;
+};
+
 // Char Functions
 function b32 char_is_alpha(u8 c);
 function b32 char_is_lower(u8 c);
@@ -871,16 +915,17 @@ function b32 char_is_digit(u8 c);
 function b32 char_is_space(u8 c);
 function b32 char_is_whitespace(u8 c);
 function b32 char_is_symbol(u8 c);
+function b32 char_is_separator(u8 c);
+function b32 char_is_slash(u8 c);
+
 function u8 char_to_upper(u8 c);
 function u8 char_to_lower(u8 c);
 function u8 char_to_forward_slash(u8 c);
-function b32 char_is_separator(u8 c);
 
 // C-Style Strings
 function i64 cstr_length(const char *cstr);
 
 // Constructors
-function Buffer buffer_make(u8 *data, i64 count);
 function String string_make(u8 *data, i64 count);
 function String string_range(u8 *at, u8 *end);
 function String string_from_cstr(const char *cstr);
@@ -889,6 +934,7 @@ function String16 string16_make(u16 *data, i64 count);
 function String16 string16_from_cstr(u16 *data);
 function String32 string32_make(u32 *data, i64 count);
 
+#define CStr(x) string_to_cstr(temp_arena(), (x))
 #define Str8(data, count) string_make((u8 *)data, count)
 #define Str16(data, count) string16_make((u16 *)data, count)
 #define Str32(data, count) string32_make((u32 *)data, count)
@@ -918,14 +964,14 @@ function b32 string_contains(String str, String search);
 function b32 string_in_bounds(String str, i64 at);
 
 // Allocation
-function String string_copy(Arena *arena, String str);
+function String string_push(Arena *arena, String str);
 function String string_alloc(String str);
 function void string_free(String *str);
 
 function String string_printv(Arena *arena, const char *fmt, va_list args);
 function String string_print(Arena *arena, const char *fmt, ...);
 
-#define PushStringCopy(arena, str) string_copy(arena, str)
+#define PushStringCopy(arena, str) string_push(arena, str)
 #define PushStringFV(arena, fmt, args) string_printv(arena, fmt, args)
 #define PushStringF(arena, fmt, ...) string_print(arena, fmt, __VA_ARGS__)
 
@@ -960,20 +1006,27 @@ function b32 string_to_b32(String str);
 function void string_list_push_node(String_List *list, String_Node *n);
 function void string_list_push(Arena *arena, String_List *list, String str);
 function void string_list_concat(String_List *list, String_List *to_push);
-function String_List string_splits(Arena *arena, String string, int split_count, String *splits);
-function String_List string_split(Arena *arena, String string, String split);
-function String string_list_joins(Arena *arena, String_List list, String_Join *optional_params);
+function String_List string_list_splits(Arena *arena, String string, int split_count, String *splits);
+function String_List string_list_split(Arena *arena, String string, String split);
+function String string_list_joins(Arena *arena, String_List list, String_Join_Params join);
 function String string_list_join(Arena *arena, String_List list, String join);
 function String string_list_print(Arena *arena, String_List *list, char *fmt, ...);
 function String string_list_to_string(Arena *arena, String_List *list);
+function String_List string_list_from_array(Arena *arena, String_Array array);
+
+// String Arrays
 function String_Array string_array_from_list(Arena *arena, String_List list);
+function String_Array string_splits(Arena *arena, String string, int split_count, String *splits);
+function String_Array string_split(Arena *arena, String string, String split);
+function String string_join(Arena *arena, String_Array array, String join);
 
 // Misc Helpers
 function String string_concat2(Arena *arena, String a, String b);
 function String string_concat3(Arena *arena, String a, String b, String c);
 function String string_concat4(Arena *arena, String a, String b, String c, String d);
 function String string_concat_array(Arena *arena, String *array, u32 count);
-#define string_concat(a, b) string_concat2(temp_arena(), a, b)
+// #define string_concat(a, b) string_concat2(temp_arena(), a, b)
+#define string_concat(...) ArgSelectHelper4((__VA_ARGS__, string_concat4, string_concat3, string_concat2, string_concat1))(temp_arena(), __VA_ARGS__)
 
 function String string_chop_last_period(String string);
 function String string_skip_last_period(String string);
@@ -994,29 +1047,40 @@ function String string_upper(Arena *arena, String str);
 
 // Path Helpers
 function String path_filename(String path);
-function String path_basename(String path);
+function String path_dirname(String path);
 function String path_extension(String path);
 function String path_strip_extension(String path);
 
 function String path_join2(Arena *arena, String a, String b);
 function String path_join3(Arena *arena, String a, String b, String c);
 function String path_join4(Arena *arena, String a, String b, String c, String d);
-#define path_join(a, b) path_join2(temp_arena(), a, b)
+// #define path_join(a, b) path_join2(temp_arena(), a, b)
+#define path_join(...) ArgSelectHelper4((__VA_ARGS__, path_join4, path_join3, path_join2, path_join1))(temp_arena(), __VA_ARGS__)
 
 function b32 path_is_absolute(String path);
 
 // Timing
 function String string_from_time(f64 time_in_seconds, String_Time_Options options);
 
+// CLI
+function String_Array string_array_from_c_array(Arena *arena, char **data, int count);
+function CLI_Argument string_parse_argument(String_Array array, i64 index);
 
+// Dump
 #if DEBUG
-    #define dump(x) print("%s = %S\n", #x, to_string(x))
-    #define Dump(x) print("%s = %S\n", #x, to_string(x))
-    #define Dump2(x, y) print("%s = %S, %s = %S\n", #x, to_string(x), #y, to_string(y))
+    #define Dump(...) ArgSelectHelper4((__VA_ARGS__, Dump4, Dump3, Dump2, Dump1))(__VA_ARGS__)
+
+    #define Dump1(x) print("%s = %s\n", #x, CStr(to_string(x)))
+    #define Dump2(x, y) print("%s = %s, %s = %s\n", #x, CStr(to_string(x)), #y, CStr(to_string(y)))
+    #define Dump3(x, y, z) print("%s = %s, %s = %s, %s = %s\n", #x, CStr(to_string(x)), #y, CStr(to_string(y)), #z, CStr(to_string(z)))
+    #define Dump4(x, y, z, w) print("%s = %s, %s = %s, %s = %s, %s = %s\n", #x, CStr(to_string(x)), #y, CStr(to_string(y)), #z, CStr(to_string(z)), #w, CStr(to_string(w)))
 #else
-    #define dump(x)
-    #define Dump(x)
+    #define Dump(...)
+
+    #define Dump1(x)
     #define Dump2(x, y)
+    #define Dump3(x, y, z)
+    #define Dump4(x, y, z, w)
 #endif
 
 #endif // BASE_STRINGS_H
@@ -1062,6 +1126,9 @@ function u64 u64_previous_power_of_two(u64 x);
 function u16 endian_swap_u16(u16 i);
 function u32 endian_swap_u32(u32 i);
 function u64 endian_swap_u64(u64 i);
+function u16 u16_from_big_endian(u16 i);
+function u32 u32_from_big_endian(u32 i);
+function u64 u64_from_big_endian(u64 i);
 
 function u32 rotate_left_u32(u32 value, i32 amount);
 function u32 rotate_right_u32(u32 value, i32 amount);
@@ -1086,25 +1153,26 @@ function Random_LCG random_make_lcg();
 function void random_lcg_set_seed(Random_LCG *series, u32 state);
 function u32 random_lcg_u32(Random_LCG *series);
 function f32 random_lcg_f32(Random_LCG *series);
-function f32 random_lcg_f32_between(Random_LCG *series, f32 min, f32 max);
-function i32 random_lcg_i32_between(Random_LCG *series, i32 min, i32 max);
+function f32 random_lcg_between_f32(Random_LCG *series, f32 min, f32 max);
+function i32 random_lcg_between_i32(Random_LCG *series, i32 min, i32 max);
 function void random_lcg_shuffle(Random_LCG *it, void *base, u64 count, u64 size);
 
 function Random_PCG random_make_pcg();
 function void random_pcg_set_seed(Random_PCG *series, u64 state, u64 selector);
 function u32 random_pcg_u32(Random_PCG *series);
 function f32 random_pcg_f32(Random_PCG *series);
-function f32 random_pcg_f32_between(Random_PCG *series, f32 min, f32 max);
-function i32 random_pcg_i32_between(Random_PCG *series, i32 min, i32 max);
+function f32 random_pcg_between_f32(Random_PCG *series, f32 min, f32 max);
+function i32 random_pcg_between_i32(Random_PCG *series, i32 min, i32 max);
 function void random_pcg_shuffle(Random_PCG *it, void *base, u64 count, u64 size);
 
 function void random_init();
 function void random_set_seed(u64 seed);
 function u32 random_next_u32();
 function f32 random_next_f32();
-function f32 random_f32_between(f32 min, f32 max);
-function i32 random_i32_between(i32 min, i32 max);
+function f32 random_between_f32(f32 min, f32 max);
+function i32 random_between_i32(i32 min, i32 max);
 function f32 random_zero_to_one();
+function void random_shuffle(void *base, u64 count, u64 size);
 
 // Timing
 function void timing_add_value(Timing_f64 *it, f64 current);
@@ -1240,6 +1308,7 @@ function String os_get_app_data_path(String app_name);
 // Timing
 function f64 os_time();
 function f64 os_time_in_miliseconds();
+function f64 os_clock();
 function u64 os_clock_cycles();
 function void os_sleep(f64 seconds);
 function void os_set_high_process_priority(bool enable);
@@ -1280,6 +1349,7 @@ function bool os_file_rename(String from, String to);
 function bool os_delete_file(String path);
 function bool os_make_directory(String path);
 function bool os_delete_directory(String path);
+function bool os_mkdirp(String path);
 
 // File Lister
 function File_Lister *os_file_iter_begin(Arena *arena, String path);
@@ -1319,19 +1389,12 @@ function f64 os_double_click_time();
 function void os_open_file_in_debugger(String path, int line);
 function void os_attach_to_debugger(b32 pause);
 
-
-#define M_Reserve os_memory_reserve
-#define M_Release os_memory_release
-#define M_Commit os_memory_commit
-#define M_Decommit os_memory_decommit
-
 //
 // Threads
 //
 
 typedef struct Thread Thread;
 struct Thread {
-    u32 id;
     void *handle;
 };
 
@@ -1348,9 +1411,6 @@ struct Mutex {
     void *handle;
 };
 
-// Basic
-function u32 thread_get_id();
-
 #if COMPILER_MSVC
     #define atomic_read_barrier() _ReadBarrier()
     #define atomic_write_barrier() _WriteBarrier()
@@ -1365,23 +1425,24 @@ function u64 atomic_exchange_u64(u64 volatile *value, u64 New);
 function u64 atomic_add_u64(u64 volatile *value, u64 Addend);
 
 // Threads
-function Thread thread_create(Thread_Proc *proc, void *data, u64 copy_size);
-function void thread_pause(Thread thread);
-function void thread_resume(Thread thread);
-function void thread_detach(Thread thread);
-function u32 thread_await(Thread thread);
+function u64 os_thread_get_id();
+function Thread os_thread_create(Thread_Proc *proc, void *data, u64 copy_size);
+function void os_thread_pause(Thread thread);
+function void os_thread_resume(Thread thread);
+function void os_thread_detach(Thread thread);
+function u32 os_thread_await(Thread thread);
 
 // Data Structures
-function Semaphore semaphore_create(u32 max_count);
-function void semaphore_signal(Semaphore *sem);
-function void semaphore_wait_for(Semaphore *sem, bool infinite);
-function void semaphore_destroy(Semaphore *sem);
+function Semaphore os_semaphore_create(u32 max_count);
+function void os_semaphore_signal(Semaphore *sem);
+function void os_semaphore_wait_for(Semaphore *sem, bool infinite);
+function void os_semaphore_destroy(Semaphore *sem);
 
-function Mutex mutex_create(u32 spin_count);
-function void mutex_aquire_lock(Mutex *mutex);
-function bool mutex_try_aquire_lock(Mutex *mutex);
-function void mutex_release_lock(Mutex *mutex);
-function void mutex_destroy(Mutex *mutex);
+function Mutex os_mutex_create(u32 spin_count);
+function void os_mutex_aquire_lock(Mutex *mutex);
+function bool os_mutex_try_aquire_lock(Mutex *mutex);
+function void os_mutex_release_lock(Mutex *mutex);
+function void os_mutex_destroy(Mutex *mutex);
 
 //
 // Workers
@@ -1423,7 +1484,6 @@ function void work_queue_add_entry(Work_Queue *queue, Worker_Proc *callback, voi
 // Platform-Specific Headers:
 //
 
-#ifdef impl
 #if OS_WINDOWS
     #pragma push_macro("function")
 #pragma push_macro("Free")
@@ -1438,90 +1498,97 @@ function void work_queue_add_entry(Work_Queue *queue, Worker_Proc *callback, voi
 #pragma pop_macro("function")
 #pragma pop_macro("Free")
 #elif OS_MACOS
+#elif OS_LINUX
 #else
     #error OS layer not implemented.
 #endif
-#endif
 
 #endif // OS_H
+
+#endif // NA_H
 
 //
 // impl:
 //
 
+#ifdef impl
+#ifndef NA_H_IMPL
+#define NA_H_IMPL
 
-// TODO(nick): track all allocations in the app!
-static Arena *g_arenas_in_use[2048] = {0};
 
 //
-// Memory
+// Arena
 //
 
-#if !defined(M_Reserve)
-    #error M_Reserve must be defined to use base memory.
+#if !defined(ARENA_DEFAULT_ALIGNMENT)
+    #define ARENA_DEFAULT_ALIGNMENT 8
 #endif
-#if !defined(M_Release)
-    #error M_Release must be defined to use base memory.
+
+#if !defined(ARENA_COMMIT_SIZE)
+    #define ARENA_COMMIT_SIZE Kilobytes(4)
 #endif
-#if !defined(M_Commit)
-    #error M_Commit must be defined to use base memory.
-#endif
-#if !defined(M_Decommit)
-    #error M_Decommit must be defined to use base memory.
+
+#if !defined(ARENA_DECOMMIT_THRESHOLD)
+    #define ARENA_DECOMMIT_THRESHOLD Kilobytes(256)
 #endif
 
 #define arena_has_virtual_backing(arena) ((arena)->commit_pos < U64_MAX)
 
-function void arena_init(Arena *arena, u8 *data, u64 size) {
-    arena->data = data;
-    arena->size = size;
-    arena->pos  = 0;
-    arena->commit_pos = U64_MAX;
-}
-
-function Arena arena_make_from_memory(u8 *data, u64 size) {
-    Arena result = {0};
-    arena_init(&result, data, size);
-    return result;
-}
-
-function Arena *arena_alloc(u64 size) {
-    size = Max(size, ARENA_INITIAL_COMMIT_SIZE);
-
+function Arena *arena_make_from_buffer(u8 *data, u64 size)
+{
     Arena *result = NULL;
-    u8 *data = cast(u8 *)M_Reserve(size);
-
-    if (data && M_Commit(data, ARENA_INITIAL_COMMIT_SIZE))
+    if (data)
     {
         result = cast(Arena *)data;
         result->data = data + AlignUpPow2(sizeof(Arena), 64);
         result->size = size;
         result->pos  = 0;
-        result->commit_pos = ARENA_INITIAL_COMMIT_SIZE;
+        result->commit_pos = U64_MAX;
+        result->page_size = 0;
+    }
+    assert(result != 0);
+    return result;
+}
+
+function Arena *arena_alloc(u64 size)
+{
+    u64 page_size = os_memory_page_size();
+    u64 initial_commit_size = Max(page_size, ARENA_COMMIT_SIZE);
+
+    size = Max(size, initial_commit_size);
+
+    Arena *result = NULL;
+    u8 *data = cast(u8 *)os_memory_reserve(size);
+
+    if (data && os_memory_commit(data, initial_commit_size))
+    {
+        result = cast(Arena *)data;
+        result->data = data + AlignUpPow2(sizeof(Arena), 64);
+        result->size = size;
+        result->pos  = 0;
+        result->commit_pos = initial_commit_size;
+        result->page_size  = Max(page_size, ARENA_COMMIT_SIZE);
     }
 
     assert(result != 0);
     return result;
 }
 
-function Arena *arena_alloc_default()
+function void arena_free(Arena *arena)
 {
-    return arena_alloc(Gigabytes(1));
-}
-
-function void arena_free(Arena *arena) {
     if (arena->data)
     {
         arena->data = NULL;
 
         if (arena_has_virtual_backing(arena))
         {
-            M_Release(arena, arena->size);
+            os_memory_release(arena, arena->size);
         }
     }
 }
 
-function void *arena_push_bytes(Arena *arena, u64 size) {
+function void *arena_push_bytes(Arena *arena, u64 size)
+{
     void *result = NULL;
 
     if (arena->pos + size <= arena->size)
@@ -1535,11 +1602,11 @@ function void *arena_push_bytes(Arena *arena, u64 size) {
             u64 base_p = p + AlignUpPow2(sizeof(Arena), 64);
             if (base_p > commit_p)
             {
-                u64 p_aligned = AlignUpPow2(base_p, ARENA_COMMIT_SIZE);
+                u64 p_aligned = AlignUpPow2(base_p, arena->page_size);
                 u64 next_commit_position = ClampTop(p_aligned, arena->size);
                 u64 commit_size = next_commit_position - commit_p;
 
-                if (M_Commit((u8 *)arena + arena->commit_pos, commit_size))
+                if (os_memory_commit((u8 *)arena + arena->commit_pos, commit_size))
                 {
                     commit_p = next_commit_position;
                     arena->commit_pos = next_commit_position;
@@ -1557,7 +1624,8 @@ function void *arena_push_bytes(Arena *arena, u64 size) {
     return result;
 }
 
-function void arena_pop_to(Arena *arena, u64 pos) {
+function void arena_pop_to(Arena *arena, u64 pos)
+{
     if (arena->pos > pos)
     {
         arena->pos = pos;
@@ -1565,12 +1633,12 @@ function void arena_pop_to(Arena *arena, u64 pos) {
         if (arena_has_virtual_backing(arena))
         {
             u64 base_p = pos + AlignUpPow2(sizeof(Arena), 64);
-            u64 decommit_pos = AlignUpPow2(base_p, ARENA_COMMIT_SIZE);
+            u64 decommit_pos = AlignUpPow2(base_p, arena->page_size);
             u64 over_committed = arena->commit_pos - decommit_pos;
 
             if (decommit_pos < arena->commit_pos && over_committed >= ARENA_DECOMMIT_THRESHOLD)
             {
-                if (M_Decommit((u8 *)arena + decommit_pos, over_committed))
+                if (os_memory_decommit((u8 *)arena + decommit_pos, over_committed))
                 {
                     arena->commit_pos -= over_committed;
                 }
@@ -1579,15 +1647,16 @@ function void arena_pop_to(Arena *arena, u64 pos) {
     }
 }
 
-function void arena_pop(Arena *arena, u64 size) {
+function void arena_pop(Arena *arena, u64 size)
+{
     arena_pop_to(arena, arena->pos - size);
 }
 
-function void arena_set_pos(Arena *arena, u64 pos) {
-    if (arena->pos > pos) {
-        arena_pop_to(arena, pos);
-    } else {
-        arena_push_bytes(arena, pos - arena->pos);
+function void arena_set_pos(Arena *arena, u64 pos)
+{
+    if (pos < arena->size)
+    {
+        arena->pos = pos;
     }
 }
 
@@ -1600,26 +1669,29 @@ function void arena_set_to_pointer_pos(Arena *arena, void *ptr)
     }
 }
 
-function void arena_reset(Arena *arena) {
+function void arena_reset(Arena *arena)
+{
     arena_pop_to(arena, 0);
 }
 
-function void arena_align(Arena *arena, u64 pow2_align) {
-    u64 p = arena->pos;
-    u64 p_aligned = AlignUpPow2(p, pow2_align);
-    u64 z = p_aligned - p;
-    if (z > 0) {
-        arena_push_bytes(arena, z);
+function void arena_push_aligner(Arena *arena, u64 align_pow2)
+{
+    if (align_pow2 > 1)
+    {
+        u64 p = arena->pos;
+        u64 p_aligned = AlignUpPow2(p, align_pow2);
+        u64 z = p_aligned - p;
+        if (z > 0)
+        {
+            arena_push_bytes(arena, z);
+        }
     }
 }
 
-function void *arena_push(Arena *arena, u64 size) {
-    arena_align(arena, ARENA_DEFAULT_ALIGNMENT);
-    return arena_push_bytes(arena, size);
-}
-
-function void *arena_push_zero(Arena *arena, u64 size) {
-    void *result = arena_push(arena, size);
+function void *arena_push(Arena *arena, u64 size)
+{
+    arena_push_aligner(arena, ARENA_DEFAULT_ALIGNMENT);
+    void *result = arena_push_bytes(arena, size);
     if (result != NULL)
     {
         MemoryZero(result, size);
@@ -1627,16 +1699,71 @@ function void *arena_push_zero(Arena *arena, u64 size) {
     return result;
 }
 
-function bool arena_write(Arena *arena, u8 *data, u64 size) {
-    bool result = false;
+function void *arena_push_no_zero(Arena *arena, u64 size)
+{
+    arena_push_aligner(arena, ARENA_DEFAULT_ALIGNMENT);
+    void *result = arena_push_bytes(arena, size);
+    return result;
+}
 
-    u8 *buffer = (u8 *)arena_push(arena, size);
-    if (buffer != NULL) {
+function bool arena_write(Arena *arena, u8 *data, u64 size)
+{
+    bool result = false;
+    u8 *buffer = (u8 *)arena_push_no_zero(arena, size);
+    if (buffer)
+    {
         MemoryCopy(buffer, data, size);
         result = true;
     }
-
     return result;
+}
+
+function M_Temp arena_begin_temp(Arena *arena)
+{
+    M_Temp result = {arena, arena->pos};
+    return result;
+}
+
+function void arena_end_temp(M_Temp temp)
+{
+    arena_pop_to(temp.arena, temp.pos);
+}
+
+thread_local Arena *m__scratch_pool[2] = {0, 0};
+
+function M_Temp arena_get_scratch(Arena **conflicts, u64 conflict_count)
+{
+    if (m__scratch_pool[0] == NULL)
+    {
+        m__scratch_pool[0] = arena_alloc(Gigabytes(1));
+        m__scratch_pool[1] = arena_alloc(Gigabytes(1));
+        assert(m__scratch_pool[0]);
+        assert(m__scratch_pool[1]);
+    }
+
+    M_Temp result = {0};
+    for (u64 i = 0; i < count_of(m__scratch_pool); i += 1)
+    {
+        b32 is_conflict = false;
+        for (Arena **conflict = conflicts; conflict < conflicts+conflict_count; conflict += 1)
+        {
+            if (*conflict == m__scratch_pool[i]) {
+                is_conflict = true;
+                break;
+            }
+        }
+
+        if (!is_conflict) {
+            result = arena_begin_temp(m__scratch_pool[i]);
+            break;
+        }
+    }
+    return result;
+}
+
+function Arena *temp_arena()
+{
+    return arena_get_scratch(0, 0).arena;
 }
 
 function void *arena_resize_ptr(Arena *arena, u64 new_size, void *old_memory_pointer, u64 old_size)
@@ -1678,59 +1805,12 @@ function void arena_free_ptr(Arena *arena, void *old_memory_pointer, u64 old_siz
     }
 }
 
-function M_Temp arena_begin_temp(Arena *arena) {
-    M_Temp result = {arena, arena->pos};
-    return result;
-}
+//
+// Memory
+//
 
-function void arena_end_temp(M_Temp temp) {
-    arena_pop_to(temp.arena, temp.pos);
-}
-
-thread_local Arena *m__scratch_pool[2] = {0, 0};
-
-function M_Temp arena_get_scratch(Arena **conflicts, u64 conflict_count) {
-    if (m__scratch_pool[0] == NULL)
-    {
-        m__scratch_pool[0] = arena_alloc_default();
-        m__scratch_pool[1] = arena_alloc_default();
-        assert(m__scratch_pool[0]);
-        assert(m__scratch_pool[1]);
-    }
-
-    M_Temp result = {0};
-    for (u64 i = 0; i < count_of(m__scratch_pool); i += 1)
-    {
-        b32 is_conflict = false;
-        for (Arena **conflict = conflicts; conflict < conflicts+conflict_count; conflict += 1)
-        {
-            if (*conflict == m__scratch_pool[i]) {
-                is_conflict = true;
-                break;
-            }
-        }
-
-        if (!is_conflict) {
-            result = arena_begin_temp(m__scratch_pool[i]);
-            break;
-        }
-    }
-    return result;
-}
-
-function Arena *temp_arena() {
-    if (m__scratch_pool[0] == NULL)
-    {
-        m__scratch_pool[0] = arena_alloc_default();
-        m__scratch_pool[1] = arena_alloc_default();
-        assert(m__scratch_pool[0]);
-        assert(m__scratch_pool[1]);
-    }
-
-    return m__scratch_pool[0];
-}
-
-function u64 m_align_offset(void *ptr, u64 alignment){
+function u64 m_align_offset(void *ptr, u64 alignment)
+{
     u64 base_address = (u64)ptr;
 
     assert(alignment >= 1);
@@ -1877,9 +1957,8 @@ function i64 memory_binary_search(void *base, u64 count, u64 size, void *key, Co
 
 function void *allocator_alloc(Allocator allocator, u64 size)
 {
-    if (!allocator.proc) allocator = default_allocator();
-
-    if (allocator.proc) {
+    if (allocator.proc)
+    {
         void *result = allocator.proc(AllocatorMode_Alloc, size, 0, NULL, allocator.data, ALLOCATOR_DEFAULT_ALIGNMENT);
         return result;
     }
@@ -1889,9 +1968,8 @@ function void *allocator_alloc(Allocator allocator, u64 size)
 
 function void *allocator_alloc_aligned(Allocator allocator, u64 size, u32 alignment)
 {
-    if (!allocator.proc) allocator = default_allocator();
-
-    if (allocator.proc) {
+    if (allocator.proc)
+    {
         void *result = allocator.proc(AllocatorMode_Alloc, size, 0, NULL, allocator.data, alignment);
         return result;
     }
@@ -1901,10 +1979,10 @@ function void *allocator_alloc_aligned(Allocator allocator, u64 size, u32 alignm
 
 function void allocator_free(Allocator allocator, void *data, u64 old_size)
 {
-    if (!allocator.proc) allocator = default_allocator();
-
-    if (allocator.proc) {
-        if (data != NULL) {
+    if (allocator.proc)
+    {
+        if (data != NULL)
+        {
             allocator.proc(AllocatorMode_Free, 0, old_size, data, allocator.data, 0);
         }
     }
@@ -1912,9 +1990,8 @@ function void allocator_free(Allocator allocator, void *data, u64 old_size)
 
 function void *allocator_realloc(Allocator allocator, void *data, u64 new_size, u64 old_size)
 {
-    if (!allocator.proc) allocator = default_allocator();
-
-    if (allocator.proc) {
+    if (allocator.proc)
+    {
         return allocator.proc(AllocatorMode_Resize, new_size, old_size, data, allocator.data, ALLOCATOR_DEFAULT_ALIGNMENT);
     }
 
@@ -1923,9 +2000,8 @@ function void *allocator_realloc(Allocator allocator, void *data, u64 new_size, 
 
 function void *allocator_realloc_aligned(Allocator allocator, void *data, u64 new_size, u64 old_size, u32 alignment)
 {
-    if (!allocator.proc) allocator = default_allocator();
-
-    if (allocator.proc) {
+    if (allocator.proc)
+    {
         return allocator.proc(AllocatorMode_Resize, new_size, old_size, data, allocator.data, alignment);
     }
 
@@ -1935,13 +2011,15 @@ function void *allocator_realloc_aligned(Allocator allocator, void *data, u64 ne
 function ALLOCATOR_PROC(os_allocator_proc)
 {
     switch (mode) {
-        case AllocatorMode_Alloc: {
+        case AllocatorMode_Alloc:
+        {
             u64 actual_size = requested_size + m_align_offset(0, alignment);
             void *result = os_alloc(actual_size);
             return result;
-        }
+        } break;
 
-        case AllocatorMode_Resize: {
+        case AllocatorMode_Resize:
+        {
             u64 actual_size = requested_size + m_align_offset(0, alignment);
 
             void *result = os_alloc(actual_size);
@@ -1953,25 +2031,29 @@ function ALLOCATOR_PROC(os_allocator_proc)
             }
 
             return result;
-        }
+        } break;
         
-        case AllocatorMode_Free: {
+        case AllocatorMode_Free:
+        {
             os_free(old_memory_pointer);
             return NULL;
-        }
+        } break;
 
-        case AllocatorMode_FreeAll: {
+        case AllocatorMode_FreeAll:
+        {
             // @Incomplete
             return NULL;
-        }
+        } break;
 
-        default: {
+        default:
+        {
             return NULL;
-        }
+        } break;
     }
 }
 
-function Allocator os_allocator() {
+function Allocator os_allocator()
+{
     Allocator result = {os_allocator_proc, 0};
     return result;
 }
@@ -1983,7 +2065,7 @@ function ALLOCATOR_PROC(arena_allocator_proc)
     switch (mode) {
         case AllocatorMode_Alloc:
         {
-            arena_align(arena, alignment);
+            arena_push_aligner(arena, alignment);
             void *result = arena_push_bytes(arena, requested_size);
             MemoryZero(result, requested_size);
             return result;
@@ -1991,7 +2073,7 @@ function ALLOCATOR_PROC(arena_allocator_proc)
 
         case AllocatorMode_Resize:
         {
-            arena_align(arena, alignment);
+            arena_push_aligner(arena, alignment);
             void *result = arena_resize_ptr(arena, requested_size, old_memory_pointer, old_size);
             return result;
         } break;
@@ -2008,13 +2090,15 @@ function ALLOCATOR_PROC(arena_allocator_proc)
             return NULL;
         } break;
 
-        default: {
+        default:
+        {
             return NULL;
         } break;
     }
 }
 
-Allocator arena_allocator(Arena *arena) {
+function Allocator arena_allocator(Arena *arena)
+{
     assert(arena);
     Allocator result = {arena_allocator_proc, arena};
     return result;
@@ -2026,6 +2110,64 @@ Allocator arena_allocator(Arena *arena) {
 
 #include <stdarg.h>
 
+
+#if !defined(PrintToBuffer) && defined(STB_SPRINTF_H_INCLUDE)
+
+#if OS_WINDOWS
+
+    function char *win32__print_callback(const char *buf, void *user, int len) {
+        DWORD bytes_written;
+        HANDLE handle = GetStdHandle(STD_OUTPUT_HANDLE);
+        WriteFile(handle, buf, len, &bytes_written, 0);
+        return (char *)buf;
+    }
+
+    #define PrintToBuffer stbsp_vsnprintf
+
+    __PrintFunction(1,2)
+    function void win32__print(__FormatString const char *format, ...) {
+        char buffer[1024];
+
+        va_list args;
+        va_start(args, format);
+        stbsp_vsprintfcb(win32__print_callback, 0, buffer, format, args);
+        va_end(args);
+    }
+
+    #if COMPILER_MSVC
+        // NOTE(nick): force MSVC to check the arguments to this function
+        // #define print(...) (false && printf(__VA_ARGS__), win32__print(__VA_ARGS__))
+        #define print(...) win32__print(__VA_ARGS__)
+    #elif COMPILER_CLANG
+        #define print(...) win32__print(__VA_ARGS__)
+    #endif
+
+#endif // OS_WINDOWS
+
+#if OS_MACOS || OS_LINUX
+    char *unix__print_callback(const char *buf, void *user, int len) {
+        fprintf(stdout, "%.*s", len, buf);
+        return (char *)buf;
+    }
+
+    __PrintFunction(1,2)
+    void unix__print(const char *format, ...) {
+        char buffer[1024];
+
+        va_list args;
+        va_start(args, format);
+        stbsp_vsprintfcb(unix__print_callback, 0, buffer, format, args);
+        fflush(stdout);
+
+        va_end(args);
+    }
+
+    #define PrintToBuffer stbsp_vsnprintf
+    #define print unix__print
+#endif // OS_MACOS || OS_LINUX
+
+#endif // !defined(PrintToBuffer) && defined(STB_SPRINTF_H_INCLUDE)
+    
 #ifndef PrintToBuffer
 
 #include <stdio.h>
@@ -2033,8 +2175,6 @@ Allocator arena_allocator(Arena *arena) {
 #define print na__print
 
 void na__print(const char *format, ...) {
-    char buffer[1024];
-
     va_list args;
     va_start(args, format);
     vprintf(format, args);
@@ -2095,6 +2235,11 @@ function b32 char_is_symbol(u8 c)
 function b32 char_is_separator(u8 c)
 {
     return char_is_space(c) || char_is_symbol(c);
+}
+
+function b32 char_is_slash(u8 c)
+{
+    return c == '\\' || c == '/';
 }
 
 function u8 char_to_upper(u8 c) {
@@ -2159,7 +2304,7 @@ function i64 cstr_length(const char *cstr) {
 
 function String string_from_cstr(const char *cstr) {
     return string_make((u8 *)cstr, cstr_length(cstr));
-};
+}
 
 function char *string_to_cstr(Arena *arena, String str) {
     if (!str.count || !str.data) {
@@ -2296,7 +2441,7 @@ function i64 string_find(String str, String search, i64 start_index, Match_Flags
 
 function b32 string_includes(String str, String search)
 {
-    return string_find(str, search, 0, 0) >= 0;
+    return string_find(str, search, 0, 0) < str.count;
 }
 
 function b32 string_starts_with(String str, String prefix) {
@@ -2352,14 +2497,16 @@ function String string_split_iter(String text, String search, i64 *index)
 // Allocation
 //
 
-function String string_copy(Arena *arena, String str)
+function String string_push(Arena *arena, String str)
 {
     String copy = {0};
-    u8 *data = PushArray(arena, u8, str.count);
+    u8 *data = PushArray(arena, u8, str.count+1);
 
-    if (data) {
+    if (data)
+    {
         copy = string_make(data, str.count);
         MemoryCopy(copy.data, str.data, str.count);
+        data[str.count] = '\0';
     }
 
     return copy;
@@ -2504,8 +2651,7 @@ function String string_replace(Arena *arena, String str, String find, String rep
 //
 
 function String_Decode string_decode_utf8(u8 *str, u64 capacity) {
-    // String_Decode result = {S_UTF8_INVALID, 1};
-    String_Decode result = {'?', 1};
+    String_Decode result = {S_UTF8_INVALID, 1};
 
     static u8 utf8_class[] = {
         1, 1, 1, 1, 1, 1, 1, 1,
@@ -2520,13 +2666,15 @@ function String_Decode string_decode_utf8(u8 *str, u64 capacity) {
 
     if (capacity >= count) {
         switch (count) {
-            case 1: {
+            case 1:
+            {
                 // NOTE(nick): don't need the extra check because of the utf8_class check
                 result.advance = 1;
                 result.codepoint = str[0] & 0x7F;
             } break;
 
-            case 2: {
+            case 2:
+            {
                 if (utf8_class[str[1] >> 3] == 0)
                 {
                     u32 codepoint = ((str[0] & 0x1F) << 6) | (str[1] & 0x3F);
@@ -2538,37 +2686,26 @@ function String_Decode string_decode_utf8(u8 *str, u64 capacity) {
                 }
             } break;
 
-            case 3: {
-                if (utf8_class[str[1] >> 3] == 0 &&
-                    utf8_class[str[2] >> 3] == 0)
+            case 3:
+            {
+                if (utf8_class[str[1] >> 3] == 0 && utf8_class[str[2] >> 3] == 0)
                 {
                     u32 codepoint = (
                         ((str[0] & 0x0F) << 12) |
                         ((str[1] & 0x3F) << 6) |
                         ((str[2] & 0x3F))
                     );
-                    if (codepoint >= 0x800 && codepoint <= 0xDFFF)
+                    if (codepoint >= 0x800 && codepoint <= 0xFFFF)
                     {
-                        if (!(codepoint >= 0xD800 && codepoint <= 0xDFFF))
-                        {
-                            result.codepoint = codepoint;
-                            result.advance = 3;
-                        }
-                    }
-                }
-                else
-                {
-                    if (utf8_class[str[1] >> 3] == 0)
-                    {
-                        result.advance = 2;
+                        result.codepoint = codepoint;
+                        result.advance = 3;
                     }
                 }
             } break;
 
-            case 4: {
-                if (utf8_class[str[1] >> 3] == 0 &&
-                    utf8_class[str[2] >> 3] == 0 &&
-                    utf8_class[str[3] >> 3] == 0)
+            case 4:
+            {
+                if (utf8_class[str[1] >> 3] == 0 && utf8_class[str[2] >> 3] == 0 && utf8_class[str[3] >> 3] == 0)
                 {
                     u32 codepoint = (
                         ((str[0] & 0x07) << 18) |
@@ -2582,17 +2719,6 @@ function String_Decode string_decode_utf8(u8 *str, u64 capacity) {
                         result.advance = 4;
                     }
                 }
-                else
-                {
-                    if (utf8_class[str[1] >> 3] == 0)
-                    {
-                        result.advance = 2;
-                        if (utf8_class[str[2] >> 3] == 0)
-                        {
-                            result.advance = 3;
-                        }
-                    }
-                }
             } break;
         }
     }
@@ -2603,16 +2729,19 @@ function String_Decode string_decode_utf8(u8 *str, u64 capacity) {
 function u32 string_encode_utf8(u8 *dest, u32 codepoint) {
     u32 advance = 0;
 
-    if (codepoint <= 0x7F) {
+    if (codepoint <= 0x7F)
+    {
         advance = 1;
         dest[0] = (u8)codepoint;
     }
-    else if (codepoint <= 0x7FF) {
+    else if (codepoint <= 0x7FF)
+    {
         advance = 2;
         dest[0] = 0xC0 | (u8)((codepoint >> 6) & 0x1F);
         dest[1] = 0x80 | (u8)(codepoint & 0x3F);
     }
-    else if (codepoint <= 0xFFFF) {
+    else if (codepoint <= 0xFFFF)
+    {
         if (InRange(codepoint, 0xD800, 0xDFFF))
         {
             codepoint = S_UTF8_INVALID;
@@ -2623,7 +2752,8 @@ function u32 string_encode_utf8(u8 *dest, u32 codepoint) {
         dest[1] = 0x80 | (u8)((codepoint >> 6) & 0x3F);
         dest[2] = 0x80 | (u8)(codepoint & 0x3F);
     }
-    else if (codepoint <= 0x10FFFF) {
+    else if (codepoint <= 0x10FFFF)
+    {
         advance = 4;
         dest[0] = 0xF0 | (u8)((codepoint >> 18) & 0x07);
         dest[1] = 0x80 | (u8)((codepoint >> 12) & 0x3F);
@@ -2748,7 +2878,7 @@ function i64 string_move_word(String text, i64 cursor, i32 direction)
 
 function void string_select_word(String text, i64 cursor, i64 *left, i64 *right)
 {
-    i64 i = cursor;
+    i64 i = 0;
     if (char_is_separator(text.data[i]))
     {
         i = cursor;
@@ -2773,7 +2903,7 @@ function void string_select_word(String text, i64 cursor, i64 *left, i64 *right)
     }
     else
     {
-        i64 i = cursor;
+        i = cursor;
         while (i > 0)
         {
             if (char_is_separator(text.data[i])) break;
@@ -2884,7 +3014,7 @@ function String string_from_string32(Arena *arena, String32 str) {
 }
 
 function String16 string16_from_string(Arena *arena, String str) {
-    arena_align(arena, sizeof(u16));
+    arena_push_aligner(arena, sizeof(u16));
     u16 *data = PushArray(arena, u16, str.count * 2 + 1);
 
     u16 *at = data;
@@ -2964,31 +3094,39 @@ function i64 string_to_i64(String str, u32 base) {
     
     // consume sign
     i64 sign = +1;
-    if (p < (u64)str.count) {
+    if (p < (u64)str.count)
+    {
         u8 c = str.data[p];
-        if (c == '-'){
+        if (c == '-')
+        {
             sign = -1;
             p += 1;
         }
-        else if (c == '+'){
+        else if (c == '+')
+        {
             p += 1;
         }
     }
     
     // radix from prefix
     u32 radix = 10;
-    if (p < (u64)str.count) {
+    if (p < (u64)str.count)
+    {
         u8 c0 = str.data[p];
-        if (c0 == '0') {
+        if (c0 == '0')
+        {
             p += 1;
             radix = 8;
-            if (p < (u64)str.count) {
+            if (p < (u64)str.count)
+            {
                 u8 c1 = str.data[p];
-                if (c1 == 'x') {
+                if (c1 == 'x')
+                {
                     p += 1;
                     radix = 16;
                 }
-                else if (c1 == 'b') {
+                else if (c1 == 'b')
+                {
                     p += 1;
                     radix = 2;
                 }
@@ -3062,7 +3200,7 @@ function void string_concat_list(String_List *list, String_List *to_push)
     MemoryZero(to_push, sizeof(*to_push));
 }
 
-function String_List string_splits(Arena *arena, String string, int split_count, String *splits)
+function String_List string_list_splits(Arena *arena, String string, int split_count, String *splits)
 {
     String_List list = {0};
     
@@ -3070,22 +3208,22 @@ function String_List string_splits(Arena *arena, String string, int split_count,
     for (i64 i = 0; i < string.count; i += 1)
     {
         b32 was_split = 0;
-        for(int split_idx = 0; split_idx < split_count; split_idx += 1)
+        for (int split_idx = 0; split_idx < split_count; split_idx += 1)
         {
             b32 match = 0;
-            if(i + splits[split_idx].count <= string.count)
+            if (i + splits[split_idx].count <= string.count)
             {
                 match = 1;
-                for(i64 split_i = 0; split_i < splits[split_idx].count && i + split_i < string.count; split_i += 1)
+                for (i64 split_i = 0; split_i < splits[split_idx].count && i + split_i < string.count; split_i += 1)
                 {
-                    if(splits[split_idx].data[split_i] != string.data[i + split_i])
+                    if (splits[split_idx].data[split_i] != string.data[i + split_i])
                     {
                         match = 0;
                         break;
                     }
                 }
             }
-            if(match)
+            if (match)
             {
                 String split_string = Str8(string.data + split_start, i - split_start);
                 string_list_push(arena, &list, split_string);
@@ -3096,7 +3234,7 @@ function String_List string_splits(Arena *arena, String string, int split_count,
             }
         }
         
-        if(was_split == 0 && i == string.count - 1)
+        if (was_split == 0 && i == string.count - 1)
         {
             String split_string = Str8(string.data + split_start, i+1 - split_start);
             string_list_push(arena, &list, split_string);
@@ -3107,19 +3245,13 @@ function String_List string_splits(Arena *arena, String string, int split_count,
     return list;
 }
 
-function String_List string_split(Arena *arena, String string, String split)
+function String_List string_list_split(Arena *arena, String string, String split)
 {
-    return string_splits(arena, string, 1, &split);
+    return string_list_splits(arena, string, 1, &split);
 }
 
-function String string_list_joins(Arena *arena, String_List list, String_Join *optional_params)
+function String string_list_joins(Arena *arena, String_List list, String_Join_Params join)
 {
-    String_Join join = {0};
-    if (optional_params)
-    {
-        MemoryCopy(&join, optional_params, sizeof(join));
-    }
-    
     u64 sep_count = 0;
     if (list.node_count > 1)
     {
@@ -3150,9 +3282,9 @@ function String string_list_joins(Arena *arena, String_List list, String_Join *o
 
 function String string_list_join(Arena *arena, String_List list, String join)
 {
-    String_Join params = {0};
+    String_Join_Params params = {0};
     params.sep = join;
-    return string_list_joins(arena, list, &params);
+    return string_list_joins(arena, list, params);
 }
 
 function String string_list_print(Arena *arena, String_List *list, char *fmt, ...)
@@ -3170,24 +3302,63 @@ function String string_list_print(Arena *arena, String_List *list, char *fmt, ..
 
 function String string_list_to_string(Arena *arena, String_List *list)
 {
-    return string_list_join(arena, *list, S(""));
+    String_Join_Params params = {0};
+    return string_list_joins(arena, *list, params);
 }
+
+function String_List string_list_from_array(Arena *arena, String_Array array)
+{
+    String_List result = {0};
+    for (i64 index = 0; index < array.count; index += 1)
+    {
+        String it = array.data[index];
+        string_list_push(arena, &result, it);
+    }
+    return result;
+}
+
+//
+// String Arrays
+//
 
 function String_Array string_array_from_list(Arena *arena, String_List list)
 {
-    String_Array result = {};
+    String_Array result = {0};
     result.data = PushArrayZero(arena, String, list.node_count);
     result.count = list.node_count;
+    result.capacity = list.node_count;
 
     i64 index = 0;
     for (String_Node *it = list.first; it != NULL; it = it->next)
     {
-        String str = string_copy(arena, it->string);
+        String str = string_push(arena, it->string);
         result.data[index] = str;
         index += 1;
     }
 
     return result;
+}
+
+function String_Array string_splits(Arena *arena, String string, int split_count, String *splits)
+{
+    String_Array result = {0};
+    result = string_array_from_list(arena, string_list_splits(arena, string, split_count, splits));
+    return result;
+}
+
+function String_Array string_split(Arena *arena, String string, String split)
+{
+    String_Array result = {0};
+    result = string_array_from_list(arena, string_list_splits(arena, string, 1, &split));
+    return result;
+}
+
+function String string_join(Arena *arena, String_Array array, String join)
+{
+    String_Join_Params params = {0};
+    params.sep = join;
+    String_List list = string_list_from_array(arena, array);
+    return string_list_joins(temp_arena(), list, params);
 }
 
 //
@@ -3203,7 +3374,7 @@ function String string_concat2(Arena *arena, String a, String b) {
         MemoryCopy(data + a.count, b.data, b.count);
     }
 
-    return string_make(data, count);
+    return Str8(data, count);
 }
 
 function String string_concat3(Arena *arena, String a, String b, String c) {
@@ -3216,7 +3387,7 @@ function String string_concat3(Arena *arena, String a, String b, String c) {
         MemoryCopy(data + a.count + b.count, c.data, c.count);
     }
 
-    return string_make(data, count);
+    return Str8(data, count);
 }
 
 function String string_concat4(Arena *arena, String a, String b, String c, String d) {
@@ -3230,7 +3401,7 @@ function String string_concat4(Arena *arena, String a, String b, String c, Strin
         MemoryCopy(data + a.count + b.count + c.count, d.data, d.count);
     }
 
-    return string_make(data, count);
+    return Str8(data, count);
 }
 
 function String string_insert(Arena *arena, String text, i64 index, String insert, i64 replace_count)
@@ -3381,14 +3552,14 @@ function void string_to_upper(String *str)
 
 function String string_lower(Arena *arena, String str)
 {
-    String result = string_copy(arena, str);
+    String result = string_push(arena, str);
     string_to_lower(&result);
     return result;
 }
 
 function String string_upper(Arena *arena, String str)
 {
-    String result = string_copy(arena, str);
+    String result = string_push(arena, str);
     string_to_upper(&result);
     return result;
 }
@@ -3402,9 +3573,31 @@ function String path_filename(String path)
     return string_skip_last_slash(path);
 }
 
-function String path_basename(String path)
+function String path_dirname(String in_path)
 {
-    return string_chop_last_slash(path);
+    String path = in_path;
+    if (path.count > 0 && char_is_slash(path.data[path.count - 1]))
+    {
+        path.count -= 1;
+        while (path.count > 0 && char_is_slash(path.data[path.count - 1]))
+        {
+            path.count -= 1;
+        }
+    }
+
+    String result = string_chop_last_slash(path);
+    if (!result.count)
+    {
+        if (path_is_absolute(in_path))
+        {
+            result = S("/");
+        }
+        else
+        {
+            result = S(".");
+        }
+    }
+    return result;
 }
 
 function String path_extension(String path)
@@ -3426,14 +3619,18 @@ function String path_strip_extension(String path)
 {
     String result = {0};
     i64 slash_pos = string_find(path, S("/"), 0, MatchFlag_SlashInsensitive|MatchFlag_FindLast);
-    if (slash_pos < path.count)
+    if (slash_pos >= path.count) slash_pos = 0;
+
+    i64 dot_pos = string_find(path, S("."), slash_pos, MatchFlag_FindLast);
+    if (dot_pos < path.count)
     {
-        i64 dot_pos = string_find(path, S("."), slash_pos, MatchFlag_FindLast);
-        if (dot_pos < path.count)
-        {
-            result = string_slice(path, 0, dot_pos);
-        }
+        result = string_slice(path, 0, dot_pos);
     }
+    else
+    {
+        result = path;
+    }
+    
     return result;
 }
 
@@ -3479,18 +3676,18 @@ function b32 path_is_absolute(String path)
 // Timing
 //
 
-#if 0
 function String string_from_time(f64 time_in_seconds, String_Time_Options options)
 {
     f64 time = time_in_seconds;
 
-    f64 fractional_ms = (time - floor_f64(time));
+    f64 fractional_ms = (time - (u64)time);
     time -= fractional_ms;
     u32 ms = (u32)(fractional_ms * 1000.0);
 
-    i32 s = (i32)mod_f64(time, 60.0);
-    i32 m = (i32)mod_f64(time / 60.0, 60.0);
-    i32 h = (i32)round_f64(time / (60.0 * 60.0));
+    i32 s = (i32)(time) % 60;
+    i32 m = (i32)(time / 60.0) % 60;
+    f64 hpart = time / (60.0 * 60.0);
+    i32 h = (i32)(hpart + 0.5);
 
     if (time_in_seconds < 0)
     {
@@ -3519,31 +3716,136 @@ function String string_from_time(f64 time_in_seconds, String_Time_Options option
 
     return sprint("%s%02d:%02d", sign,m,s);
 }
-#endif
+
+//
+// CLI
+//
+
+function String_Array string_array_from_c_array(Arena *arena, char **data, int count)
+{
+    String_Array result = {0};
+    result.data = PushArrayZero(arena, String, count);
+
+    for (int i = 0; i < count; i += 1)
+    {
+        assert(result.count < count);
+        result.data[result.count] = string_push(arena, string_from_cstr(data[i]));
+        result.count += 1;
+    }
+
+    return result;
+}
+
+function CLI_Argument string_parse_argument(String_Array array, i64 index)
+{
+    CLI_Argument result = {0};
+
+    String key = array.data[index];
+    String val = S("");
+
+    bool consumes_next_index = false;
+    i64 equals = string_index(key, S("="), 0);
+    if (equals >= 0)
+    {
+        String str = key;
+        key = string_slice(str, 0, equals);
+        val = string_slice(str, equals+1, str.count);
+    }
+    else if (string_starts_with(key, S("-")))
+    {
+        if (index < array.count-1)
+        {
+            String maybe_val = array.data[index+1];
+            if (!string_starts_with(maybe_val, S("-")))
+            {
+                consumes_next_index = true;
+                val = maybe_val;
+            }
+        }
+    }
+
+    // NOTE(nick): normalize all options to start with a single -
+    if (string_starts_with(key, S("--")))
+    {
+        key = string_skip(key, 1);
+    }
+
+    result.name = key;
+    result.value = val;
+    result.consumes_next_index = consumes_next_index;
+    return result;
+}
+
+function bool string_is_option(CLI_Argument arg)
+{
+    return string_starts_with(arg.name, S("-"));
+}
+
+function bool string_option_match(String arg_name, String name, String alias)
+{
+    if (!string_starts_with(name, S("-"))) name = string_concat2(temp_arena(), S("-"), name);
+    if (alias.count > 0 && !string_starts_with(alias, S("-"))) alias = string_concat2(temp_arena(), S("-"), alias);
+
+    return string_equals(arg_name, name) || (alias.count > 0 && string_equals(arg_name, alias));
+}
+
+function void cli_option_parse_bool(CLI_Argument arg, String name, String alias, b32 *value)
+{
+    if (string_option_match(arg.name, name, alias))
+    {
+        if (arg.value.count) *value = string_to_b32(arg.value);
+        else *value = true;
+    }
+}
 
 //
 // String Conversions
 //
 
 function String b32_to_string(b32 x)   { if (x) return S("true"); return S("false"); }
+function String char_to_string(char x) { return sprint("%c", x); }
+function String cstr_to_string(char *x) { return string_from_cstr(x); }
+function String int_to_string(int x) { return sprint("%d", x); }
+function String i64_to_string(i64 x) { return sprint("%lld", x); }
+function String u64_to_string(u64 x) { return sprint("%llu", x); }
+function String f32_to_string(f32 x) { return sprint("%.2f", x); }
+function String f64_to_string(f64 x) { return sprint("%.4f", x); }
+function String ptr_to_string(void *x) { return sprint("%p", x); }
+function String String_to_string(String x) { return x; }
 
 #if LANG_CPP
 
-function String to_string(bool x)   { if (x) return S("true"); return S("false"); }
-function String to_string(char x)   { return sprint("%c", x); }
-function String to_string(char *x)  { return string_from_cstr(x); }
-function String to_string(i8 x)     { return sprint("%d", x); }
-function String to_string(u8 x)     { return sprint("%d", x); }
-function String to_string(i16 x)    { return sprint("%d", x); }
-function String to_string(u16 x)    { return sprint("%d", x); }
-function String to_string(i32 x)    { return sprint("%d", x); }
-function String to_string(u32 x)    { return sprint("%d", x); }
-function String to_string(i64 x)    { return sprint("%lld", x); }
-function String to_string(u64 x)    { return sprint("%llu", x); }
-function String to_string(f32 x)    { return sprint("%f", x); }
-function String to_string(f64 x)    { return sprint("%f", x); }
-function String to_string(void *x)  { return sprint("%p", x); }
-function String to_string(String x) { return x; }
+function String to_string(bool x)   { return b32_to_string(x); }
+function String to_string(char x)   { return char_to_string(x); }
+function String to_string(char *x)  { return cstr_to_string(x); }
+function String to_string(i8 x)     { return int_to_string(x); }
+function String to_string(u8 x)     { return int_to_string(x); }
+function String to_string(i16 x)    { return int_to_string(x); }
+function String to_string(u16 x)    { return int_to_string(x); }
+function String to_string(i32 x)    { return int_to_string(x); }
+function String to_string(u32 x)    { return int_to_string(x); }
+function String to_string(i64 x)    { return i64_to_string(x); }
+function String to_string(u64 x)    { return u64_to_string(x); }
+function String to_string(f32 x)    { return f32_to_string(x); }
+function String to_string(f64 x)    { return f64_to_string(x); }
+function String to_string(void *x)  { return ptr_to_string(x); }
+function String to_string(String x) { return String_to_string(x); }
+
+#else
+
+#define Array__to_string
+#define Math__to_string
+
+#define to_string(x) _Generic((x), \
+    bool: b32_to_string, \
+    char: char_to_string, \
+    int: int_to_string, \
+    f32: f32_to_string, \
+    f64: f64_to_string, \
+    void*: ptr_to_string, \
+    String: String_to_string, \
+    Array__to_string Math__to_string default: S("<Unknown>") \
+)( (x) )
 
 #endif // LANG_CPP
 
@@ -3593,6 +3895,21 @@ function u64 endian_swap_u64(u64 i) {
            ((i&0x00ff000000000000ull)>>40) | ((i&0x000000000000ff00ull)<<40) |
            ((i&0x0000ff0000000000ull)>>24) | ((i&0x0000000000ff0000ull)<<24) |
            ((i&0x000000ff00000000ull)>>8)  | ((i&0x00000000ff000000ull)<<8);
+}
+
+function u16 u16_from_big_endian(u16 i)
+{
+    return ARCH_BIG_ENDIAN ? i : endian_swap_u16(i);
+}
+
+function u32 u32_from_big_endian(u32 i)
+{
+    return ARCH_BIG_ENDIAN ? i : endian_swap_u32(i);
+}
+
+function u64 u64_from_big_endian(u64 i)
+{
+    return ARCH_BIG_ENDIAN ? i : endian_swap_u64(i);
 }
 
 function u32 rotate_left_u32(u32 value, i32 amount) {
@@ -3691,8 +4008,8 @@ function u32 murmur32_seed(void const *data, i64 len, u32 seed) {
 }
 
 function u64 murmur64_seed(void const *data_, i64 len, u64 seed) {
-    u64 const m = 0xc6a4a7935bd1e995ULL;
-    i32 const r = 47;
+    const u64 m = 0xc6a4a7935bd1e995ULL;
+    const int r = 47;
 
     u64 h = seed ^ (len * m);
 
@@ -3791,6 +4108,32 @@ function u64 fnv64a_from_string(String str)
     return fnv64a(str.data, str.count);
 }
 
+
+function u32 hash_number_u32(const uint32_t offset, const uint32_t seed)
+{
+    u32 hash = seed;
+    hash += (offset + 48);
+    hash += (hash << 10);
+    hash ^= (hash >> 6);
+
+    hash += (hash << 3);
+    hash ^= (hash >> 11);
+    hash += (hash << 15);
+    return hash;
+}
+
+function u32 hash_mix_u32(u32 id, u32 number)
+{
+    id += number;
+    id += (id << 10);
+    id ^= (id >> 6);
+
+    id += (id << 3);
+    id ^= (id >> 11);
+    id += (id << 15);
+    return id;
+}
+
 //
 // Random
 //
@@ -3824,11 +4167,11 @@ function f32 random_lcg_f32(Random_LCG *it)
     return divisor * (f32)random_lcg_u32(it);
 }
 
-function f32 random_lcg_f32_between(Random_LCG *it, f32 min, f32 max) {
+function f32 random_lcg_between_f32(Random_LCG *it, f32 min, f32 max) {
     return min + (max - min) * random_lcg_f32(it);
 }
 
-function i32 random_lcg_i32_between(Random_LCG *it, i32 min, i32 max) {
+function i32 random_lcg_between_i32(Random_LCG *it, i32 min, i32 max) {
     assert(max >= min);
     return min + (i32)(random_lcg_u32(it) % (max - min + 1));
 }
@@ -3878,11 +4221,11 @@ function f32 random_pcg_f32(Random_PCG *it)
     return divisor * (f32)random_pcg_u32(it);
 }
 
-function f32 random_pcg_f32_between(Random_PCG *it, f32 min, f32 max) {
+function f32 random_pcg_between_f32(Random_PCG *it, f32 min, f32 max) {
     return min + (max - min) * random_pcg_f32(it);
 }
 
-function i32 random_pcg_i32_between(Random_PCG *it, i32 min, i32 max) {
+function i32 random_pcg_between_i32(Random_PCG *it, i32 min, i32 max) {
     assert(max >= min);
     return min + (i32)(random_pcg_u32(it) % (max - min + 1));
 }
@@ -3901,8 +4244,7 @@ static Random_PCG g_random = {0x4d595df4d0f33173, 6364136223846793005u};
 
 function void random_init()
 {
-    // @Incomplete: this should be os_system_time or something
-    f64 time = os_time();
+    f64 time = os_clock();
     u64 seed =  *(u64 *)&time;
     random_set_seed(seed);
 }
@@ -3922,19 +4264,24 @@ function f32 random_next_f32()
     return random_pcg_f32(&g_random);
 }
 
-function f32 random_f32_between(f32 min, f32 max)
+function f32 random_between_f32(f32 min, f32 max)
 {
-    return random_pcg_f32_between(&g_random, min, max);
+    return random_pcg_between_f32(&g_random, min, max);
 }
 
-function i32 random_i32_between(i32 min, i32 max)
+function i32 random_between_i32(i32 min, i32 max)
 {
-    return random_pcg_i32_between(&g_random, min, max);
+    return random_pcg_between_i32(&g_random, min, max);
 }
 
 function f32 random_zero_to_one()
 {
-    return random_pcg_f32_between(&g_random, 0, 1);
+    return random_pcg_between_f32(&g_random, 0, 1);
+}
+
+function void random_shuffle(void *base, u64 count, u64 size)
+{
+    return random_pcg_shuffle(&g_random, base, count, size);
 }
 
 //
@@ -4005,6 +4352,7 @@ function void win32_file_error(File *file, const char *message, String file_name
 }
 
 function Date_Time win32_date_time_from_system_time(SYSTEMTIME *in) {
+    assert(in != NULL);
     Date_Time result = {0};
 
     result.year = in->wYear;
@@ -4019,6 +4367,7 @@ function Date_Time win32_date_time_from_system_time(SYSTEMTIME *in) {
 }
 
 function SYSTEMTIME win32_system_time_from_date_time(Date_Time *in) {
+    assert(in != NULL);
     SYSTEMTIME result = {0};
 
     result.wYear = in->year;
@@ -4255,6 +4604,30 @@ function f64 os_time()
     return result;
 }
 
+function f64 os_clock()
+{
+    static u64 win32_ticks_per_second = 0;
+
+    if (win32_ticks_per_second == 0)
+    {
+        LARGE_INTEGER perf_frequency = {0};
+        if (QueryPerformanceFrequency(&perf_frequency)) {
+            win32_ticks_per_second = perf_frequency.QuadPart;
+        }
+
+        assert(win32_ticks_per_second != 0);
+    }
+
+    f64 result = 0;
+
+    LARGE_INTEGER perf_counter;
+    if (QueryPerformanceCounter(&perf_counter)) {
+        result = (f64)(perf_counter.QuadPart) / win32_ticks_per_second;
+    }
+
+    return result;
+}
+
 function void os_sleep(f64 seconds)
 {
     // @Incomplete: only do this if win32_sleep_is_granular
@@ -4270,6 +4643,7 @@ function void os_sleep(f64 seconds)
         timeBeginPeriod_t timeBeginPeriod = (timeBeginPeriod_t)GetProcAddress(libwinmm, "timeBeginPeriod");
         if (timeBeginPeriod) {
             win32_sleep_is_granular = timeBeginPeriod(1) == 0 /* TIMERR_NOERROR */;
+            Unused(win32_sleep_is_granular);
         }
 
         win32_did_init_sleep = true;
@@ -4922,10 +5296,10 @@ struct Win32_Thread_Params
 // Basic
 //
 
-function u32 thread_get_id() {
+function u64 os_thread_get_id() {
     u8 *ThreadLocalStorage = (u8 *)__readgsqword(0x30);
     u32 result = *(u32 *)(ThreadLocalStorage + 0x48);
-    return result;
+    return (u64)result;
 }
 
 function u32 atomic_compare_exchange_u32(u32 volatile *value, u32 New, u32 Expected) {
@@ -4951,8 +5325,6 @@ function u64 atomic_add_u64(u64 volatile *value, u64 Addend) {
 DWORD WINAPI win32_thread_proc(LPVOID lpParameter) {
     Win32_Thread_Params *params = (Win32_Thread_Params *)lpParameter;
 
-    // NOTE(nick): initialize scratch memory
-    GetScratch(0, 0);
     os_init();
 
     assert(params->proc);
@@ -4963,11 +5335,11 @@ DWORD WINAPI win32_thread_proc(LPVOID lpParameter) {
     return result;
 }
 
-function Thread thread_create(Thread_Proc *proc, void *data, u64 copy_size) {
+function Thread os_thread_create(Thread_Proc *proc, void *data, u64 copy_size) {
     Win32_Thread_Params *params = (Win32_Thread_Params *)os_alloc(sizeof(Win32_Thread_Params) + copy_size);
     params->proc = proc;
     params->data = data;
-    if (copy_size)
+    if (copy_size && data)
     {
         params->data = params + sizeof(Win32_Thread_Params);
         MemoryCopy(params->data, data, copy_size);
@@ -4978,26 +5350,25 @@ function Thread thread_create(Thread_Proc *proc, void *data, u64 copy_size) {
 
     Thread result = {0};
     result.handle = handle;
-    result.id = thread_id;
     return result;
 }
 
-function void thread_pause(Thread thread) {
+function void os_thread_pause(Thread thread) {
     HANDLE handle = (HANDLE)thread.handle;
     SuspendThread(handle);
 }
 
-function void thread_resume(Thread thread) {
+function void os_thread_resume(Thread thread) {
     HANDLE handle = (HANDLE)thread.handle;
     ResumeThread(handle);
 }
 
-function void thread_detach(Thread thread) {
+function void os_thread_detach(Thread thread) {
     HANDLE handle = (HANDLE)thread.handle;
     CloseHandle(handle);
 }
 
-function u32 thread_await(Thread thread) {
+function u32 os_thread_await(Thread thread) {
     HANDLE handle = (HANDLE)thread.handle;
     WaitForSingleObject(handle, INFINITE);
     DWORD result;
@@ -5009,19 +5380,20 @@ function u32 thread_await(Thread thread) {
 // Data Structures
 //
 
-function Semaphore semaphore_create(u32 max_count) {
+function Semaphore os_semaphore_create(u32 max_count) {
     Semaphore result = {0};
     result.handle = CreateSemaphoreExA(NULL, 0, max_count, 0, 0, SEMAPHORE_ALL_ACCESS);
     assert(result.handle != NULL);
     return result;
 }
 
-function void semaphore_signal(Semaphore *sem) {
+function void os_semaphore_signal(Semaphore *sem) {
     BOOL ok = ReleaseSemaphore(sem->handle, 1, 0);
+    Unused(ok);
     // assert(ok);
 }
 
-function void semaphore_wait_for(Semaphore *sem, bool infinite) {
+function void os_semaphore_wait_for(Semaphore *sem, bool infinite) {
     DWORD res;
 
     if (infinite) {
@@ -5033,12 +5405,12 @@ function void semaphore_wait_for(Semaphore *sem, bool infinite) {
     assert(res != WAIT_FAILED);
 }
 
-function void semaphore_destroy(Semaphore *sem) {
+function void os_semaphore_destroy(Semaphore *sem) {
     CloseHandle(sem->handle);
     sem->handle = 0;
 }
 
-function Mutex mutex_create(u32 spin_count) {
+function Mutex os_mutex_create(u32 spin_count) {
     Mutex result = {0};
 
     // TODO(nick): this is only 40 bytes, should we just bake this into the Mutex itself?
@@ -5054,19 +5426,19 @@ function Mutex mutex_create(u32 spin_count) {
     return result;
 }
 
-function void mutex_aquire_lock(Mutex *mutex) {
+function void os_mutex_aquire_lock(Mutex *mutex) {
     EnterCriticalSection(cast(LPCRITICAL_SECTION)mutex->handle);
 }
 
-function bool mutex_try_aquire_lock(Mutex *mutex) {
+function bool os_mutex_try_aquire_lock(Mutex *mutex) {
     return TryEnterCriticalSection(cast(LPCRITICAL_SECTION)mutex->handle) != 0;
 }
 
-function void mutex_release_lock(Mutex *mutex) {
+function void os_mutex_release_lock(Mutex *mutex) {
     LeaveCriticalSection(cast(LPCRITICAL_SECTION)mutex->handle);
 }
 
-function void mutex_destroy(Mutex *mutex) {
+function void os_mutex_destroy(Mutex *mutex) {
     if (mutex->handle)
     {
         DeleteCriticalSection(cast(LPCRITICAL_SECTION)mutex->handle);
@@ -5075,7 +5447,8 @@ function void mutex_destroy(Mutex *mutex) {
     }
 }
 #elif OS_MACOS
-    #include <mach/clock.h>
+    
+#include <mach/clock.h>
 #include <mach/mach_time.h>
 #include <mach/mach_host.h>
 #include <mach/mach_port.h>
@@ -5091,19 +5464,15 @@ function void mutex_destroy(Mutex *mutex) {
 #define PATH_MAX 2048
 #endif
 
-static pthread_key_t macos_thread_local_key;
-
 //
 // System
 //
 
-function bool os_init() {
+function bool os_init()
+{
     // NOTE(nick): calling these functions initializes their state
     GetScratch(0, 0);
     os_time();
-
-    pthread_key_create(&macos_thread_local_key, NULL);
-
     return true;
 }
 
@@ -5133,7 +5502,6 @@ function String os_get_system_path(Arena *arena, SystemPath path)
             u32 length = 0;
             _NSGetExecutablePath(0, &length);
 
-            Arena *arena = temp_arena();
             char *buffer = (char *)arena_push(arena, length);
 
             if (_NSGetExecutablePath(buffer, &length) >= 0)
@@ -5206,14 +5574,52 @@ function f64 os_time()
     #endif
 }
 
+function f64 os_clock()
+{
+    #if __MAC_OS_X_VERSION_MIN_REQUIRED >= 101200
+
+        #ifndef CLOCK_MONOTONIC_RAW
+            #error "CLOCK_MONOTONIC_RAW not found. Please verify that <time.h> is included from the MacOSX SDK rather than /usr/local/include"
+        #endif
+
+        return (f64)(clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW)) / (f64)(1e9);
+    #else
+
+    static f64 macos_perf_frequency = 0;
+    if (macos_perf_frequency == 0)
+    {
+        mach_timebase_info_data_t rate_nsec;
+        mach_timebase_info(&rate_nsec);
+
+        macos_perf_frequency = 1000000000LL * rate_nsec.numer / rate_nsec.denom;
+    }
+
+    f64 now = mach_absolute_time();
+    return (now) / macos_perf_frequency;
+
+    #endif
+}
+
 function void os_sleep(f64 seconds)
 {
     u64 nanoseconds = (u64)((seconds) * (1e9));
 
-    timespec rqtp;
+    struct timespec rqtp;
     rqtp.tv_sec = nanoseconds / 1000000000;
     rqtp.tv_nsec = nanoseconds - rqtp.tv_sec * 1000000000;
     nanosleep(&rqtp, 0);
+}
+
+function f64 os_caret_blink_time()
+{
+    f32 seconds = 500.0 / 1000.0;
+    return seconds;
+}
+
+function f64 os_double_click_time()
+{
+    f32 seconds = 500.0 / 1000.0;
+    return seconds;
 }
 
 //
@@ -5225,9 +5631,14 @@ function void os_sleep(f64 seconds)
 #include <objc/message.h>
 #include <objc/NSObjCRuntime.h>
 
-typedef void* macos_NSString;
-typedef macos_NSString* NSPasteboardType;
-import NSPasteboardType const NSPasteboardTypeString; // Available MacOS 10.6
+#ifdef __OBJC__
+@class NSString;
+#else
+typedef void NSString;
+#endif
+
+typedef NSString* NSPasteboardType;
+extern NSPasteboardType const NSPasteboardTypeString; // Available MacOS 10.6
 
 #define objc_msgSend_id ((id (*)(id, SEL))objc_msgSend)
 #define objc_method(ReturnType, ...) ((ReturnType (*)(__VA_ARGS__))objc_msgSend)
@@ -5242,7 +5653,7 @@ function String os_get_clipboard_text()
     // char *text = [string UTF8String];
     char *text = objc_method(char*, id, SEL)(string, sel_registerName("UTF8String"));
 
-    auto result = string_copy(temp_arena(), string_from_cstr(text));
+    String result = string_push(temp_arena(), string_from_cstr(text));
     return result;
 }
 
@@ -5262,34 +5673,6 @@ function bool os_set_clipboard_text(String text)
 
     ReleaseScratch(scratch);
     return result == YES;
-}
-
-//
-// Library
-//
-
-#include <dlfcn.h>
-
-function OS_Library os_library_load(String path) {
-    M_Temp scratch = GetScratch(0, 0);
-
-    OS_Library result = {0};
-    // TODO(bill): Should this be RTLD_LOCAL?
-    result.handle = dlopen(string_to_cstr(scratch.arena, path), RTLD_LAZY | RTLD_GLOBAL);
-
-    ReleaseScratch(scratch);
-    return result;
-}
-
-function void os_library_unload(OS_Library lib) {
-    if (lib.handle) {
-        dlclose(lib.handle);
-        lib.handle = 0;
-    }
-}
-
-function void *os_library_get_proc(OS_Library lib, char *proc_name) {
-    return (void *)dlsym(lib.handle, proc_name);
 }
 
 //
@@ -5337,7 +5720,7 @@ function bool os_shell_open(String path)
 // Make sure this fits into the handle pointer!
 StaticAssert(sizeof(semaphore_t) <= sizeof(void *), "check_semaphore_size");
 
-function Semaphore semaphore_create(u32 max_count) {
+function Semaphore os_semaphore_create(u32 max_count) {
     Semaphore result = {0};
 
     mach_port_t self = mach_task_self();
@@ -5351,15 +5734,15 @@ function Semaphore semaphore_create(u32 max_count) {
     return result;
 }
 
-function void semaphore_signal(Semaphore *sem) {
-    auto handle = cast(semaphore_t *)sem->handle;
+function void os_semaphore_signal(Semaphore *sem) {
+    semaphore_t *handle = cast(semaphore_t *)sem->handle;
     kern_return_t ret = semaphore_signal(*handle);
     assert(ret == KERN_SUCCESS);
 }
 
-function void semaphore_wait_for(Semaphore *sem, bool infinite) {
-    kern_return_t ret;
-    auto handle = cast(semaphore_t *)sem->handle;
+function void os_semaphore_wait_for(Semaphore *sem, bool infinite) {
+    kern_return_t ret = 0;
+    semaphore_t *handle = cast(semaphore_t *)sem->handle;
 
     if (infinite) {
         ret = semaphore_wait(*handle);
@@ -5371,15 +5754,18 @@ function void semaphore_wait_for(Semaphore *sem, bool infinite) {
     assert(ret == KERN_SUCCESS);
 }
 
-function void semaphore_destroy(Semaphore *sem) {
-    mach_port_t self = mach_task_self();
-    auto handle = cast(semaphore_t *)sem->handle;
-    semaphore_destroy(self, *handle);
-    os_free(handle); // @Memory @Cleanup
-    handle = 0;
+function void os_semaphore_destroy(Semaphore *sem) {
+    if (sem->handle)
+    {
+        mach_port_t self = mach_task_self();
+        semaphore_t *handle = cast(semaphore_t *)sem->handle;
+        semaphore_destroy(self, *handle);
+        os_free(handle); // @Memory @Cleanup
+        handle = 0;
+    }
 }
 
-function Mutex mutex_create(u32 spin_count) {
+function Mutex os_mutex_create(u32 spin_count) {
     Mutex result = {0};
 
     result.handle = os_alloc(sizeof(pthread_mutex_t));
@@ -5390,29 +5776,236 @@ function Mutex mutex_create(u32 spin_count) {
     return result;
 }
 
-function void mutex_aquire_lock(Mutex *mutex) {
+function void os_mutex_aquire_lock(Mutex *mutex) {
     pthread_mutex_lock(cast(pthread_mutex_t *)mutex->handle);
 }
 
-function bool mutex_try_aquire_lock(Mutex *mutex) {
+function bool os_mutex_try_aquire_lock(Mutex *mutex) {
     return pthread_mutex_trylock(cast(pthread_mutex_t *)mutex->handle) != 0;
 }
 
-function void mutex_release_lock(Mutex *mutex) {
+function void os_mutex_release_lock(Mutex *mutex) {
     pthread_mutex_unlock(cast(pthread_mutex_t *)mutex->handle);
 }
 
-function void mutex_destroy(Mutex *mutex) {
-    // @Robustness: track if it's been released before deleting?
-    pthread_mutex_destroy(cast(pthread_mutex_t *)mutex->handle);
-    os_free(mutex->handle);
-    mutex->handle = 0;
+function void os_mutex_destroy(Mutex *mutex) {
+    if (mutex->handle) {
+        pthread_mutex_destroy(cast(pthread_mutex_t *)mutex->handle);
+        os_free(mutex->handle);
+        mutex->handle = 0;
+    }
 }
 #elif OS_LINUX
-    #error Not implemented
+    #include <time.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <stdlib.h>
+#include <linux/limits.h>
+
+function bool os_init()
+{
+    // NOTE(nick): calling these functions initializes their state
+    GetScratch(0, 0);
+    os_time();
+    return true;
+}
+
+function void os_exit(i32 code)
+{
+    exit(code);
+}
+
+function String os_get_system_path(Arena *arena, SystemPath path)
+{
+    String result = {0};
+   
+    switch (path)
+    {
+        case SystemPath_Current:
+        {
+            char *buffer = (char *)arena_push(arena, PATH_MAX);
+            getcwd(buffer, PATH_MAX);
+
+            result = string_from_cstr(buffer);
+            i64 unused_size = PATH_MAX - result.count; 
+            arena_pop(arena, unused_size);
+        } break;
+
+        case SystemPath_Binary:
+        {
+            char *buffer = (char *)arena_push(arena, PATH_MAX);
+            size_t length = readlink("/proc/self/exe", buffer, PATH_MAX);
+            if (length > 0)
+            {
+                char *normalized = (char *)arena_push(arena, PATH_MAX);
+                if (realpath(buffer, normalized) != NULL)
+                {
+                    result = Str8(normalized, length);
+                    i64 unused_size = PATH_MAX - result.count;
+                    arena_pop(arena, unused_size);
+                }
+                else 
+                {
+                    result = Str8(buffer, length);
+                }
+
+                result = string_chop_last_slash(result);
+            }
+        } break;
+
+        case SystemPath_AppData:
+        {
+            char *home_str = getenv("HOME");
+            String home = string_from_cstr(home_str);
+            result = string_concat2(arena, home, S("/.config/"));
+        } break;
+    }
+   
+    return result;
+}
+
+function f64 os_time()
+{
+    static struct timespec initial = {0};
+    if (initial.tv_sec == 0)
+    {
+        clock_gettime(CLOCK_MONOTONIC_RAW, &initial);
+    }
+
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &now);
+
+    f64 result = (now.tv_sec - initial.tv_sec) + ((f64)(now.tv_nsec - initial.tv_nsec) / 1e9);
+    return result;
+}
+
+function f64 os_clock()
+{
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &t);
+    return (f64)t.tv_sec + ((f64)t.tv_nsec / 1e9);
+}
+
+function void os_sleep(f64 seconds)
+{
+    u64 nanoseconds = (u64)((seconds) * (1e9));
+
+    struct timespec rqtp;
+    rqtp.tv_sec = nanoseconds / 1000000000;
+    rqtp.tv_nsec = nanoseconds - rqtp.tv_sec * 1000000000;
+    nanosleep(&rqtp, 0);
+}
+
+function f64 os_caret_blink_time()
+{
+    f32 seconds = 500.0 / 1000.0;
+    return seconds;
+}
+
+function f64 os_double_click_time()
+{
+    f32 seconds = 500.0 / 1000.0;
+    return seconds;
+}
+
+//
+// Clipboard
+//
+
+function String os_get_clipboard_text()
+{
+    return S("");
+}
+
+function bool os_set_clipboard_text(String text)
+{
+    return false;
+}
+
+//
+// Shell
+//
+
+function bool os_shell_open(String path)
+{
+    return false;
+}
+
+//
+// Threading Primitives
+//
+
+#include <pthread.h>
+#include <semaphore.h>
+#include <stdlib.h>
+#include <assert.h>
+
+function Semaphore os_semaphore_create(u32 max_count)
+{
+    Semaphore result = {0};
+    sem_t *handle = (sem_t *)malloc(sizeof(sem_t));
+    result.handle = handle;
+    sem_init(handle, 0, max_count);
+    return result;
+}
+
+function void os_semaphore_signal(Semaphore *sem)
+{
+    sem_t *handle = (sem_t *)sem->handle;
+    sem_post(handle);
+}
+
+function void os_semaphore_wait_for(Semaphore *sem, bool infinite)
+{
+    sem_t *handle = (sem_t *)sem->handle;
+    if (infinite) {
+        sem_wait(handle);
+    } else {
+        assert(!"Invalid code path");
+    }
+}
+
+function void os_semaphore_destroy(Semaphore *sem)
+{
+    if (sem->handle)
+    {
+        sem_t *handle = (sem_t *)sem->handle;
+        sem_destroy(handle);
+        free(sem->handle);
+        sem->handle = 0;
+    }
+}
+
+function Mutex os_mutex_create(u32 spin_count)
+{
+    Mutex result = {0};
+    result.handle = (void *)malloc(sizeof(pthread_mutex_t));
+    pthread_mutex_init((pthread_mutex_t *)result.handle, NULL);
+    return result;
+}
+
+function void os_mutex_aquire_lock(Mutex *mutex) {
+    pthread_mutex_lock((pthread_mutex_t *)mutex->handle);
+}
+
+function bool os_mutex_try_aquire_lock(Mutex *mutex) {
+    return pthread_mutex_trylock((pthread_mutex_t *)mutex->handle) != 0;
+}
+
+function void os_mutex_release_lock(Mutex *mutex) {
+    pthread_mutex_unlock((pthread_mutex_t *)mutex->handle);
+}
+
+function void os_mutex_destroy(Mutex *mutex) {
+    if (mutex->handle) {
+        pthread_mutex_destroy((pthread_mutex_t *)mutex->handle);
+        free(mutex->handle);
+        mutex->handle = 0;
+    }
+}
 #endif
 
-#if OS_WINDOWS || OS_MACOS
+#if OS_LINUX || OS_MACOS
     #include <stdlib.h>
 #include <dirent.h>
 #include <sys/stat.h>
@@ -5420,6 +6013,7 @@ function void mutex_destroy(Mutex *mutex) {
 #include <stdio.h>
 
 #include <sys/mman.h>
+#include <stdatomic.h>
 
 typedef struct Unix_File_Lister Unix_File_Lister;
 struct Unix_File_Lister {
@@ -5428,8 +6022,31 @@ struct Unix_File_Lister {
 };
 
 //
+// Basic
+//
+
+function u32 atomic_compare_exchange_u32(volatile u32 *value, u32 new_value, u32 expected) {
+    atomic_compare_exchange_strong((_Atomic u32 *)value, &expected, new_value);
+    return expected;
+}
+
+function u64 atomic_exchange_u64(volatile u64 *value, u64 new_value) {
+    return atomic_exchange((_Atomic u64 *)value, new_value);
+}
+
+function u64 atomic_add_u64(volatile u64 *value, u64 addend) {
+    // NOTE: Returns the original value _prior_ to adding
+    u64 result = atomic_fetch_add((_Atomic u64 *)value, addend);
+    return result;
+}
+
+//
 // Timing
 //
+
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <unistd.h>
 
 function void os_set_high_process_priority(bool enable) {
     if (enable) {
@@ -5443,69 +6060,47 @@ function void os_set_high_process_priority(bool enable) {
 // Memory
 //
 
-function u64 os_memory_page_size() {
+function u64 os_memory_page_size()
+{
     i64 result = sysconf(_SC_PAGE_SIZE);
     return (u64)result;
 }
 
-function void *os_memory_reserve(u64 size) {
-    void *result = 0;
+function void *os_memory_reserve(u64 size)
+{
+    void *result = NULL;
 
     result = mmap(NULL, size, PROT_NONE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-    if (result  == (void*)-1)
+    if (result == (void*)-1)
     {
-        result = 0;
+        result = NULL;
     }
 
+    AsanPoisonMemoryRegion(result, size);
     return result;
 }
 
-function bool os_memory_commit(void *ptr, u64 size) {
-    u64 page_size = os_memory_page_size();
-
-    i64 p = (i64)ptr;
-    i64 p_aligned = AlignDownPow2(p, page_size);
-
-    if (p != p_aligned) {
-        i64 delta = p - p_aligned;
-        ptr = (void *)((u8 *)ptr - delta);
-        size += delta;
-    }
-
-    size = AlignUpPow2(size, page_size);
-
-    // printf("[commit] %p (%lld)\n", ptr, size);
-
+function bool os_memory_commit(void *ptr, u64 size)
+{
     // NOTE(nick): ptr must be aligned to a page boundary.
     int result = mprotect(ptr, size, PROT_READ | PROT_WRITE);
     madvise(ptr, size, MADV_WILLNEED);
+    AsanUnpoisonMemoryRegion(ptr, size);
     return result == 0;
 }
 
-function bool os_memory_decommit(void *ptr, u64 size) {
-    u64 page_size = os_memory_page_size();
-
-    i64 p = (i64)ptr;
-    i64 p_aligned = AlignDownPow2(p, page_size);
-
-    if (p != p_aligned) {
-        i64 delta = p - p_aligned;
-        ptr = (void *)((u8 *)ptr - delta);
-        size += delta;
-    }
-
-    size = AlignUpPow2(size, page_size);
-
-    // printf("[decommit] %p (%lld)\n", ptr, size);
-
+function bool os_memory_decommit(void *ptr, u64 size)
+{
     // NOTE(nick): ptr must be aligned to a page boundary.
-    // int result = mprotect(ptr, size, PROT_NONE);
+    int result = mprotect(ptr, size, PROT_NONE);
     madvise(ptr, size, MADV_DONTNEED);
-    // return result == 0;
-    return true;
+    AsanPoisonMemoryRegion(ptr, size);
+    return result == 0;
 }
 
-function bool os_memory_release(void *ptr, u64 size) {
+function bool os_memory_release(void *ptr, u64 size)
+{
+    AsanPoisonMemoryRegion(ptr, size);
     return munmap(ptr, size) == 0;
 }
 
@@ -5597,10 +6192,11 @@ function File_Info os_get_file_info(String path) {
         info.access           = unix_access_from_mode(stat_info.st_mode);
     }
 
+    ReleaseScratch(scratch);
     return info;
 }
 
-void unix_file_error(File *file, char *message, String file_name) {
+void unix_file_error(File *file, const char *message, String file_name) {
 #if DEBUG
     if (file_name.data) {
         print("[file] %s: %.*s\n", message, LIT(file_name));
@@ -5717,29 +6313,42 @@ function u64 os_file_get_size(File file)
     return result;
 }
 
-function String os_read_entire_file(Arena *arena, String path) {
-    File file = os_file_open(path, FileMode_Read);
+function String os_read_entire_file(Arena *arena, String path)
+{
+    M_Temp scratch = GetScratch(&arena, 1);
+    FILE *f = fopen(string_to_cstr(scratch.arena, path), "rb");
+    ReleaseScratch(scratch);
+
+    if (!f)
+    {
+        print("[file] Failed to open file: %.*s\n", LIT(path));
+    }
 
     u64 size = 0;
-    if (!file.has_errors)
+    if (f)
     {
-        FILE *f = (FILE *)file.handle;
-        u64 prev_position = ftell(f);
         fseek(f, 0, SEEK_END);
         size = ftell(f);
-        fseek(f, prev_position, SEEK_SET);
+        fseek(f, 0, SEEK_SET);
     }
 
     String result = {0};
-    result.data = cast(u8 *)arena_push(arena, size);
+    result.data = NULL;
     result.count = size;
 
-    if (!file.has_errors)
+    if (f)
     {
-        os_file_read(&file, 0, size, result.data);
-    }
-    os_file_close(&file);
+        result.data = cast(u8 *)arena_push(arena, size);
 
+        size_t bytes_read = fread(result.data, sizeof(char), size, f);
+        if (bytes_read != size)
+        {
+            print("[file] Failed to read entire file: %.*s\n", LIT(path));
+            result.data = NULL;
+        }
+    }
+
+    fclose(f);
     return result;
 }
 
@@ -5830,7 +6439,8 @@ function bool os_delete_directory(String path) {
 #include <sys/resource.h> // setpriority
 
 typedef struct Unix_Thread_Params Unix_Thread_Params;
-struct Unix_Thread_Params {
+struct Unix_Thread_Params
+{
     Thread_Proc *proc;
     void *data;
 };
@@ -5842,20 +6452,27 @@ void *unix_thread_proc(void *data) {
     GetScratch(0, 0);
 
     assert(params->proc);
-    u32 result = params->proc(params->data);
+    u64 result = (u64)params->proc(params->data);
 
     os_free(params);
 
     return (void *)result;
 }
 
-function Thread thread_create(Thread_Proc *proc, void *data, u64 copy_size) {
-    Unix_Thread_Params *params = (Unix_Thread_Params *)os_alloc(sizeof(Unix_Thread_Params) + copy_size);
+function u64 os_thread_get_id()
+{
+    pthread_t self = pthread_self();
+    return (u64)self;
+}
+
+function Thread os_thread_create(Thread_Proc *proc, void *data, u64 copy_size)
+{
+    Unix_Thread_Params *params = (Unix_Thread_Params *)os_alloc(AlignUpPow2(sizeof(Unix_Thread_Params), 64) + copy_size);
     params->proc = proc;
     params->data = data;
-    if (copy_size)
+    if (copy_size && data)
     {
-        params->data = params + sizeof(Unix_Thread_Params);
+        params->data = (u8*)(params) + AlignUpPow2(sizeof(Unix_Thread_Params), 64);
         MemoryCopy(params->data, data, copy_size);
     }
 
@@ -5867,16 +6484,44 @@ function Thread thread_create(Thread_Proc *proc, void *data, u64 copy_size) {
     return result;
 }
 
-function void thread_detach(Thread thread) {
+function void os_thread_detach(Thread thread) {
     pthread_t tid = (pthread_t)thread.handle;
     pthread_detach(tid);
 }
 
-function u32 thread_await(Thread thread) {
+function u32 os_thread_await(Thread thread) {
     pthread_t tid = (pthread_t)thread.handle;
     void *result = 0;
     pthread_join(tid, &result);
     return *(u32 *)result;
+}
+
+//
+// Library
+//
+
+#include <dlfcn.h>
+
+function OS_Library os_library_load(String path) {
+    M_Temp scratch = GetScratch(0, 0);
+
+    OS_Library result = {0};
+    // TODO(bill): Should this be RTLD_LOCAL?
+    result.handle = dlopen(string_to_cstr(scratch.arena, path), RTLD_LAZY | RTLD_GLOBAL);
+
+    ReleaseScratch(scratch);
+    return result;
+}
+
+function void os_library_unload(OS_Library lib) {
+    if (lib.handle) {
+        dlclose(lib.handle);
+        lib.handle = 0;
+    }
+}
+
+function void *os_library_get_proc(OS_Library lib, char *proc_name) {
+    return (void *)dlsym(lib.handle, proc_name);
 }
 
 #endif
@@ -5892,7 +6537,7 @@ function f64 os_time_in_miliseconds()
 
 force_inline function u64 os_clock_cycles(void)
 {
-    #if defined(COMPILER_MSVC) && !defined(__clang__)
+    #if COMPILER_MSVC
         return __rdtsc();
     #elif defined(__i386__)
         u64 x;
@@ -5906,6 +6551,9 @@ force_inline function u64 os_clock_cycles(void)
         u64 x;
         __asm__ volatile("mrs \t%0, cntvct_el0" : "=r"(x));
         return x;
+    #else
+        #error "[os_clock_cycles] is not implemented for your CPU/Arch"
+        return 0;
     #endif
 }
 
@@ -6028,6 +6676,30 @@ function File_List os_scan_entire_directory(Arena *arena, String path)
     return result;
 }
 
+function bool os_mkdirp(String path)
+{
+    i64 index = string_find(path, S("/"), 0, 0);
+
+    while (index < path.count)
+    {
+        index = string_find(path, S("/"), index + 1, 0);
+        if (index >= path.count) break;
+
+        String part = string_slice(path, 0, index);
+        if (!os_directory_exists(part)) {
+            bool success = os_make_directory(part);
+            if (!success) return false;
+        }
+    }
+
+    if (!os_directory_exists(path)) {
+        bool success = os_make_directory(path);
+        if (!success) return false;
+    }
+
+    return true;
+}
+
 function Dense_Time dense_time_from_date_time(Date_Time in) {
     u32 year_encoded = (u32)((i32)in.year + 0x8000);
     Dense_Time result = 0;
@@ -6103,9 +6775,11 @@ function u32 os__worker_thread_proc(void *data)
         b32 we_should_sleep = os__do_next_work_queue_entry(queue);
 
         if (we_should_sleep) {
-            semaphore_wait_for(&queue->semaphore, true);
+            os_semaphore_wait_for(&queue->semaphore, true);
         }
     }
+
+    return 0;
 }
 
 function void work_queue_init(Work_Queue *queue, u64 thread_count)
@@ -6116,19 +6790,22 @@ function void work_queue_init(Work_Queue *queue, u64 thread_count)
     queue->next_entry_to_write = 0;
     queue->next_entry_to_read = 0;
 
-    queue->semaphore = semaphore_create(thread_count);
+    queue->semaphore = os_semaphore_create(thread_count);
 
-    for (u32 i = 0; i < thread_count; i++) {
+    for (u32 i = 0; i < thread_count; i++)
+    {
         Worker_Params params = {0};
         params.queue = queue;
 
-        Thread thread = thread_create(os__worker_thread_proc, &params, sizeof(Worker_Params));
-        thread_detach(thread);
+        Thread thread = os_thread_create(os__worker_thread_proc, &params, sizeof(Worker_Params));
+        os_thread_detach(thread);
     }
 }
 
 function void work_queue_add_entry(Work_Queue *queue, Worker_Proc *callback, void *data)
 {
+    assert(queue->semaphore.handle != NULL);
+
     // TODO(casey): Switch to InterlockedCompareExchange eventually
     // so that any thread can add?
     u32 new_next_entry_to_write = (queue->next_entry_to_write + 1) % count_of(queue->entries);
@@ -6143,7 +6820,7 @@ function void work_queue_add_entry(Work_Queue *queue, Worker_Proc *callback, voi
 
     queue->next_entry_to_write = new_next_entry_to_write;
 
-    semaphore_signal(&queue->semaphore);
+    os_semaphore_signal(&queue->semaphore);
 }
 
 
@@ -6153,11 +6830,22 @@ function void work_queue_add_entry(Work_Queue *queue, Worker_Proc *callback, voi
 // :FactorArrayMacros
 //
 
-#define Array_Alloc(a,arr,T,s) do { \
-    (arr)->data = PushArray(a,T,s); \
+#define ArrayAlloc(arena, arr, T, capacity) do { \
+    (arr)->data = (T *)PushArrayZero((arena), sizeof((arr)->data[0]) * (capacity)); \
     (arr)->count = 0; \
-    (arr)->capacity = s; \
+    (arr)->capacity = (count); \
 } while(0)
+
+#define ArrayResize(arena, arr, T, capacity) do { \
+    if ((arr)->capacity < (capacity)) { \
+        T *data = (arr)->data; \
+        (arr)->data = (T *)PushArrayZero((arena), sizeof((arr)->data[0]) * (capacity)); \
+        (arr)->capacity = (capacity); \
+        MemoryCopy((arr)->data, data, sizeof((arr)->data[0]) * (arr)->count); \
+    } \
+} while(0)
+
+#define ArrayInit(area, arr, T, capacity) ArrayResize(arena, arr, T, capacity)
 
 #define ArrayPush(a) ((a)->count += 1, &(a)->data[(a)->count - 1])
 
@@ -6165,7 +6853,7 @@ function void work_queue_add_entry(Work_Queue *queue, Worker_Proc *callback, voi
 
 #define ArrayPeek(a) ((a)->count > 0 ? &(a)->data[(a)->count - 1] : NULL)
 
-#define ArrayCopy(d,s) do { \
+#define ArrayCopy(d, s) do { \
     assert(sizeof((d)->data[0]) == sizeof((s).data[0])); \
     assert((d)->capacity != 0); \
     (d)->count = Min((s).count, (d)->capacity); \
@@ -6177,34 +6865,70 @@ function void work_queue_add_entry(Work_Queue *queue, Worker_Proc *callback, voi
 // :FactorArrayMacros
 
 
-#define ArrayEach(T, it, array) T *it = array_begin(array); it && it < array_begin(array); it ++
+#define ArrayEach(T, it, array) T *it = array_begin(array); it && it < array_end(array); it ++
 
-#define For(array) \
-    for (auto *it = array_begin(&array); it && it < array_end(&array); it ++)
+#define ArrayIndex(index, array) i64 index = 0; index < (array).count; index += 1
 
 #define For_Index(array) \
-    for (i64 index = 0; index < (array).count; index ++)
+    for (i64 index = 0; index < (array).count; index += 1)
 
-#define For_It_Index(array) \
-    for (i64 index = 0; index < (array).count; index ++) \
-        if (auto *it = &(array).data[index])
+#define For_Each(Type, it, index, array) \
+    Type it = (array).data[0]; \
+    for (i64 index = 0; index < (array).count; index += 1, (it = array.data[index]))
 
-#define DynamicArray(T) \
-typedef struct CONCAT(T, _Array) CONCAT(T, _Array); \
-struct CONCAT(T, _Array) { \
-    DynamicArrayStructBody(T); \
+#define For_It(it, index, array) \
+    for (i64 index = 0, (it = (array).data[0]); index < (array).count; index += 1, (it = (array).data[index]))
+
+#if LANG_C
+
+#define For(array) For_Each(typeof((array).data[0]), it, index, array)
+
+#define Forp(array) \
+    for (typeof((array).data[0]) *it = array_begin(array); it && it < array_end(array); it ++)
+
+#else
+
+#define For(array) For_Each(auto, it, index, array)
+
+#define Forp(array) \
+    for (auto *it = array_begin(array); it && it < array_end(array); it ++)
+
+#endif
+
+//
+// Array Definition Macros
+//
+
+#define DeclareArray(T) \
+typedef struct CONCAT(Array_, T) CONCAT(Array_, T); \
+struct CONCAT(Array_, T) { \
+    ArrayStructBody(T); \
 };
 
-#define DynamicArrayStructBody(T) \
-    Arena *arena; \
-    ArrayStructBody(T);
+#define DeclareSlice(T) \
+typedef struct CONCAT(Slice_, T) CONCAT(Slice_, T); \
+struct CONCAT(Slice_, T) { \
+    ArrayStructBody(T); \
+};
+
+#define DeclareFixedArray(T) \
+typedef struct CONCAT(FixedArray_, T) CONCAT(FixedArray_, T); \
+struct CONCAT(FixedArray_, T) { \
+    StaticArrayStructBody(T); \
+};
 
 #define ArrayStructBody(T) \
+    Arena *arena; \
     i64   capacity; \
     i64   count; \
     T     *data;
 
-#define StaticArrayStructBody(T, capacity_) \
+#define SliceStructBody(T) \
+    i64   capacity; \
+    i64   count; \
+    T     *data;
+
+#define FixedArrayStructBody(T, capacity_) \
     i64 count; \
     static const i64 capacity = capacity_; \
     T data[capacity_];
@@ -6212,6 +6936,7 @@ struct CONCAT(T, _Array) { \
 #if LANG_CPP
     #undef ArrayStructBody
     #define ArrayStructBody(T) \
+        Arena *arena; \
         i64   count; \
         i64   capacity; \
         T     *data; \
@@ -6222,8 +6947,20 @@ struct CONCAT(T, _Array) { \
             return data[i]; \
         }
 
-    #undef StaticArrayStructBody
-    #define StaticArrayStructBody(T, capacity_) \
+    #undef SliceStructBody
+    #define SliceStructBody(T) \
+        i64   count; \
+        i64   capacity; \
+        T     *data; \
+        \
+        T &operator[](i64 i) \
+        { \
+            assert(i >= 0 && i < count); \
+            return data[i]; \
+        }
+
+    #undef FixedArrayStructBody
+    #define FixedArrayStructBody(T, capacity_) \
         i64 count; \
         static const i64 capacity = capacity_; \
         T data[capacity_]; \
@@ -6270,35 +7007,20 @@ struct CONCAT(T, _Array) { \
     (assert((it)->count < (it)->capacity), ((it)->data[(it)->count] = value), ((it)->count += 1), &(it)->data[(it)->count - 1])
 
 #define array_remove_unordered(it, index) \
-    do { \
-        assert((it)->data); \
-        assert(index >= 0 && index < (it)->count); \
-        const u64 size = sizeof((it)->data[0]); \
-        MemoryCopy((u8 *)((it)->data) + size * ((it)->count - 1), (u8 *)((it)->data) + size * index, size); \
-        (it)->count --; \
-    } while(0)
+    array__remove_unordered(array__to_slice_ref(it), index)
 
 #define array_remove_ordered(it, index) \
-    do { \
-        assert((it)->data); \
-        assert(index >= 0 && index < (it)->count); \
-        \
-        u64 i = index + 1; \
-        u64 remaining_count = (it)->count - i; \
-        const u64 size = sizeof((it)->data[0]); \
-        MemoryMove((u8 *)((it)->data) + size * index, (u8 *)((it)->data) + size * i, size * remaining_count); \
-        (it)->count --; \
-    } while(0)
+    array__remove_ordered(array__to_slice_ref(it), index, 1)
 
-#define array_begin(a) ((a)->data ? (a)->data : NULL)
+#define array_begin(a) ((a).data ? (a).data : NULL)
 
-#define array_end(a) ((a)->data ? ((a)->data + (a)->count) : NULL)
+#define array_end(a) ((a).data ? ((a).data + (a).count) : NULL)
 
-#define array_sort(a, cmp) (array__sort(array__to_basic_ref(a), cmp))
+#define array_sort(a, cmp) (array__sort(array__to_any(a), cmp))
 
-#define array_search(a, key, cmp) (array__search(array__to_basic_ref(a), key, cmp))
+#define array_search(a, key, cmp) (array__search(array__to_any(&(a)), key, cmp))
 
-#define array_find(a, key, cmp) (array__find(array__to_basic_ref(a), key, cmp))
+#define array_find(a, key, cmp) (array__find(array__to_any(&(a)), key, cmp))
 
 //
 // Hopefully the compiler is smart enough to figure out what we're doing here...
@@ -6314,8 +7036,17 @@ struct Array_Ref
     u32 item_size;
 };
 
-typedef struct Array_Basic_Ref Array_Basic_Ref;
-struct Array_Basic_Ref
+typedef struct Slice_Ref Slice_Ref;
+struct Slice_Ref
+{
+    i64 *count;
+    i64 *capacity;
+    void **data;
+    u32 item_size;
+};
+
+typedef struct Array_Any Array_Any;
+struct Array_Any
 {
     i64 count;
     i64 capacity;
@@ -6324,10 +7055,13 @@ struct Array_Basic_Ref
 };
 
 #define array__to_ref(it) \
-    {&(it)->arena, &(it)->count, &(it)->capacity, (void **)&(it)->data, sizeof((it)->data[0])}
+    StructLit(Array_Ref){&(it)->arena, &(it)->count, &(it)->capacity, (void **)&(it)->data, sizeof((it)->data[0])}
 
-#define array__to_basic_ref(it) \
-    {(it)->count, (it)->capacity, (void *)(it)->data, sizeof((it)->data[0])}
+#define array__to_slice_ref(it) \
+    StructLit(Slice_Ref){&(it)->count, &(it)->capacity, (void **)&(it)->data, sizeof((it)->data[0])}
+
+#define array__to_any(it) \
+    StructLit(Array_Any){(it)->count, (it)->capacity, (void *)(it)->data, sizeof((it)->data[0])}
 
 function void array__init_from_arena(Array_Ref it, Arena *arena, i32 initial_capacity)
 {
@@ -6381,23 +7115,54 @@ function void array__free(Array_Ref it)
     *it.count = 0;
 }
 
-function void array__sort(Array_Basic_Ref it, Compare_Func cmp)
+function void array__remove_unordered(Slice_Ref it, i64 index)
+{
+    void *data = *it.data;
+    i64 count = *it.count;
+    const u64 size = it.item_size;
+
+    assert(data);
+    assert(index >= 0 && index < count);
+
+    MemoryCopy((u8 *)(data) + size*index, (u8 *)(data) + size*(count-1), size);
+    *it.count -= 1;
+}
+
+function void array__remove_ordered(Slice_Ref it, i64 index, i64 num_to_remove)
+{
+    void *data = *it.data;
+    i64 count = *it.count;
+    const u64 size = it.item_size;
+
+    assert(data);
+    assert(index >= 0 && index < count);
+    assert(num_to_remove > 0);
+    assert((index+num_to_remove) >= 0 && (index+num_to_remove) <= count);
+
+    u64 i = index + num_to_remove;
+    u64 remaining_count = count - i;
+    MemoryMove((u8 *)(data) + size*index, (u8 *)(data) + size*i, size*remaining_count);
+    *it.count -= num_to_remove;
+}
+
+function void array__sort(Array_Any it, Compare_Func cmp)
 {
     QuickSort(it.data, it.count, it.item_size, cmp);
 }
 
-function i64 array__search(Array_Basic_Ref it, void *key, Compare_Func cmp)
+function i64 array__search(Array_Any it, void *key, Compare_Func cmp)
 {
     void *item = BinarySearch(key, it.data, it.count, it.item_size, cmp);
     i64 result = -1;
     if (item)
     {
+        // NOTE(nick): convert item pointer to array index
         result = (i64) ((((u8 *)item) - ((u8 *)it.data)) / it.item_size);
     }
     return result;
 }
 
-function i64 array__find(Array_Basic_Ref it, void *key, Compare_Func cmp)
+function i64 array__find(Array_Any it, void *key, Compare_Func cmp)
 {
     i64 result = -1;
 
@@ -6419,40 +7184,122 @@ function i64 array__find(Array_Basic_Ref it, void *key, Compare_Func cmp)
     return result;
 }
 
-#if 0
-struct i32_Array
+//
+// Built-in Array Types
+//
+
+typedef struct Array_i32 Array_i32;
+struct Array_i32
 {
     Arena *arena;
-    ArrayStructBody(i32);
+    i32 *data;
+    i64 count;
+    i64 capacity;
 };
 
-function void array__test()
+typedef struct Array_i64 Array_i64;
+struct Array_i64
 {
-    i32_Array array = {0};
-    array_push(&array, 42);
-    array_push(&array, 23);
-    array_push(&array, 0);
-    array_push(&array, 1);
-    array_push(&array, 122);
+    Arena *arena;
+    i64 *data;
+    i64 count;
+    i64 capacity;
+};
 
-    for (i32 i = 0; i < array.count; i += 1)
+typedef struct Array_f32 Array_f32;
+struct Array_f32
+{
+    Arena *arena;
+    f32 *data;
+    i64 count;
+    i64 capacity;
+};
+
+typedef struct Array_f64 Array_f64;
+struct Array_f64
+{
+    Arena *arena;
+    f64 *data;
+    i64 count;
+    i64 capacity;
+};
+
+
+//
+// String Conversions
+//
+
+#ifdef BASE_STRINGS_H
+
+function String Array_i32_to_string(Array_i32 a)
+{
+    String_List list = {0};
+    for (int i = 0; i < a.count; i += 1)
     {
-        print("array[%d] = %d\n", i, array.data[i]);
+        String item = sprint("    %d", a.data[i]);
+        string_list_push(temp_arena(), &list, item);
     }
-    print("capacity = %d\n", array.capacity);
-
-    array_sort(&array, compare_i32);
-    
-    for (i32 i = 0; i < array.count; i += 1)
-    {
-        print("array[%d] = %d\n", i, array.data[i]);
-    }
-
-    i32 key = 42;
-    i64 index = array_find(&array, &key, compare_i32);
-    dump(index);
+    String items = string_list_join(temp_arena(), list, S(",\n"));
+    return sprint("Array_i32[%d] {\n%.*s\n}", a.count, LIT(items));
 }
-#endif
+
+function String Array_i64_to_string(Array_i64 a)
+{
+    String_List list = {0};
+    for (int i = 0; i < a.count; i += 1)
+    {
+        String item = sprint("    %lld", a.data[i]);
+        string_list_push(temp_arena(), &list, item);
+    }
+    String items = string_list_join(temp_arena(), list, S(",\n"));
+    return sprint("Array_i64[%d] {\n%.*s\n}", a.count, LIT(items));
+}
+
+function String Array_f32_to_string(Array_f32 a)
+{
+    String_List list = {0};
+    for (int i = 0; i < a.count; i += 1)
+    {
+        String item = sprint("    %.4f", a.data[i]);
+        string_list_push(temp_arena(), &list, item);
+    }
+    String items = string_list_join(temp_arena(), list, S(",\n"));
+    return sprint("Array_f32[%d] {\n%.*s\n}", a.count, LIT(items));
+}
+
+function String Array_f64_to_string(Array_f64 a)
+{
+    String_List list = {0};
+    for (int i = 0; i < a.count; i += 1)
+    {
+        String item = sprint("    %.8f", a.data[i]);
+        string_list_push(temp_arena(), &list, item);
+    }
+    String items = string_list_join(temp_arena(), list, S(",\n"));
+    return sprint("Array_f64[%d] {\n%.*s\n}", a.count, LIT(items));
+}
+
+#if LANG_CPP
+
+function String to_string(Array_i32 a) { return Array_i32_to_string(a); }
+function String to_string(Array_i64 a) { return Array_i64_to_string(a); }
+function String to_string(Array_f32 a) { return Array_f32_to_string(a); }
+function String to_string(Array_f64 a) { return Array_f64_to_string(a); }
+
+#else
+
+#undef Array__to_string
+#define Array__to_string \
+    Array_i32: Array_i32_to_string, \
+    Array_i64: Array_i64_to_string, \
+    Array_f32: Array_f32_to_string, \
+    Array_f64: Array_f64_to_string,
+
+#endif // LANG_CPP
+
+#endif // BASE_STRINGS_H
+
+
 //
 // Table
 //
@@ -6807,4 +7654,5 @@ function b32 table_delete(Table_KV *it, i64 index)
     return result;
 }
 
-#endif // NA_H
+#endif // NA_H_IMPL
+#endif // impl

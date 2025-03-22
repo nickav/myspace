@@ -274,8 +274,8 @@ Date_Time ParsePostDate(String str)
 
 String to_rss_date_string(Date_Time it)
 {
-    auto mon = string_slice(string_from_month(cast(Month)it.mon), 0, 3);
-    return sprint("%02d %S %d %02d:%02d:%02d +0000", it.day, mon, it.year, it.hour, it.min, it.sec);
+    auto mon = string_slice(string_from_month((Month)it.mon), 0, 3);
+    return sprint("%02d %.*s %d %02d:%02d:%02d +0000", it.day, LIT(mon), it.year, it.hour, it.min, it.sec);
 }
 
 String pretty_date(Date_Time it)

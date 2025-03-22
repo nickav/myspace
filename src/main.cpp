@@ -3,8 +3,8 @@
 #define STB_SPRINTF_IMPLEMENTATION
 #include "third_party/stb_sprintf.h"
 
-#include "na.h"
 #define impl
+#include "na.h"
 #include "na_net.h"
 
 #include "helpers.h"
@@ -93,6 +93,43 @@ struct Next_Prev_Pages
 
 Build_Context ctx = {};
 
+#define write(arena, ...) arena_print(arena, __VA_ARGS__)
+
+String arena_to_string(Arena *arena)
+{
+    return string_make(arena->data, arena->pos);
+}
+
+String string_trim_newlines(String str)
+{
+    String result = str;
+    while (result.count > 0 && result.data[0] == '\n')
+    {
+        result.data  += 1;
+        result.count -= 1;
+    }
+
+    while (result.count > 0 && result.data[result.count - 1] == '\n')
+    {
+        result.count -= 1;
+    }
+    return result;
+}
+
+void arena_write_string(Arena *arena, String str)
+{
+    arena_write(arena, str.data, str.count);
+}
+
+void arena_print(Arena *arena, const char *fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    String result = string_printv(temp_arena(), fmt, args);
+    va_end(args);
+
+    arena_write_string(arena, result);
+}
 
 String yaml_to_string(String str) {
     str = string_trim_whitespace(str);
@@ -134,17 +171,17 @@ Link *parse_yaml_links_array(String str)
 
         if (depth == 2)
         {
-            i64 closing_index = string_find(str, S("]"), i + 1);
+            i64 closing_index = string_find(str, S("]"), i + 1, 0);
             auto list = string_slice(str, i, closing_index + 1);
 
             auto str = string_trim_whitespace(string_slice(list, 1, list.count - 1));
-            auto parts = string_split(str, S(","));
+            auto parts = string_split(temp_arena(), str, S(","));
             if (parts.count > 0)
             {
                 Link *item = PushStruct(temp_arena(), Link);
-                if (parts.count > 0) item->title = PushStringCopy(temp_arena(), yaml_to_string(parts[0]));
-                if (parts.count > 1) item->href  = PushStringCopy(temp_arena(), yaml_to_string(parts[1]));
-                if (parts.count > 2) item->desc  = PushStringCopy(temp_arena(), yaml_to_string(parts[2]));
+                if (parts.count > 0) item->title = PushStringCopy(temp_arena(), yaml_to_string(parts.data[0]));
+                if (parts.count > 1) item->href  = PushStringCopy(temp_arena(), yaml_to_string(parts.data[1]));
+                if (parts.count > 2) item->desc  = PushStringCopy(temp_arena(), yaml_to_string(parts.data[2]));
                 QueuePush(result, last, item);
             }
 
@@ -162,12 +199,12 @@ Site_Meta parse_site_info(String yaml)
     Site_Meta result = {};
 
     i64 offset = 0;
-    auto lines = string_split(yaml, S("\n"));
+    auto lines = string_split(temp_arena(), yaml, S("\n"));
     For_Index (lines)
     {
-        auto it = lines[index];
+        auto it = lines.data[index];
 
-        i64 colon_index = string_find(it, S(":"));
+        i64 colon_index = string_find(it, S(":"), 0, 0);
         if (colon_index >= it.count)
         {
             offset += it.count + 1;
@@ -175,7 +212,7 @@ Site_Meta parse_site_info(String yaml)
         }
 
         auto key   = string_trim_whitespace(string_slice(it, 0, colon_index));
-        auto value = string_trim_whitespace(string_slice(it, colon_index + 1));
+        auto value = string_trim_whitespace(string_slice(it, colon_index + 1, it.count));
 
         auto str = yaml_to_string(value);
 
@@ -192,13 +229,13 @@ Site_Meta parse_site_info(String yaml)
         else if (string_equals(key, S("og_type")))        { result.og_type = str; } 
 
         else if (string_equals(key, S("social_icons"))) {
-            result.social_icons = parse_yaml_links_array(string_slice(yaml, offset + colon_index + 1));
+            result.social_icons = parse_yaml_links_array(string_slice(yaml, offset + colon_index + 1, yaml.count));
         }
         else if (string_equals(key, S("author_links"))) {
-            result.authors = parse_yaml_links_array(string_slice(yaml, offset + colon_index + 1));
+            result.authors = parse_yaml_links_array(string_slice(yaml, offset + colon_index + 1, yaml.count));
         }
         else if (string_equals(key, S("featured_links"))) {
-            result.featured = parse_yaml_links_array(string_slice(yaml, offset + colon_index + 1));
+            result.featured = parse_yaml_links_array(string_slice(yaml, offset + colon_index + 1, yaml.count));
         }
 
         offset += it.count + 1;
@@ -210,14 +247,14 @@ Site_Meta parse_site_info(String yaml)
 Page_Meta parse_page_meta(String yaml) {
     Page_Meta result = {};
 
-    auto lines = string_split(yaml, S("\n"));
-    For (lines)
+    auto lines = string_split(temp_arena(), yaml, S("\n"));
+    For_Each (String, it, line_index, lines)
     {
-        i64 index = string_find(it, S(":"));
+        i64 index = string_find(it, S(":"), 0, 0);
         if (index >= it.count) continue;
 
         auto key   = string_trim_whitespace(string_slice(it, 0, index));
-        auto value = string_trim_whitespace(string_slice(it, index + 1));
+        auto value = string_trim_whitespace(string_slice(it, index + 1, it.count));
 
         auto str = yaml_to_string(value);
 
@@ -229,7 +266,7 @@ Page_Meta parse_page_meta(String yaml) {
                     string_equals(key, S("description"))) { result.description = str; }
         else if (string_equals(key, S("date")))           { result.date = str; }
         else if (string_equals(key, S("author")))         { result.author = str; }
-        else if (string_equals(key, S("draft")))          { result.draft = string_to_bool(value); }
+        else if (string_equals(key, S("draft")))          { result.draft = string_to_b32(value); }
     }
 
     return result;
@@ -307,9 +344,9 @@ Link *find_link_by_title(String title, Link *links)
 
 String generate_blog_rss_feed(Site_Meta site, Page *posts)
 {
-    auto arena = arena_alloc_from_memory(megabytes(32));
+    auto arena = arena_alloc(Megabytes(64));
     auto pub_date = to_rss_date_string(os_get_current_time_in_utc());
-
+    
     write(arena, "<?xml version='1.0' encoding='UTF-8'?>\n");
 
     write(arena, "<rss version='2.0' xmlns:atom='http://www.w3.org/2005/Atom'>\n");
@@ -360,10 +397,10 @@ String escape_html(String text)
     {
         // NOTE(nick): crazy inefficient!
         // :StringReplaceHack
-        auto parts = string_split(text, S("<"));
-        text = string_join(parts, S("&lt;"));
-        parts = string_split(text, S(">"));
-        text = string_join(parts, S("&gt;"));
+        auto parts = string_split(temp_arena(), text, S("<"));
+        text = string_join(temp_arena(), parts, S("&lt;"));
+        parts = string_split(temp_arena(), text, S(">"));
+        text = string_join(temp_arena(), parts, S("&gt;"));
     }
     return text;
 }
@@ -389,10 +426,10 @@ void write_link(Arena *arena, String text, String href)
 
 void write_clike_code_block(Arena *arena, String code)
 {
-    string_trim_newlines(&code);
+    code = string_trim_newlines(code);
     if (!code.count) return;
 
-    auto tokens = c_tokenize(code);
+    auto tokens = c_tokenize(temp_arena(), code);
     c_convert_tokens_to_c_like(tokens);
 
     write(arena, "<pre class='code'>");
@@ -400,25 +437,25 @@ void write_clike_code_block(Arena *arena, String code)
     For (tokens)
     {
         auto whitespace = c_whitespace_before_token(&it, code);
-        arena_write(arena, whitespace);
+        arena_write_string(arena, whitespace);
 
         // NOTE(nick): we can ignore Identifier tokens because they have no special styling
         if (it.type == C_TokenType_Identifier)
         {
-            arena_write(arena, it.value);
+            arena_write_string(arena, it.value);
         }
         else if (
             it.type == C_TokenType_Operator ||
             it.type == C_TokenType_Semicolon ||
             it.type == C_TokenType_Paren)
         {
-            arena_write(arena, escape_html(it.value));
+            arena_write_string(arena, escape_html(it.value));
         }
         else
         {
             auto type = c_token_type_to_string(it.type);
             auto tok = sprint("<span class='tok-%S'>%S</span>", type, it.value);
-            arena_write(arena, tok);
+            arena_write_string(arena, tok);
         }
     }
 
@@ -427,22 +464,22 @@ void write_clike_code_block(Arena *arena, String code)
 
 void write_bash_code_block(Arena *arena, String code)
 {
-    string_trim_newlines(&code);
+    code = string_trim_newlines(code);
     if (!code.count) return;
 
     write(arena, "<pre class='code'>");
 
-    Array<String> lines = string_split(code, S("\n"));
+    String_Array lines = string_split(temp_arena(), code, S("\n"));
 
     for (i64 i = 0; i < lines.count; i += 1)
     {
-        String line = lines[i];
+        String line = lines.data[i];
 
-        i64 space_index = string_find(line, S(" "));
-        i64 terminal_index = string_find(line, S(">"));
+        i64 space_index = string_find(line, S(" "), 0, 0);
+        i64 terminal_index = string_find(line, S(">"), 0, 0);
         if (terminal_index < space_index)
         {
-            arena_write(arena, string_slice(line, 0, terminal_index));
+            arena_write_string(arena, string_slice(line, 0, terminal_index));
             string_advance(&line, terminal_index);
 
             arena_print(arena, "<span class='tok-Keyword no_select'>></span>");
@@ -456,45 +493,45 @@ void write_bash_code_block(Arena *arena, String code)
             }
         }
 
-        Array<String> parts = string_split(line, S(" "));
+        String_Array parts = string_split(temp_arena(), line, S(" "));
 
         For_Index (parts) {
-            String it = parts[index];
+            String it = parts.data[index];
 
             if (index == 0) {
                 auto tok = sprint("<span class='tok-Function'>%S</span>", it);
-                arena_write(arena, tok);
+                arena_write_string(arena, tok);
             }
             else if (string_contains(it, S("-")))
             {
-                i64 equals_index = string_find(it, S("="), 0);
+                i64 equals_index = string_find(it, S("="), 0, 0);
                 if (equals_index < it.count)
                 {
                     String pre = string_slice(it, 0, equals_index);
                     String post = string_slice(it, equals_index + 1, it.count);
 
                     auto tok = sprint("<span class='tok-Number'>%S</span>", pre);
-                    arena_write(arena, tok);
+                    arena_write_string(arena, tok);
 
                     arena_print(arena, "<span class='tok-Keyword'>=</span>");
 
                     auto tok2 = sprint("<span class='tok-String'>%S</span>", post);
-                    arena_write(arena, tok2);
+                    arena_write_string(arena, tok2);
                 }
                 else
                 {
                     auto tok = sprint("<span class='tok-Type'>%S</span>", it);
-                    arena_write(arena, tok);
+                    arena_write_string(arena, tok);
                 }
             }
             else
             {
-                arena_write(arena, it);
+                arena_write_string(arena, it);
             }
-            if (index < parts.count - 1) arena_write(arena, S(" "));
+            if (index < parts.count - 1) arena_write_string(arena, S(" "));
         }
 
-        if (i < lines.count - 1) arena_write(arena, S("\n"));
+        if (i < lines.count - 1) arena_write_string(arena, S("\n"));
     }
 
     write(arena, "</pre>");
@@ -508,8 +545,8 @@ void write_quote(Arena *arena, String quote)
 
     // NOTE(nick): sort of inefficient
     // :StringReplaceHack
-    auto parts = string_split(quote, S("--"));
-    quote = string_join(parts, S("—"));
+    auto parts = string_split(temp_arena(), quote, S("--"));
+    quote = string_join(temp_arena(), parts, S("—"));
 
     write(arena, "<blockquote class='quote'>%S</blockquote>", quote);
 }
@@ -557,7 +594,7 @@ i64 string_count_words(String str)
     i64 result = 0;
     while (str.count > 0)
     {
-        string_eat_whitespace(&str);
+        str = string_eat_whitespace(str);
         
         result += 1;
 
@@ -617,17 +654,16 @@ void write_page_card_list(Arena *arena, Page *items, Page *last_item, i64 limit)
     }
 
     write(arena, "</div>\n");
-
-    print("Done!\n");
+    // print("Done!\n");
 }
 
-void write_custom_tag(Arena *arena, String tag_name, Array<String> args)
+void write_custom_tag(Arena *arena, String tag_name, String_Array args)
 {
-    String arg0 = args.count > 0 ? yaml_to_string(args[0]) : String{};
-    String arg1 = args.count > 1 ? yaml_to_string(args[1]) : String{};
+    String arg0 = args.count > 0 ? yaml_to_string(args.data[0]) : String{};
+    String arg1 = args.count > 1 ? yaml_to_string(args.data[1]) : String{};
 
     if (false) {}
-    else if (string_match(tag_name, S("link"), MatchFlags_IgnoreCase))
+    else if (string_match(tag_name, S("link"), MatchFlag_IgnoreCase))
     {
         auto text = arg0;
         auto href = arg1;
@@ -636,8 +672,8 @@ void write_custom_tag(Arena *arena, String tag_name, Array<String> args)
 
         write_link(arena, text, href);
     }
-    else if (string_match(tag_name, S("img"), MatchFlags_IgnoreCase) ||
-             string_match(tag_name, S("image"), MatchFlags_IgnoreCase)
+    else if (string_match(tag_name, S("img"), MatchFlag_IgnoreCase) ||
+             string_match(tag_name, S("image"), MatchFlag_IgnoreCase)
         )
     {
         auto src = arg0;
@@ -646,44 +682,44 @@ void write_custom_tag(Arena *arena, String tag_name, Array<String> args)
 
         write_image(arena, src, alt);
     }
-    else if (string_match(tag_name, S("code"), MatchFlags_IgnoreCase))
+    else if (string_match(tag_name, S("code"), MatchFlag_IgnoreCase))
     {
         auto str = arg0;
         write(arena, "<code class='inline_code'>%S</code>", str);
     }
-    else if (string_match(tag_name, S("quote"), MatchFlags_IgnoreCase))
+    else if (string_match(tag_name, S("quote"), MatchFlag_IgnoreCase))
     {
         auto str = arg0;
         write_quote(arena, str);
     }
-    else if (string_match(tag_name, S("iframe"), MatchFlags_IgnoreCase))
+    else if (string_match(tag_name, S("iframe"), MatchFlag_IgnoreCase))
     {
         auto src = arg0;
         write(arena, "<div class='video'><iframe src='%S' allowfullscreen='' frameborder='0'></iframe></div>", src);
     }
-    else if (string_match(tag_name, S("hr"), MatchFlags_IgnoreCase))
+    else if (string_match(tag_name, S("hr"), MatchFlag_IgnoreCase))
     {
         auto str = arg0;
         write(arena, "<hr/>", str);
     }
-    else if (string_match(tag_name, S("posts"), MatchFlags_IgnoreCase))
+    else if (string_match(tag_name, S("posts"), MatchFlag_IgnoreCase))
     {
         i64 limit = I64_MAX;
-        if (arg0.count > 0) limit = string_to_i64(arg0);
+        if (arg0.count > 0) limit = string_to_i64(arg0, 10);
 
         write_page_card_list(arena, ctx.posts, ctx.last_post, limit);
     }
-    else if (string_match(tag_name, S("projects"), MatchFlags_IgnoreCase))
+    else if (string_match(tag_name, S("projects"), MatchFlag_IgnoreCase))
     {
         i64 limit = I64_MAX;
-        if (arg0.count > 0) limit = string_to_i64(arg0);
+        if (arg0.count > 0) limit = string_to_i64(arg0, 10);
 
         write_page_card_list(arena, ctx.projects, ctx.last_project, limit);
     }
-    else if (string_match(tag_name, S("post_list"), MatchFlags_IgnoreCase))
+    else if (string_match(tag_name, S("post_list"), MatchFlag_IgnoreCase))
     {
         i64 limit = I64_MAX;
-        if (arg0.count > 0) limit = string_to_i64(arg0);
+        if (arg0.count > 0) limit = string_to_i64(arg0, 10);
         i64 count = 0;
 
         //~nja: blog list
@@ -716,10 +752,10 @@ void write_custom_tag(Arena *arena, String tag_name, Array<String> args)
         }
         write(arena, "</div>\n");
     }
-    else if (string_match(tag_name, S("featured"), MatchFlags_IgnoreCase))
+    else if (string_match(tag_name, S("featured"), MatchFlag_IgnoreCase))
     {
         i64 limit = I64_MAX;
-        if (arg0.count > 0) limit = string_to_i64(arg0);
+        if (arg0.count > 0) limit = string_to_i64(arg0, 10);
         i64 count = 0;
 
         write(arena, "<div class='grid marb-32'>");
@@ -753,8 +789,9 @@ String make_html_id(String text, i32 header_level)
     String result = {};
     if (header_level <= 3)
     {
-        auto parts = string_split(text, S(" "));
-        result = string_lower(string_join(parts, S("_")));
+        auto parts = string_split(temp_arena(), text, S(" "));
+        result = string_join(temp_arena(), parts, S("_"));
+        string_to_lower(&result);
     }
     return result;
 }
@@ -763,7 +800,7 @@ String make_html_id(String text, i32 header_level)
 // @Speed: arena_print is actually sort of slower than you might think (especially when doing for each character)
 String markdown_to_html(String text)
 {
-    Arena *arena = arena_alloc_from_memory(gigabytes(1));
+    Arena *arena = arena_alloc(Gigabytes(1));
 
     text = string_normalize_newlines(text);
 
@@ -852,18 +889,18 @@ String markdown_to_html(String text)
                 if (is_code_block)
                 {
                     if (
-                        string_match(tag, S("c"), MatchFlags_IgnoreCase) ||
-                        string_match(tag, S("h"), MatchFlags_IgnoreCase) ||
-                        string_match(tag, S("cpp"), MatchFlags_IgnoreCase) ||
-                        string_match(tag, S("js"), MatchFlags_IgnoreCase) ||
-                        string_match(tag, S("javascript"), MatchFlags_IgnoreCase)
+                        string_match(tag, S("c"), MatchFlag_IgnoreCase) ||
+                        string_match(tag, S("h"), MatchFlag_IgnoreCase) ||
+                        string_match(tag, S("cpp"), MatchFlag_IgnoreCase) ||
+                        string_match(tag, S("js"), MatchFlag_IgnoreCase) ||
+                        string_match(tag, S("javascript"), MatchFlag_IgnoreCase)
                     )
                     {
                         write_clike_code_block(arena, str);
                     }
                     else if (
-                        string_match(tag, S("bash"), MatchFlags_IgnoreCase) ||
-                        string_match(tag, S("sh"), MatchFlags_IgnoreCase)
+                        string_match(tag, S("bash"), MatchFlag_IgnoreCase) ||
+                        string_match(tag, S("sh"), MatchFlag_IgnoreCase)
                     )
                     {
                         write_bash_code_block(arena, str);
@@ -959,7 +996,7 @@ String markdown_to_html(String text)
                 // markdown-style quotes
                 if (it == '>' && char_is_whitespace(text.data[i + 1]))
                 {
-                    Array<String> lines = {};
+                    String_List lines = {};
 
                     while (i < text.count && text.data[i] == '>' && char_is_whitespace(text.data[i + 1]))
                     {
@@ -967,12 +1004,12 @@ String markdown_to_html(String text)
                         while (i < text.count && text.data[i] != '\n') i += 1;
 
                         auto item_text = string_slice(text, start, i);
-                        array_push(&lines, item_text);
+                        string_list_push(temp_arena(), &lines, item_text);
 
                         i += 1;
                     }
 
-                    write_quote(arena, string_join(lines, S("\n")));
+                    write_quote(arena, string_list_join(temp_arena(), lines, S("\n")));
                     continue;
                 }
             }
@@ -1127,9 +1164,9 @@ String markdown_to_html(String text)
                 auto tag_name = string_slice(text, tag_start, tag_end);
                 auto arg_str  = string_slice(text, tag_end + 1, i);
 
-                auto args = string_split(arg_str, S(","));
+                auto args = string_split(temp_arena(), arg_str, S(","));
                 For_Index(args) {
-                    args[index] = string_trim_whitespace(args[index]);
+                    args.data[index] = string_trim_whitespace(args.data[index]);
                 }
 
                 write_custom_tag(arena, tag_name, args);
@@ -1145,8 +1182,8 @@ String markdown_to_html(String text)
         // bold
         if (it == '*')
         {
-            i64 newline_index = string_find(text, S("\n"), i + 1);
-            i64 closing_index = string_find(text, S("*"), i + 1);
+            i64 newline_index = string_find(text, S("\n"), i + 1, 0);
+            i64 closing_index = string_find(text, S("*"), i + 1, 0);
             if (newline_index > closing_index && closing_index < text.count)
             {
                 arena_print(arena, "<b>%S</b>", string_slice(text, i + 1, closing_index));
@@ -1158,8 +1195,8 @@ String markdown_to_html(String text)
         // italic
         if (it == '_')
         {
-            i64 newline_index = string_find(text, S("\n"), i + 1);
-            i64 closing_index = string_find(text, S("_"), i + 1);
+            i64 newline_index = string_find(text, S("\n"), i + 1, 0);
+            i64 closing_index = string_find(text, S("_"), i + 1, 0);
             if (newline_index > closing_index && closing_index < text.count)
             {
                 arena_print(arena, "<i>%S</i>", string_slice(text, i + 1, closing_index));
@@ -1171,8 +1208,8 @@ String markdown_to_html(String text)
         // strike
         if (it == '~')
         {
-            i64 newline_index = string_find(text, S("\n"), i + 1);
-            i64 closing_index = string_find(text, S("~"), i + 1);
+            i64 newline_index = string_find(text, S("\n"), i + 1, 0);
+            i64 closing_index = string_find(text, S("~"), i + 1, 0);
             if (newline_index > closing_index && closing_index < text.count)
             {
                 arena_print(arena, "<s>%S</s>", string_slice(text, i + 1, closing_index));
@@ -1184,8 +1221,8 @@ String markdown_to_html(String text)
         // inline code
         if (it == '`')
         {
-            i64 newline_index = string_find(text, S("\n"), i + 1);
-            i64 closing_index = string_find(text, S("`"), i + 1);
+            i64 newline_index = string_find(text, S("\n"), i + 1, 0);
+            i64 closing_index = string_find(text, S("`"), i + 1, 0);
             if (newline_index > closing_index && closing_index < text.count)
             {
                 arena_print(arena, "<code class='inline_code'>%S</code>", string_slice(text, i + 1, closing_index));
@@ -1214,18 +1251,20 @@ static String global_public_path = {};
 
 HTTP_REQUEST_CALLBACK(request_callback)
 {
+    print("[request_callback]\n");
+
     auto file = request->url;
     if (string_equals(file, S("/"))) file = S("index.html");
     if (string_ends_with(file, S("/"))) file = string_slice(file, 0, file.count - 1);
 
-    auto ext = path_get_extension(file);
+    auto ext = path_extension(file);
     if (!ext.count) {
         file = string_concat(file, S(".html"));
         ext = S(".html");
     }
 
     auto file_path = path_join(global_public_path, file);
-    auto contents = os_read_entire_file(file_path);
+    auto contents = os_read_entire_file(temp_arena(), file_path);
     if (!contents.data)
     {
         response->status_code = 404;
@@ -1259,45 +1298,45 @@ int main(int argc, char **argv)
     }
 
     //~nja: parse arguments
-    auto exe_dir = os_get_executable_directory();
+    auto exe_dir = os_get_executable_path();
 
     char *arg0 = argv[0];
     char *arg1 = argv[1];
     char *arg2 = argv[2];
 
-    auto data_dir   = path_resolve(exe_dir, string_from_cstr(arg1));
-    auto output_dir = path_resolve(exe_dir, string_from_cstr(arg2));
+    auto data_dir   = path_join(exe_dir, string_from_cstr(arg1));
+    auto output_dir = path_join(exe_dir, string_from_cstr(arg2));
 
     ctx.data_dir   = data_dir;
     ctx.output_dir = output_dir;
 
     os_make_directory(output_dir);
 
-    auto yaml = os_read_entire_file(path_join(data_dir, S("site.yaml")));
+    auto yaml = os_read_entire_file(temp_arena(), path_join(data_dir, S("site.yaml")));
 
     Site_Meta site = parse_site_info(yaml);
     ctx.site = site;
 
     // @Speed: go wide on reading all data files
 
-    auto css = os_read_entire_file(path_join(data_dir, S("style.css")));
+    auto css = os_read_entire_file(temp_arena(), path_join(data_dir, S("style.css")));
     css = minify_css(css);
 
-    auto js = os_read_entire_file(path_join(data_dir, S("script.js")));
+    auto js = os_read_entire_file(temp_arena(), path_join(data_dir, S("script.js")));
     js = minify_js(js);
 
     //~nja: static assets
     print("[before assets] %.2fms\n", os_time_in_miliseconds());
     {
         auto public_dir = path_join(data_dir, S("public"));
-        auto files = os_scan_files_recursive(public_dir);
-        Forp (files)
+        auto files = os_scan_entire_directory(temp_arena(), public_dir);
+        for (File_Info *it = files.first; it != NULL; it = it->next)
         {
             auto from_path = path_join(public_dir, it->name);
             auto to_path = path_join(output_dir, it->name);
-            auto contents = os_read_entire_file(from_path);
+            auto contents = os_read_entire_file(temp_arena(), from_path);
 
-            os_make_directory_recursive(path_dirname(to_path));
+            assert(os_mkdirp(path_dirname(to_path)));
 
             os_write_entire_file(to_path, contents);
         }
@@ -1308,15 +1347,15 @@ int main(int argc, char **argv)
     //~nja: site pages
     {
         auto dir = path_join(data_dir, S("pages"));
-        auto iter = os_file_list_begin(temp_arena(), dir);
+        auto iter = os_file_iter_begin(temp_arena(), dir);
         File_Info it = {};
-        while (os_file_list_next(&iter, &it))
+        while (os_file_iter_next(temp_arena(), iter, &it))
         {
-            if (file_is_directory(it)) continue;
+            if (os_file_is_directory(it)) continue;
             if (!string_ends_with(it.name, S(".md"))) continue;
 
             auto page_file = path_join(dir, it.name);
-            auto content   = os_read_entire_file(page_file);
+            auto content   = os_read_entire_file(temp_arena(), page_file);
             auto yaml      = find_yaml_frontmatter(content);
 
             string_advance(&content, yaml.count);
@@ -1330,8 +1369,9 @@ int main(int argc, char **argv)
             DLLPushBack(ctx.pages, ctx.last_page, page);
         }
 
-        os_file_list_end(&iter);
+        os_file_iter_end(iter);
     }
+    print("[after pages] %.2fms\n", os_time_in_miliseconds());
 
     // @Cleanup: make this dynamic?!
     // It would be cool if we didn't have to specify these things every time!
@@ -1341,21 +1381,21 @@ int main(int argc, char **argv)
     //~nja: site posts
     {
         auto dir = path_join(data_dir, S("posts"));
-        auto iter = os_file_list_begin(temp_arena(), dir);
+        auto iter = os_file_iter_begin(temp_arena(), dir);
         File_Info it = {};
-        while (os_file_list_next(&iter, &it))
+        while (os_file_iter_next(temp_arena(), iter, &it))
         {
-            if (file_is_directory(it)) continue;
+            if (os_file_is_directory(it)) continue;
             if (!string_ends_with(it.name, S(".md"))) continue;
 
             auto post_file = path_join(dir, it.name);
-            auto content   = os_read_entire_file(post_file);
+            auto content   = os_read_entire_file(temp_arena(), post_file);
             auto yaml      = find_yaml_frontmatter(content);
 
             string_advance(&content, yaml.count);
 
             Page *page    = PushStruct(temp_arena(), Page);
-            page->slug    = path_join(temp_arena(), S("posts"), path_strip_extension(it.name));
+            page->slug    = path_join(S("posts"), path_strip_extension(it.name));
             page->content = content;
             page->meta    = parse_page_meta(yaml);
             page->type    = S("post");
@@ -1363,12 +1403,13 @@ int main(int argc, char **argv)
             DLLPushBack(ctx.pages, ctx.last_page, page);
 
             Page *copy = PushStruct(temp_arena(), Page);
-            memory_copy(page, copy, sizeof(Page));
+            MemoryCopy(copy, page, sizeof(Page));
             DLLPushBack(ctx.posts, ctx.last_post, copy);
         }
 
-        os_file_list_end(&iter);
+        os_file_iter_end(iter);
     }
+    print("[after posts] %.2fms\n", os_time_in_miliseconds());
 
     // @Copypaste:
     // :DynamicPageTypes
@@ -1376,21 +1417,21 @@ int main(int argc, char **argv)
     //~nja: site projects
     {
         auto dir = path_join(data_dir, S("projects"));
-        auto iter = os_file_list_begin(temp_arena(), dir);
+        auto iter = os_file_iter_begin(temp_arena(), dir);
         File_Info it = {};
-        while (os_file_list_next(&iter, &it))
+        while (os_file_iter_next(temp_arena(), iter, &it))
         {
-            if (file_is_directory(it)) continue;
+            if (os_file_is_directory(it)) continue;
             if (!string_ends_with(it.name, S(".md"))) continue;
 
             auto post_file = path_join(dir, it.name);
-            auto content   = os_read_entire_file(post_file);
+            auto content   = os_read_entire_file(temp_arena(), post_file);
             auto yaml      = find_yaml_frontmatter(content);
 
             string_advance(&content, yaml.count);
 
             Page *page    = PushStruct(temp_arena(), Page);
-            page->slug    = path_join(temp_arena(), S("projects"), path_strip_extension(it.name));
+            page->slug    = path_join(S("projects"), path_strip_extension(it.name));
             page->content = content;
             page->meta    = parse_page_meta(yaml);
             page->type    = S("project");
@@ -1398,17 +1439,20 @@ int main(int argc, char **argv)
             DLLPushBack(ctx.pages, ctx.last_page, page);
 
             Page *copy = PushStruct(temp_arena(), Page);
-            memory_copy(page, copy, sizeof(Page));
+            MemoryCopy(copy, page, sizeof(Page));
             DLLPushBack(ctx.projects, ctx.last_project, copy);
         }
 
-        os_file_list_end(&iter);
+        os_file_iter_end(iter);
     }
+    print("[after projects] %.2fms\n", os_time_in_miliseconds());
 
 
     //~nja: generate RSS feed
+    print("[before RSS feed] %.2fms\n", os_time_in_miliseconds());
     auto rss_feed = generate_blog_rss_feed(site, ctx.posts);
     os_write_entire_file(path_join(output_dir, S("feed.xml")), rss_feed);
+    print("[after RSS feed] %.2fms\n", os_time_in_miliseconds());
 
     //~nja: output site pages
     os_make_directory(path_join(output_dir, S("posts")));
@@ -1419,7 +1463,7 @@ int main(int argc, char **argv)
 
     for (Each_Page(it, ctx.pages))
     {
-        print("  %S\n", it->slug);
+        print("  - page (slug = %S)\n", it->slug);
 
         auto page = it->meta;
         auto meta = it->meta;
@@ -1429,7 +1473,7 @@ int main(int argc, char **argv)
         if (!meta.image.count)       meta.image = site.image;
         if (!meta.og_type.count)     meta.og_type = site.og_type;
 
-        Arena *arena = arena_alloc_from_memory(megabytes(16));
+        Arena *arena = arena_alloc(Megabytes(64));
 
         //~nja: html template
 
@@ -1498,7 +1542,7 @@ int main(int argc, char **argv)
                 auto image = it->desc;
                 auto url   = it->href;
 
-                auto content = os_read_entire_file(path_join(data_dir, image));
+                auto content = os_read_entire_file(temp_arena(), path_join(data_dir, image));
 
                 write(arena, "<a title='%S' href='%S' target='_blank' class='inline-flex center pad-8'><div class='inline-block size-20'>%S</div></a>\n", name, url, content);
             }
@@ -1593,7 +1637,8 @@ int main(int argc, char **argv)
             write(arena, "</div>\n", page.title);
             }
 
-            write(arena, "%S", markdown_to_html(it->content));
+            // write(arena, "%S", markdown_to_html(it->content));
+            write(arena, "%S", it->content);
 
         write(arena, "</div>\n");
 
@@ -1633,15 +1678,17 @@ int main(int argc, char **argv)
 
         if (string_equals(arg3, S("--serve")))
         {
-            os_shell_execute(S("firefox.exe"), S("http://localhost:3000"));
+            os_shell_execute(S("firefox.exe"), S("http://localhost:3000"), false);
             
-            auto public_path = string_alloc(os_allocator(), output_dir);
-            run_server(S("127.0.0.1:3000"), public_path);
+            auto public_path = string_alloc(output_dir);
+            // run_server(S("127.0.0.1:3000"), public_path);
+
+            http__tcp_client_example();
         }
 
         if (string_equals(arg3, S("--open")))
         {
-            os_shell_execute(S("firefox.exe"), path_join(S("file://"), output_dir, S("index.html")));
+            os_shell_execute(S("firefox.exe"), path_join(S("file://"), output_dir, S("index.html")), false);
         }
     }
 
